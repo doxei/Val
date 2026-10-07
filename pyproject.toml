@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+dev = ["pytest>=8.0", "ruff>=0.4", "scipy>=1.13"]   # scipy : tests de la voix
 api = ["fastapi>=0.110", "uvicorn>=0.27", "anyio>=4.0", "websockets>=12"]
 system = ["psutil>=5.9"]
 # Voix de RAUB (XTTS v2). torch 2.6.0+cu126 s'installe à part, avant (tools\valdar_voix.bat) :
