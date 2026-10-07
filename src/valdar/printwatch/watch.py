@@ -191,9 +191,7 @@ class PrintWatch:
             if self.job is None:
                 self._begin(st, now)
             self._watch(st, now)
-        elif self.job is not None and state in FINAL:
-            self._end(st, now)
-        elif self.job is not None and state not in ("paused",):
+        elif self.job is not None and state != "paused":   # fin normale, annulation, erreur, perte
             self._end(st, now)
 
     def _begin(self, st: dict[str, Any], now: float) -> None:
@@ -216,6 +214,7 @@ class PrintWatch:
                         "WHERE job=?", (now, state, failed, self.job))
         self._set_state("baseline", json.dumps({k: p.lifetime_state()
                                                 for k, p in self.predictors.items()}))
+        self.purge(now)
         if state == "complete":
             self.notify(WatchEvent("fin", "impression terminée", self.job, 0.0,
                                    data={"state": state}))
@@ -224,6 +223,22 @@ class PrintWatch:
                                    "c'était un raté ? Dis-le-moi, ça m'apprend à voir venir.",
                                    self.job, 0.3, data={"state": state}))
         self.job = None
+
+    def purge(self, now: float | None = None) -> int:
+        """Efface les images gardées depuis plus de `keep_days` (les scores restent : ils
+        servent à prouver la porte des 98 %). Renvoie le nombre d'images effacées."""
+        now = self.clock() if now is None else now
+        limit = now - self.cfg.keep_days * 86400
+        with self._conn() as con:
+            rows = con.execute("SELECT id, path FROM frames WHERE path IS NOT NULL AND t < ?",
+                               (limit,)).fetchall()
+            for _, p in rows:
+                Path(p).unlink(missing_ok=True)
+            con.executemany("UPDATE frames SET path=NULL WHERE id=?", [(r[0],) for r in rows])
+        for d in self.frames_dir.glob("*"):
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+        return len(rows)
 
     # ------------------------------------------------------------------ vision
     def cameras(self) -> list[Any]:

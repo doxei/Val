@@ -354,6 +354,26 @@ def _cmd_import_vecu(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_vigie(args: argparse.Namespace) -> int:
+    from valdar.devices.moonraker import Moonraker
+    from valdar.printwatch import PrintWatch
+
+    cfg = load()
+    path = cfg.storage_path
+    pw = cfg.printwatch
+    watch = PrintWatch(pw, Moonraker(cfg.printer), path(pw.db), path(pw.frames_dir),
+                       notify=lambda ev: None)
+    if args.debloquer:
+        print(watch.unlock())
+    elif args.verrouiller:
+        print(watch.lock())
+    elif args.reussie or args.ratee:
+        print(watch.label(bool(args.ratee), minutes_before_end=args.minutes))
+    else:
+        print(watch.status_text())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -380,6 +400,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dossier", default=r"C:\Users\doxei\Documents\training ia",
                    help="dossier de l'export (conversations.json, memories)")
     p.set_defaults(func=_cmd_import_vecu)
+
+    p = sub.add_parser("vigie", help="état de la vigie d'impression, autonomie, étiquettes")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--debloquer", action="store_true",
+                   help="autoriser la pause automatique (si la porte des 98 %% est ouverte)")
+    g.add_argument("--verrouiller", action="store_true", help="revenir à « observe et prévient »")
+    g.add_argument("--reussie", action="store_true", help="la dernière impression a réussi")
+    g.add_argument("--ratee", action="store_true", help="la dernière impression a raté")
+    p.add_argument("--minutes", type=float, default=None,
+                   help="avec --ratee : minutes avant la fin où c'était déjà fichu")
+    p.set_defaults(func=_cmd_vigie)
 
     p = sub.add_parser("heart", help="cœur en continu, temps réel")
     p.add_argument("--profile", default=None)

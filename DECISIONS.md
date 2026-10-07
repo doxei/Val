@@ -209,3 +209,62 @@ Détails : `docs/avenant-4-boucle-fermee-et-socle.md` (vision d'Olivier point pa
   réévaluation ; veille ; nocicepteurs du PC, douleur construite), organes physiques en option
   sur le robot.
 - Tests : 122 verts (Python 3.11 et 3.13), ruff propre.
+
+---
+
+## 2026-10-08 — Mémoire épisodique, vécu, connaissances, pensée de fond, vigie d'impression
+
+### Phase 2c — Mémoire épisodique (`memory/episodes.py`) : faite
+- Journal de toutes les conversations (tours datés, affect PAD de chaque tour), contexte temporel
+  multi-échelles (Howard et Kahana), mémoire de travail, reprise du fil au démarrage.
+- **Reste** : la réactivation affective d'un souvenir rappelé (avenant 4 §2).
+
+### Vécu hérité (`valdar import-vecu`)
+- L'export claude.ai d'Olivier (dossier « training ia ») devient des souvenirs datés, source
+  `claude`, personne `olivier` (privés), rejoués dans l'ordre du temps pour leur contexte.
+  Affect des messages d'Olivier estimé par l'évaluation rapide.
+- La mémoire de Claude sur Olivier → faits (source `claude_memoire`, confiance 0,7).
+- Jeu d'entraînement (phase 9) : **uniquement** les messages d'Olivier, jamais les réponses de
+  Claude. Lecture seule de l'export, chaque conversation importée une seule fois.
+
+### Connaissances (`knowledge/`)
+- RAG 100 % local, sans modèle : BM25 sur mots normalisés (60 %) + vecteurs de n-grammes hachés
+  (40 %, tolère les fautes de dictée). Sources : `docs/connaissances/` (base de défauts FDM pour la
+  CR-10S, état de l'art de la détection, notes de PrintOS) et `data/connaissances/`.
+  Réindexation seulement si le fichier a changé (empreinte SHA-256).
+- Dans le prompt (3 passages pertinents) et en outil (`connaissance_impression`).
+
+### Phase 2d (en partie) — Pensée de fond (`workspace/thoughts.py`) : faite
+- Quand personne ne parle (3 min de silence, 10 min entre deux pensées, 4 par heure, jamais
+  pendant un dialogue ni la nuit), Valdar relit son état et répond pour lui-même en JSON :
+  réflexion, **recul** (réévaluation de Gross qui apaise ou stimule un peu le cœur), 0 à 3
+  **idées**, une curiosité à creuser dans ses connaissances.
+- Pas d'outils : la pensée de fond n'agit jamais sur le monde. Rumination plafonnée (la même
+  pensée n'agit plus sur le cœur au-delà de 2 fois par heure), idées en double écartées
+  (similarité ≥ 0,8). La meilleure idée (intérêt ≥ 0,6) est proposée par l'initiative, une
+  seule fois ; Olivier la marque adoptée, rejetée ou plus tard (outil `idee_statut`).
+- **Reste** : la veille, les nocicepteurs du PC.
+
+### Vigie d'impression (`printwatch/`)
+- Audit de PrintOS : `docs/audit-printos.md`. Repris d'Obico (constantes vérifiées dans leur
+  code) : seuil de détection 0,08 (PrintOS : 0,25), EWM span 12, moyennes courte (310) et longue
+  (7 200, sur la vie de l'imprimante, sauvegardée entre deux impressions), 30 images de chauffe.
+- Qualité de chaque image mesurée (sombre, floue, figée) : une image inexploitable n'est **pas**
+  envoyée au détecteur (c'est ce qui aveuglait PrintOS). Télémétrie Klipper en plus : écart de
+  température persistant, progression figée. Sans caméra : surveillance à l'aveugle, dit une fois.
+- **Autonomie** : niveau 0 par défaut (observe et prévient). Niveau 1 (pause seule) seulement si
+  la **porte des 98 %** est ouverte **et** qu'Olivier a déverrouillé (`valdar vigie --debloquer`).
+  Porte : par événement, échec « attrapé » si alerte ≥ 30 s avant le point de non-retour, borne
+  basse de Clopper-Pearson (95 %) ≥ 98 % → au moins **149 échecs tous attrapés** ; et au plus
+  1 fausse pause pour 100 h sur au moins 300 h d'impressions réussies. Les étiquettes viennent
+  d'Olivier (`valdar vigie --ratee --minutes N`, ou l'outil `vigie_etiqueter`).
+- Images gardées une par minute (et à chaque alerte), effacées après `keep_days` (30 j) ; les
+  scores restent en base, ils sont la preuve.
+- **Reste** : le tri par Gemma de l'image quand la vigie s'inquiète (`triage`, prévu, non
+  branché), à essayer sur la machine avec le modèle ONNX d'Obico (extra `[vision]`).
+
+### Finitions (reprise de session)
+- Commande `valdar vigie` (état, étiquettes, verrouillage) : annoncée par le code, elle manquait.
+- `keep_days` était configuré mais jamais appliqué : purge à la fin de chaque impression.
+- Lint propre ; tests ajoutés pour la vigie, le prédicteur, la porte, les connaissances, la
+  pensée de fond et l'import du vécu : **152 verts** (Python 3.11 et 3.13).
