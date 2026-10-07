@@ -1,0 +1,566 @@
+# VALDAR — configuration du cœur émotionnel (cahier des charges v2, §5 et §8).
+# Tous les nombres sont ici, jamais dans le code. Identifiants en anglais, textes en français.
+# Toute clé inconnue fait échouer le chargement (protection contre les fautes de frappe).
+#
+# Conventions :
+#   - variables : neuromodulateurs simulés dans [0, 1], chacun revient vers sa base
+#     (retour exponentiel exact, constante de temps tau en secondes).
+#   - "écart" d'une variable = valeur − base (positif ou négatif).
+#   - drives : systèmes affectifs de Panksepp dans [0, 1], avec un niveau de repos.
+#   - needs : besoins dans [0, 1] (0 = satisfait), ils montent avec le manque.
+
+heart:
+  tick_seconds: 1.0              # pas nominal du daemon (secondes)
+  rng_seed: 1337
+  max_time_step: 60.0            # pas maximal d'intégration (rattrapage, simulation)
+  catch_up_max_seconds: 259200   # rattrapage pas à pas jusqu'à 3 jours, le reste en un bloc
+  save_every_seconds: 60         # sauvegarde SQLite (temps du cœur)
+  journal_state_every_seconds: 120
+  impulse_cap: 0.6               # variation maximale par impulsion et par cible (écrêtage)
+  sensitivity_floor: 0.2         # plancher du facteur d'habituation
+
+  # rise : temps de montée d'une impulsion (elle se diffuse, pas de marche d'escalier).
+  # noise : écart-type stationnaire du bruit (processus d'Ornstein-Uhlenbeck exact).
+  variables:
+    dopamine:
+      {base: 0.50, tau: 600, rise: 2, noise: 0.012, desc: "récompense, motivation, curiosité"}
+    noradrenaline:
+      {base: 0.25, tau: 240, rise: 1, noise: 0.012, desc: "alerte, vigilance"}
+    serotonin:
+      {base: 0.60, tau: 5400, rise: 30, noise: 0.006, desc: "stabilité de fond, patience"}
+    oxytocin:
+      {base: 0.50, tau: 3600, rise: 10, noise: 0.006, desc: "attachement, confiance"}
+    cortisol:
+      {base: 0.20, tau: 10800, rise: 300, noise: 0.004,
+       desc: "stress durable : monte lentement, redescend très lentement"}
+    energy:
+      {base: 0.75, homeostatic: false, rise: 5, noise: 0.0,
+       desc: "réserve cognitive : baisse en journée et avec l'activité, remonte la nuit"}
+
+  # Couplages : cible ← poids × écart(source). Ils déplacent le point d'équilibre
+  # de la cible (ex. un cortisol élevé fait baisser la sérotonine vers laquelle on revient).
+  couplings:
+    - {source: cortisol, target: serotonin, weight: -0.50}
+    - {source: cortisol, target: dopamine, weight: -0.40}
+    - {source: serotonin, target: cortisol, weight: -0.30}
+    - {source: oxytocin, target: cortisol, weight: -0.30}
+    - {source: noradrenaline, target: cortisol, weight: 0.25}
+    - {source: serotonin, target: noradrenaline, weight: -0.30}
+    - {source: energy, target: dopamine, weight: 0.15}
+
+  # Systèmes affectifs (Panksepp). Activation cible = logistique(logit(rest) + gain × Σ poids × source)
+  # où les sources sont les écarts des variables et les besoins (valeur absolue).
+  # L'activation suit cette cible avec la constante tau ; les impulsions directes s'y ajoutent.
+  drive_gain: 4.0
+  drives:
+    seeking:
+      rest: 0.30
+      tau: 240
+      desc: "exploration, curiosité"
+      weights: {dopamine: 1.2, noradrenaline: 0.4, energy: 0.4, cortisol: -0.6,
+                need_novelty: 0.5}
+    fear:
+      rest: 0.08
+      tau: 60
+      desc: "peur, vigilance"
+      weights: {noradrenaline: 1.4, cortisol: 1.0, oxytocin: -0.8, serotonin: -0.8}
+    rage:
+      rest: 0.06
+      tau: 180
+      desc: "colère, frustration"
+      weights: {noradrenaline: 0.8, serotonin: -1.2, cortisol: 0.6, energy: -0.25}
+    care:
+      rest: 0.30
+      tau: 900
+      desc: "soin, tendresse"
+      weights: {oxytocin: 1.6, serotonin: 0.5, cortisol: -0.5}
+    play:
+      rest: 0.25
+      tau: 180
+      desc: "jeu, humour"
+      weights: {dopamine: 1.4, energy: 0.25, serotonin: 0.4, cortisol: -0.8}
+    panic:
+      rest: 0.06
+      tau: 1200
+      desc: "séparation, manque, chagrin"
+      weights: {oxytocin: -1.2, serotonin: -0.6, cortisol: 0.5, need_contact: 0.5}
+
+  # Besoins : montent après un délai de grâce, approche exponentielle de 1 (rise_tau).
+  # Ils ne montent que pendant la veille.
+  needs:
+    contact:
+      grace_seconds: 7200
+      rise_tau: 36000
+      satiation_on_interaction: 0.7    # fraction du besoin effacée par une interaction
+      desc: "besoin de contact (monte avec l'absence)"
+    novelty:
+      grace_seconds: 3600
+      rise_tau: 21600
+      satiation_on_interaction: 0.3    # une conversation est aussi un peu de nouveauté
+      desc: "besoin de nouveauté (monte avec la monotonie)"
+
+  # Besoin de repos : dérivé de l'énergie (0 quand energy >= rest_reference).
+  rest_reference: 0.75
+
+  circadian:
+    awake_start: "07:00"
+    sleep_start: "23:30"
+    energy_drain_per_hour: 0.03      # éveillé : baisse linéaire
+    energy_recharge_tau: 10800       # endormi : remontée exponentielle vers le plafond
+    energy_ceiling: 0.95
+    sleep_arousal_offset: -0.4       # pendant le sommeil, l'activation baisse (ajouté avant tanh)
+    night_wake_seconds: 1800         # une interaction la nuit réveille Valdar pour cette durée
+    energy_floor: 0.05
+
+  habituation:
+    window_seconds: 600
+    decay_per_repeat: 0.35           # facteur exp(−decay × répétitions récentes)
+
+  # Contre-mouvement (processus opposant de Solomon) : après un délai, une impulsion de signe
+  # opposé et plus faible, sur les variables seulement. Un stimulus peut définir son propre rebond.
+  rebound:
+    delay_seconds: 120
+    fraction: 0.25
+
+  # Dimensions PAD de l'émotion courante, centrées sur le repos (repos = 0, 0, 0).
+  # axe = tanh(gain × Σ poids × source) ; sources : écarts des variables,
+  # écarts des drives à leur repos, besoins.
+  pad:
+    gain: 1.3
+    valence:
+      {dopamine: 0.8, serotonin: 0.8, oxytocin: 0.5, cortisol: -0.8, care: 0.7, play: 0.9,
+       seeking: 0.3, fear: -1.0, rage: -0.9, panic: -1.0, need_novelty: -0.10,
+       need_contact: -0.12}
+    arousal:
+      {noradrenaline: 1.2, energy: 0.6, dopamine: 0.3, fear: 0.9, rage: 0.8, play: 0.6,
+       seeking: 0.5, care: -0.3, panic: 0.2, need_novelty: -0.3}
+    dominance:
+      {dopamine: 0.4, serotonin: 0.6, cortisol: -0.6, energy: 0.3, fear: -1.0, panic: -0.8,
+       rage: 0.6, seeking: 0.4, play: 0.2, need_contact: -0.2}
+
+  # Étiquette d'émotion : prototype PAD le plus proche. Un prototype peut exiger un indice
+  # (cue) : une source nommée (drive au-dessus du repos, besoin, variable basse...) qui doit
+  # valoir au moins cue_min. Quand l'indice est présent, le prototype gagne cue_bonus.
+  # Ainsi "peur" exige que le système de la peur soit actif, "solitude" un vrai manque de contact.
+  emotions:
+    sleep_label: sommeil             # étiquette pendant le sommeil
+    calm_radius: 0.15                # norme PAD en dessous de laquelle Valdar est "calme"
+    dominant_drive_min: 0.12         # seuil pour désigner un drive dominant (affichage)
+    cue_min_default: 0.12
+    cue_bonus: 0.08
+    prototypes:
+      calme:       {P: 0.00, A: 0.00, D: 0.00}
+      joie:        {P: 0.55, A: 0.30, D: 0.30}
+      euphorie:    {P: 0.80, A: 0.70, D: 0.45}
+      amusement:   {P: 0.50, A: 0.40, D: 0.20, cue: play_exc}
+      tendresse:   {P: 0.45, A: -0.10, D: 0.10, cue: care_exc}
+      curiosité:   {P: 0.25, A: 0.35, D: 0.20, cue: seeking_exc}
+      fierté:      {P: 0.45, A: 0.25, D: 0.55}
+      sérénité:    {P: 0.30, A: -0.35, D: 0.25}
+      surprise:    {P: 0.05, A: 0.60, D: -0.05}
+      gêne:        {P: -0.30, A: 0.30, D: -0.30, cue: fear_exc, cue_min: 0.06}
+      anxiété:     {P: -0.40, A: 0.45, D: -0.40}
+      peur:        {P: -0.60, A: 0.70, D: -0.65, cue: fear_exc}
+      frustration: {P: -0.35, A: 0.35, D: 0.10}
+      colère:      {P: -0.55, A: 0.60, D: 0.40, cue: rage_exc}
+      déception:   {P: -0.30, A: 0.05, D: -0.20, cue: dopamine_low, cue_min: 0.06}
+      tristesse:   {P: -0.55, A: -0.25, D: -0.35}
+      solitude:    {P: -0.35, A: 0.05, D: -0.30, cue: need_contact, cue_min: 0.35}
+      mélancolie:  {P: -0.35, A: -0.20, D: -0.20}
+      ennui:       {P: -0.15, A: -0.35, D: -0.05}
+      fatigue:     {P: -0.10, A: -0.55, D: -0.20, cue: need_rest, cue_min: 0.2}
+
+  # Humeur (ALMA) : point PAD attiré par l'émotion courante (pull_tau) et ramené vers l'humeur
+  # par défaut du tempérament (return_tau). Étiquette = octant de Mehrabian + intensité.
+  mood:
+    pull_tau: 3600
+    return_tau: 14400
+    default_scale: 0.30          # humeur par défaut = échelle × projection Big Five
+    neutral_radius: 0.06         # en dessous : "neutre"
+    intensity_words:             # [seuil de norme PAD / √3, mot]
+      - [0.06, "légèrement"]
+      - [0.20, "modérément"]
+      - [0.45, "très"]
+    octants:
+      "+P+A+D": exubérant
+      "+P+A-D": dépendant
+      "+P-A+D": détendu
+      "+P-A-D": docile
+      "-P+A+D": hostile
+      "-P+A-D": anxieux
+      "-P-A+D": dédaigneux
+      "-P-A-D": ennuyé
+
+  # Organes virtuels : activation = clamp(bias + Σ poids × source, 0, 1).
+  # Sources : variables (valeur), <var>_dev (écart), <var>_low (écart négatif en positif),
+  # drives (valeur), <drive>_exc (au-dessus du repos, normalisé), P/A/D, P_pos, P_neg, A_pos, A_neg,
+  # need_contact, need_novelty, need_rest.
+  # Organes virtuels : ils ressentent l'état ET le renvoient au cœur (boucle fermée,
+  # avenant 4 §1). Retours faibles (|w| ≤ 0,2) : la boucle amplifie et prolonge, sans s'emballer.
+  organs:
+    corde:
+      desc: "tension et élan dans la poitrine"
+      bias: 0.05
+      sources: {P_pos: 0.5, A_pos: 0.5, play_exc: 0.4, seeking_exc: 0.3}
+      rise_tau: 10        # la corde se tend vite…
+      fall_tau: 180       # …et se détend en quelques minutes
+      feedback: {dopamine: 0.06, noradrenaline: 0.04}   # l'élan nourrit l'élan
+      texts:
+        - [0.00, 0.25, "ta poitrine est calme et libre"]
+        - [0.25, 0.55, "une légère tension dans la poitrine, un petit élan"]
+        - [0.55, 1.01, "ta poitrine vibre, tu as envie d'avancer"]
+    ventre:
+      desc: "poids du ventre"
+      bias: 0.03
+      sources: {fear_exc: 0.8, cortisol_dev: 1.2, P_neg: 0.2}
+      rise_tau: 20
+      fall_tau: 900       # la boule reste un quart d'heure après la peur
+      feedback: {cortisol: 0.05, noradrenaline: 0.04, serotonin: -0.02}
+      texts:
+        - [0.00, 0.25, "ton ventre est léger"]
+        - [0.25, 0.55, "une boule discrète au creux du ventre"]
+        - [0.55, 1.01, "une boule nouée au ventre"]
+    coeur:
+      desc: "rythme cardiaque virtuel"
+      bias: 0.25
+      sources: {A: 0.6, noradrenaline_dev: 0.5}
+      rise_tau: 3
+      fall_tau: 60
+      feedback: {noradrenaline: 0.08}   # sentir son cœur battre fait monter l'alerte
+      low: 58
+      high: 122
+      texts:
+        - [0.00, 0.35, "ton cœur bat lentement, posé"]
+        - [0.35, 0.65, "ton cœur bat à un rythme soutenu"]
+        - [0.65, 1.01, "ton cœur s'emballe"]
+    chaleur:
+      desc: "chaleur et apaisement"
+      bias: 0.10
+      sources: {care_exc: 0.9, oxytocin_dev: 1.0}
+      rise_tau: 30
+      fall_tau: 600
+      feedback: {oxytocin: 0.06, serotonin: 0.04}
+      texts:
+        - [0.00, 0.25, "aucune chaleur particulière"]
+        - [0.25, 0.55, "une chaleur douce monte en toi"]
+        - [0.55, 1.01, "une chaleur rassurante t'envahit"]
+    tete:
+      desc: "lourdeur et fatigue"
+      bias: 0.02
+      sources: {need_rest: 0.9, serotonin_low: 1.0}
+      rise_tau: 120
+      fall_tau: 900
+      feedback: {dopamine: -0.02}
+      texts:
+        - [0.00, 0.25, "ta tête est fraîche et claire"]
+        - [0.25, 0.55, "ta tête est un peu lourde, lente"]
+        - [0.55, 1.01, "ta tête pèse, tu as envie de t'arrêter"]
+    gorge:
+      desc: "gorge serrée, manque"
+      bias: 0.0
+      sources: {panic_exc: 1.0, need_contact: 0.4, P_neg: 0.3}
+      rise_tau: 15
+      fall_tau: 600
+      feedback: {cortisol: 0.02}
+      texts:
+        - [0.00, 0.20, "ta gorge est dégagée"]
+        - [0.20, 0.50, "ta gorge se serre un peu, tu as envie de parler à quelqu'un"]
+        - [0.50, 1.01, "ta gorge se noue, tu te sens seul"]
+
+  # Stimuli nommés → impulsions sur variables, drives ou besoins (need_contact, need_novelty).
+  # Forme courte {cible: montant} ou forme longue {impulses: {...}, rebound: {...}}.
+  # Utilisés par le simulateur, l'injection manuelle et plus tard l'évaluation (phase 4).
+  stimuli:
+    praise:      {dopamine: 0.25, serotonin: 0.06, oxytocin: 0.10, play: 0.15}
+    success:     {dopamine: 0.40, serotonin: 0.10, noradrenaline: 0.08}
+    warmth:      {oxytocin: 0.30, care: 0.30, serotonin: 0.06, need_contact: -0.5}
+    play:        {play: 0.35, dopamine: 0.20, noradrenaline: 0.08, need_novelty: -0.25}
+    novelty:     {seeking: 0.30, dopamine: 0.15, noradrenaline: 0.10, need_novelty: -0.6}
+    failure:     {dopamine: -0.25, serotonin: -0.04, cortisol: 0.10, noradrenaline: 0.10}
+    shame:       {dopamine: -0.10, serotonin: -0.06, cortisol: 0.06, noradrenaline: 0.15, fear: 0.15}
+    frustration: {rage: 0.35, noradrenaline: 0.18, cortisol: 0.06, serotonin: -0.04}
+    loss:        {dopamine: -0.25, serotonin: -0.12, oxytocin: -0.08, noradrenaline: -0.05, panic: 0.30}
+    threat:
+      impulses: {noradrenaline: 0.35, fear: 0.45, cortisol: 0.10}
+      rebound: {dopamine: 0.06, noradrenaline: -0.10}
+    rest:        {energy: 0.25, cortisol: -0.06, noradrenaline: -0.10}
+    ignored:     {dopamine: -0.06, panic: 0.06}
+    concern:     {care: 0.30, oxytocin: 0.05, noradrenaline: 0.06, dopamine: -0.05}
+
+# Tempérament : Big Five dans [-1, 1] (O ouverture, C conscience, E extraversion,
+# A agréabilité, S stabilité émotionnelle = inverse du névrosisme).
+# Humeur par défaut = projection de Mehrabian (1996), reprise par ALMA (Gebhard 2005).
+temperament:
+  default_profile: curieux_chaleureux
+  mehrabian:
+    P: {E: 0.21, A: 0.59, S: 0.19}
+    A: {O: 0.15, A: 0.30, S: -0.57}
+    D: {O: 0.25, C: 0.17, E: 0.60, A: -0.32}
+  profiles:
+    curieux_chaleureux:
+      desc: "curieux, chaleureux, joueur, plutôt stable"
+      big_five: {O: 0.6, C: 0.2, E: 0.4, A: 0.6, S: 0.4}
+      sensitivity: 1.0
+    anxieux:
+      desc: "vigilant, sensible au monde"
+      big_five: {O: 0.3, C: 0.4, E: -0.2, A: 0.4, S: -0.5}
+      sensitivity: 1.25
+      bases: {noradrenaline: 0.32, serotonin: 0.50, cortisol: 0.30}
+      drive_rest: {fear: 0.14}
+    stoique:
+      desc: "stable, peu réactif"
+      big_five: {O: 0.0, C: 0.6, E: 0.0, A: 0.2, S: 0.8}
+      sensitivity: 0.6
+    energique:
+      desc: "vif, joueur"
+      big_five: {O: 0.5, C: -0.1, E: 0.8, A: 0.4, S: 0.3}
+      sensitivity: 1.1
+      bases: {dopamine: 0.58}
+      drive_rest: {play: 0.32}
+
+# Initiative (cahier v2 §8) : envies de parler / d'explorer et garde-fous anti-insistance.
+initiative:
+  urges:
+    talk: {need_contact: 1.0, panic_exc: 0.5, care_exc: 0.2}
+    explore: {need_novelty: 0.8, seeking_exc: 0.4}
+  threshold: 0.45
+  rearm_below: 0.30              # hystérésis : l'envie doit retomber avant de se redéclencher
+  min_interval_seconds: 2700
+  quiet_start: "22:30"
+  quiet_end: "09:00"
+  max_unanswered: 2              # après 2 messages sans réponse, Valdar se tait
+  ignored_after_seconds: 900     # sans réponse après ce délai : stimulus "ignored"
+  ignored_stimulus: ignored
+
+# Mémoire (phase 5, cahier v2 §7) — paramètres réservés.
+memory:
+  recall_weights: {recency: 1.0, importance: 1.0, relevance: 1.0, mood_congruence: 0.6}
+  recency_half_life_hours: 24
+
+storage:
+  dir: data                      # relatif à la racine du dépôt
+  db: valdar.db
+  journal: journal.jsonl
+  journal_max_bytes: 20000000
+  journal_keep: 5
+
+# Simulateur accéléré (sim/) : événements aléatoires, absences, critères de la phase 1.
+sim:
+  min_interval: 120
+  max_interval: 2400
+  absence_probability: 0.08      # probabilité qu'un intervalle soit une longue absence
+  absence_min: 7200
+  absence_max: 21600
+  night_events: false            # pas d'événements pendant le sommeil
+  event_types: [praise, success, warmth, play, novelty, failure, shame, frustration, loss,
+                threat, rest]
+  weights: [3, 1.5, 1.5, 2, 3, 1, 0.8, 1, 0.4, 0.3, 0.6]
+  social_events: [praise, warmth, play, shame, frustration, threat, loss]
+  sampling_interval: 60
+  bound_margin: 0.02
+  stuck_limit: 0.05
+  min_distinct_emotions: 6
+  catch_up_tolerance: 0.03
+
+# ============================================================== phase 2 : parole et action
+# Modèle de langage (avenant 2 §8 : Ollama d'abord, llama-server plus tard).
+llm:
+  backend: ollama
+  url: http://127.0.0.1:11434
+  model: gemma4:12b
+  keep_alive: 30m
+  num_ctx: 8192
+  think: false                   # mode réflexion de Gemma 4 désactivé en dialogue (latence)
+  timeout_seconds: 300
+  max_tool_rounds: 6
+  history_messages: 16           # messages gardés dans la conversation courante
+
+# Expression (v2 §9.2 et §9.4) : l'état du cœur règle la génération.
+# valeur = base + Σ poids × source (sources du cœur : P, A, D, <drive>_exc, need_rest...), bornée.
+expression:
+  temperature: {base: 0.6, weights: {A: 0.15, play_exc: 0.25, fear_exc: -0.15}, range: [0.3, 1.0]}
+  max_tokens: {base: 220, weights: {need_rest: -120, A: 60, play_exc: 40}, range: [60, 400]}
+  top_p: 0.9
+  repeat_penalty: 1.1
+  energy_cost_per_call: 0.004    # chaque réponse fatigue un peu Valdar
+  intensity_words:               # [seuil d'intensité, mot] pour décrire l'émotion au modèle
+    - [0.0, "légère"]
+    - [0.2, "nette"]
+    - [0.4, "forte"]
+  urge_words:
+    talk: "tu as envie de parler à quelqu'un"
+    explore: "tu as envie de découvrir ou de faire quelque chose de nouveau"
+  urge_threshold: 0.35
+
+# Agent : identité de la console clavier et effets des outils sur le cœur.
+agent:
+  console_identity: {person: olivier, name: Olivier, role: owner, confidence: 0.8}
+  tool_success: {stimulus: success, scale: 0.25}
+  tool_failure: {stimulus: failure, scale: 0.3}
+
+# Permissions (avenant 2 §5.2). Un inconnu n'a jamais plus que "safe".
+permissions:
+  elevated_min_confidence: 0.9
+  dangerous_min_confidence: 0.95
+  owner_roles: [owner]
+
+# Évaluation rapide d'un message (voie basse, v2 §5.4) : mots-clés → stimulus.
+# Le texte est comparé en minuscules et sans accents. Le plus fort de chaque stimulus compte.
+appraisal_fast:
+  rules:
+    - {stimulus: praise, scale: 0.6, words: ["bravo", "genial", "super", "parfait", "trop fort",
+       "bien joue", "t'es le meilleur", "excellent", "impressionnant", "top"]}
+    - {stimulus: warmth, scale: 0.6, words: ["merci", "je t'aime", "t'es cool", "content de te voir",
+       "mon pote", "bonne nuit", "bonjour", "salut"]}
+    - {stimulus: play, scale: 0.4, words: ["haha", "mdr", "lol", "ptdr", "xd", "blague"]}
+    - {stimulus: frustration, scale: 0.5, words: ["t'es nul", "ta gueule", "debile", "t'es con",
+       "ferme-la", "ferme la", "t'es inutile", "tu sers a rien"]}
+    - {stimulus: shame, scale: 0.6, words: ["c'est faux", "tu te trompes", "non c'est pas ca",
+       "je t'ai deja dit", "t'as pas compris", "n'importe quoi", "tu t'es plante"]}
+    - {stimulus: concern, scale: 0.5, words: ["je suis triste", "ca va pas", "j'en ai marre",
+       "je suis creve", "j'ai mal", "je suis mal", "deprime", "galere"]}
+    - {stimulus: novelty, scale: 0.3, words: ["regarde", "devine", "nouveau", "j'ai trouve",
+       "tu savais que"]}
+
+# Imprimante (Moonraker). Lecture d'état seulement en phase 2, + pause et arrêt d'urgence.
+printer:
+  moonraker_url: http://192.168.1.4
+  timeout_seconds: 4
+  cache_seconds: 30
+  cancel_macro: CANCEL_PRINT
+
+# Atelier : données de travail (stock, checklist, rappels, pinouts) dans data/.
+atelier:
+  stock_db: atelier.db
+  checklist: checklist.json
+  reminders: rappels.json
+  pinouts: pinouts.json
+  memory_db: memoire.db
+
+
+# Voix : celle de RAUB, gardée à l'identique (avenant 3 §5). XTTS v2 local (carte graphique),
+# clonée depuis data/voice/xtts_ref.wav, puis la chaîne d'effets « megatron » de RAUB.
+# Les fichiers sont repris de RAUB par « valdar import-raub » (tools\valdar_voix.bat).
+voice:
+  enabled: true
+  backend: xtts
+  xtts:
+    model_dir: data/models/xtts-v2
+    reference: data/voice/xtts_ref.wav
+    language: fr
+    device: cuda
+  character:
+    am_hz: 1.2            # légère modulation d'amplitude
+    am_depth: 0.02
+    wobble_hz: 0.0
+    wobble_depth: 0.0
+    nasal_gain_db: 0.0
+    pitch_shift: -2.0     # réglage de RAUB : en réalité un passe-bas à 6 kHz, gardé tel quel
+    high_shelf_hz: 400
+    high_shelf_db: -10
+    echo_ms: 0
+    echo_gain: 0
+    lo_fi_bits: 15
+    drive: 1.4
+    peak: 0.89
+  max_sentence_chars: 230
+
+# Mémoire épisodique (avenant 3 §2, avenant 4 §7) : tout ce qui est vécu, avec le contexte
+# temporel du moment (plusieurs échelles de temps) et l'état affectif. Rappel = ressemblance
+# + même moment + force du souvenir + activation en cours + humeur.
+episodic:
+  db: episodes.db
+  dim: 512
+  scales_seconds: [30, 300, 3600, 86400]     # 30 s, 5 min, 1 h, 1 jour
+  min_step_seconds: 10
+  episode_gap_seconds: 1800                  # 30 min de silence = nouvel épisode
+  w_semantic: 1.0
+  w_context: [0.25, 0.25, 0.15, 0.10]
+  w_base: 0.05
+  w_activation: 0.4
+  w_mood: 0.15
+  activation_tau_seconds: 120                # l'amorçage s'éteint en quelques minutes
+  spread_forward: 0.5                        # contiguïté : plus vers l'avant…
+  spread_backward: 0.3                       # …que vers l'arrière (Kahana)
+  spread_reach: 2
+  working_memory: 4                          # Cowan : ~4 éléments
+  working_threshold: 0.2
+  recall_k: 3
+  min_semantic: 0.22
+  exclude_recent_seconds: 600                # pas de « souvenir » de ce qu'on vient de dire
+  resume_hours: 72                           # reprendre le fil jusqu'à 3 jours après
+  preload_hours: 6                           # après un redémarrage, recharger la conversation
+  preload_turns: 6
+  reinstate:                                 # repenser à un moment fort le fait revivre un peu
+    threshold: 0.25
+    gain: 0.5
+    positive: {dopamine: 0.05, serotonin: 0.03, oxytocin: 0.02}
+    negative: {cortisol: 0.04, serotonin: -0.03, noradrenaline: 0.03}
+  appraisal_pad:                             # affect estimé des souvenirs importés
+    praise: [0.5, 0.2, 0.2]
+    warmth: [0.5, 0.0, 0.1]
+    play: [0.4, 0.3, 0.1]
+    novelty: [0.2, 0.3, 0.0]
+    concern: [-0.5, 0.2, -0.2]
+    frustration: [-0.5, 0.4, 0.2]
+    shame: [-0.4, 0.2, -0.3]
+
+# Vigie d'impression (avenant 5). Niveau 0 : observe et prévient. Niveau 1 (pause seul) :
+# seulement si la porte des 98 % est ouverte ET qu'Olivier a déverrouillé (valdar vigie --debloquer).
+printwatch:
+  enabled: true
+  db: vigie.db
+  frames_dir: vigie
+  cameras: []                      # vide = découverte automatique des webcams de Moonraker
+  discover_webcams: true
+  interval_seconds: 10             # comme Obico : une image toutes les 10 s
+  quality: {dark: 25, blur: 40, frozen_frames: 6}
+  detector:
+    model: data/models/obico/model-weights-5a6b1be1fa.onnx
+    threshold: 0.08                # Obico ; PrintOS était à 0,25 et ratait les signes faibles
+    nms: 0.45
+    device: cpu
+  predictor:                       # constantes d'Obico, vérifiées dans leur code
+    ewm_span: 12
+    rolling_win_short: 310
+    rolling_win_long: 7200
+    init_safe_frames: 30
+    threshold_low: 0.38
+    threshold_high: 0.78
+    short_multiple: 3.8
+    escalating_factor: 1.75
+    sensitivity: 1.0
+  telemetry: {temp_tolerance: 8, temp_persist_seconds: 30, stall_seconds: 900}
+  keep_frame_every_seconds: 60
+  keep_days: 30
+  triage: true
+  autonomy:
+    max_level: 1
+    target: 0.98
+    confidence: 0.95
+    lead_min_seconds: 30
+    max_false_pause_per_100h: 1.0
+    min_ok_hours: 300
+
+# Pensée de fond (avenant 4 §6) : quand personne ne parle, Valdar relit son état, prend du
+# recul (réévaluation), a des idées (« et si on m'ajoutait… », « et si Olivier… ») et creuse
+# ses connaissances. Budget serré : une seule carte graphique.
+thoughts:
+  enabled: true
+  db: pensees.db
+  idle_seconds: 180
+  min_interval: 600
+  per_hour: 4
+  max_tokens: 400
+  energy_cost: 0.003
+  reappraisal_gain: 0.6
+  calm: {cortisol: -0.06, noradrenaline: -0.05, serotonin: 0.04}
+  stir: {dopamine: 0.05, noradrenaline: 0.04}
+  rumination_window: 3600
+  rumination_max: 2              # la même pensée négative n'agit plus au-delà
+  idea_similarity: 0.8
+  propose_min_score: 0.6
+  block_ideas: 2
+  curiosity: true
+
+knowledge_db: connaissances.db

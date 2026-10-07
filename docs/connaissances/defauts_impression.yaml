@@ -1,0 +1,2201 @@
+# Base de connaissances : défauts d'impression FDM, signes précurseurs et corrections
+# Machine cible : Creality CR-10S (2017), Bowden, plateau 300x300, Klipper + Moonraker, caméra
+# Langue : fr | version 1.0 | 2026-10-08
+# Format : liste d'entrées (une par défaut).
+# Conventions :
+#   moment_typique : premiere_couche | debut | milieu | fin | tout_moment
+#   gravite : 1 cosmétique ; 2 défaut de qualité ; 3 pièce perdue ; 4 pièce perdue + risque matériel ; 5 risque sécurité/incendie
+#   detectable_camera : oui (visible directement) | partiel (tardif ou selon l'angle) | non (télémétrie ou son nécessaires)
+#   corrections_immediates : les actions préfixées [RISQUÉ] peuvent abîmer la pièce/la machine ou exposer l'opérateur -> confirmation humaine.
+#   Commandes : <valeur> = à remplacer. M106/M107 pilotent le ventilateur [fan] ; SET_FAN_SPEED ne vaut que pour [fan_generic].
+# Synthèse rédigée avec nos propres mots à partir des sources citées ; vérifier les valeurs sur sa machine.
+# Ne jamais désactiver les protections thermiques (verify_heater).
+- id: decollement_spaghetti
+  titre: Pièce décollée du plateau puis « spaghetti » (filament extrudé dans le vide)
+  categorie: adhesion
+  symptomes_visuels:
+  - Amas de fils emmêlés, tortillés, sans forme géométrique, qui grossit couche après couche
+  - La pièce n'est plus à sa place initiale, a glissé ou s'est couchée, ou reste collée à la buse
+  - La buse se déplace au-dessus du vide ou au-dessus d'un tas désordonné
+  - Filament qui pend sous la buse au lieu d'être déposé sur la couche précédente
+  signes_precurseurs:
+  - Coins ou bords qui se soulèvent progressivement (voir warping) dans les couches précédentes
+  - Première couche mal écrasée, lignes rondes et séparées, ou zones brillantes non collées
+  - Petits déplacements latéraux de la pièce quand la buse passe (visibles en comparant deux images successives)
+  - Bruit de frottement ou claquement quand la buse heurte un bord relevé
+  - Hauteur visible de la pièce qui cesse d'augmenter alors que la position Z continue de monter
+  - Courant d'air froid ou chute de la température du plateau (télémétrie heater_bed)
+  moment_typique: debut
+  point_de_non_retour: 'Dès que la pièce a bougé par rapport à l''origine du plateau : aucune reprise possible,
+    chaque couche suivante est déposée dans le vide.'
+  causes:
+  - 'Adhérence insuffisante : surface grasse, première couche trop haute, plateau trop froid'
+  - Retrait thermique (warping) qui arrache les coins puis la pièce entière
+  - Collision buse/pièce (surplomb relevé, blob, bourrelet) qui pousse la pièce
+  - Surface de contact trop petite pour la hauteur (tour fine, pièce haute et étroite)
+  - Courant d'air, ventilateur de pièce trop fort sur les premières couches
+  corrections_immediates:
+  - PAUSE immédiat dès les premiers signes de mouvement de la pièce, puis CANCEL_PRINT si la pièce a bougé
+  - 'Si plusieurs objets : EXCLUDE_OBJECT NAME=<objet> pour abandonner seulement la pièce décollée (nécessite [exclude_object]
+    et un G-code étiqueté)'
+  - '[RISQUÉ] Tenter de recoller/maintenir la pièce à la main pendant l''impression : risque de brûlure et de collision,
+    seulement si la pièce n''a pas encore bougé'
+  - Couper la chauffe buse si un amas commence à envelopper le bloc chauffant (TURN_OFF_HEATERS après PAUSE) pour
+    éviter le blob of doom
+  corrections_durables:
+  - Nettoyer le plateau à l'alcool isopropylique (≥ 90 %) avant chaque impression ; ne pas toucher la surface avec
+    les doigts
+  - Recalibrer la hauteur de première couche (Z offset) et le maillage du plateau
+  - Ajouter bordure (brim), oreilles de souris ou radeau pour les pièces hautes/étroites ou en matériaux qui se
+    rétractent
+  - Réduire le ventilateur sur les 2–3 premières couches et la vitesse de première couche
+  - Orienter la pièce pour maximiser la surface au contact du plateau
+  - Activer le Z-hop (0,2–0,3 mm) si les collisions avec des surplombs relevés sont la cause
+  specifique_cr10s: 'Plateau de 300×300 mm : les bords sont souvent plus froids que le centre et l''aluminium d''origine
+    est rarement plat, d''où des décollements plus fréquents près des coins. Placer les pièces critiques au centre.
+    Sans palpeur d''origine, le maillage doit être manuel ou nécessite un BLTouch.'
+  gravite: 3
+  detectable_camera: oui
+  sources:
+  - https://www.obico.io/blog/how-obico-ai-failure-detection-works/
+  - https://github.com/TheSpaghettiDetective/obico-server
+  - https://help.prusa3d.com/en/article/warping_2011/
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://www.klipper3d.org/Exclude_Object.html
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/layer_shifting.html
+- id: warping_coins_releves
+  titre: 'Warping : coins et bords qui se relèvent'
+  categorie: adhesion
+  symptomes_visuels:
+  - Coins de la pièce qui se décollent du plateau, formant un jour visible entre plateau et pièce
+  - Base courbée « en banane » sur les grandes pièces
+  - Bordure (brim) qui se soulève aux angles
+  - Fissure horizontale ou décalage dans les couches basses au-dessus d'un coin relevé
+  signes_precurseurs:
+  - Léger reflet ou ombre sous un coin vu de profil, qui s'agrandit sur quelques couches
+  - Coins de la première couche moins écrasés que le centre
+  - Plateau qui peine à maintenir sa consigne (puissance de chauffe élevée en continu)
+  - Matériau à fort retrait (ABS, ASA, PC, nylon) imprimé sans enceinte
+  - Température ambiante basse ou courant d'air près de l'imprimante
+  moment_typique: debut
+  point_de_non_retour: Quand le coin relevé dépasse la hauteur de couche suivante (risque de collision) ou que la
+    pièce bascule ; avant cela, l'impression peut finir avec un défaut de planéité.
+  causes:
+  - Retrait thermique du plastique en refroidissant, qui tire sur les bords
+  - Adhérence trop faible ou surface sale
+  - Refroidissement trop fort pour ABS/ASA/PC ; courant d'air
+  - Angles vifs et grandes surfaces pleines
+  - Plateau trop froid ou inhomogène
+  corrections_immediates:
+  - Couper les courants d'air (fermer fenêtre, poser un carton ou fermer l'enceinte)
+  - Réduire la ventilation pièce avec M106 S<valeur> (ex. M106 S0 à S51 pour ABS)
+  - '[RISQUÉ] Augmenter la température du plateau de 5 °C : SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=<consigne+5>
+    (efficacité limitée une fois le coin décollé ; risque de pied d''éléphant)'
+  - 'Si le coin relevé menace la buse : PAUSE puis décider d''annuler ; activer un Z-hop n''est pas possible en
+    cours d''impression sans G-code modifié'
+  corrections_durables:
+  - Bordure large (5–10 mm), oreilles de souris ou petites pastilles aux angles
+  - Enceinte ou draft shield (jupe-paroi) pour ABS/ASA/PC
+  - Nettoyage du plateau, adhésif adapté (colle en bâton, laque) selon la surface
+  - Arrondir les angles vifs à la conception, réduire le remplissage dense
+  - Imprimer plus lentement les premières couches et vérifier le Z offset
+  specifique_cr10s: 'Grand plateau aluminium 300×300 : gradient thermique fort entre centre et bords. Laisser le
+    plateau chauffer et se stabiliser plusieurs minutes avant de lancer (le cadre et le verre ou la surface mettent
+    du temps). L''imprimante est ouverte : ABS/ASA quasi impossibles sans enceinte.'
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/en/article/warping_2011/
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+  - https://help.prusa3d.com/fr/article/abs_2058
+  - https://www.creality.com/blog/3d-printing-curling
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+- id: premiere_couche_trop_haute
+  titre: Première couche trop haute (buse trop éloignée)
+  categorie: adhesion
+  symptomes_visuels:
+  - Lignes rondes, étroites, séparées par des espaces ; on voit le plateau entre les traits
+  - Lignes qui se déplacent ou se tortillent derrière la buse
+  - Jupe ou bordure qui se décolle quand la buse revient à côté
+  - Surface inférieure de la pièce brillante et lisse comme des cordons
+  signes_precurseurs:
+  - 'Dès la jupe (skirt) : trait fin et rond plutôt qu''aplati'
+  - Lignes qui ne se soudent pas entre elles sur les premiers centimètres
+  - Z offset récemment modifié, changement de buse ou de plateau
+  - Maillage du plateau ancien ou non chargé (BED_MESH_PROFILE LOAD non appelé)
+  moment_typique: premiere_couche
+  point_de_non_retour: 'Pendant la première couche : rattrapable en baissant Z. Une fois la deuxième couche commencée
+    sur une base mal collée, le risque de décollement plus tard devient élevé.'
+  causes:
+  - Z offset trop grand ou mal calibré
+  - Plateau non nivelé, maillage absent ou périmé
+  - 'Dilatation thermique : calibrage fait à froid'
+  - Portique X incliné (moteurs Z désynchronisés)
+  corrections_immediates:
+  - 'Abaisser la buse par petits pas pendant la première couche : SET_GCODE_OFFSET Z_ADJUST=-0.02 MOVE=1 (répéter,
+    observer)'
+  - 'Si la jupe est ratée : CANCEL_PRINT, recalibrer et relancer (coûte peu à ce stade)'
+  - 'Après réglage satisfaisant : Z_OFFSET_APPLY_ENDSTOP ou Z_OFFSET_APPLY_PROBE puis SAVE_CONFIG (hors impression)
+    pour mémoriser'
+  corrections_durables:
+  - Calibrer le Z offset à température d'impression (plateau et buse chauds)
+  - Refaire le maillage (BED_MESH_CALIBRATE) et le charger dans le G-code de début
+  - Imprimer un test de première couche (carrés de 25 mm) et ajuster
+  - Vérifier le parallélisme du portique X avec le plateau
+  specifique_cr10s: 'Sans palpeur d''origine, le CR-10S se règle au papier ou au BED_SCREWS_ADJUST/MANUAL_PROBE
+    ; double vis Z sur un seul pilote : si on tourne une vis à la main moteurs coupés, le portique se penche et
+    la première couche devient haute d''un côté seulement.'
+  gravite: 3
+  detectable_camera: oui
+  sources:
+  - https://www.klipper3d.org/Bed_Mesh.html
+  - https://www.klipper3d.org/G-Codes.html
+  - https://teachingtechyt.github.io/calibration.html
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://ellis3dp.com/Print-Tuning-Guide/
+- id: premiere_couche_trop_basse
+  titre: Première couche trop basse (buse trop proche)
+  categorie: adhesion
+  symptomes_visuels:
+  - Surface très plate, translucide, avec crêtes ou bourrelets de matière entre les lignes
+  - Zones où rien ne sort (buse bouchée par le plateau), surface rayée
+  - Matière qui s'accumule et forme des vagues ou des écailles
+  - Pied d'éléphant marqué sur les couches suivantes
+  signes_precurseurs:
+  - Claquement de l'extrudeur pendant la première couche (pression trop forte)
+  - Bourrelets latéraux visibles le long de la jupe
+  - Lignes d'aspect transparent ou très fin sur la jupe
+  moment_typique: premiere_couche
+  point_de_non_retour: Rattrapable durant la première couche ; si la buse a raclé le plateau et s'est bouchée, il
+    faut arrêter.
+  causes:
+  - Z offset trop petit
+  - Plateau bombé non compensé
+  - Débit de première couche trop élevé
+  - Changement de surface (épaisseur différente) sans recalage
+  corrections_immediates:
+  - 'Remonter la buse : SET_GCODE_OFFSET Z_ADJUST=+0.02 MOVE=1'
+  - 'Réduire le débit temporairement : M221 S95 (penser à revenir à M221 S100 ensuite)'
+  - 'Si l''extrudeur claque fort ou rien ne sort : CANCEL_PRINT, vérifier que la buse n''est pas obstruée'
+  corrections_durables:
+  - Recalibrer le Z offset et le maillage
+  - Réduire le débit/largeur de première couche dans le trancheur
+  - Activer la compensation de pied d'éléphant
+  - Vérifier l'état de la surface (rayures)
+  specifique_cr10s: ''
+  gravite: 2
+  detectable_camera: oui
+  sources:
+  - https://teachingtechyt.github.io/calibration.html
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+  - https://www.wevolver.com/article/3d-printing-elephant-foot
+  - https://www.klipper3d.org/G-Codes.html
+- id: perte_adherence_en_cours
+  titre: Perte d'adhérence au milieu de l'impression
+  categorie: adhesion
+  symptomes_visuels:
+  - Pièce qui oscille légèrement à chaque passage de la buse
+  - Base qui commence à se décoller sur un côté alors que les premières couches étaient bonnes
+  - 'Brusque translation de toute la pièce (à distinguer d''un décalage de couche : ici tout bouge, y compris la
+    première couche)'
+  signes_precurseurs:
+  - Coins qui se relèvent progressivement au-delà de quelques couches (warping lent)
+  - Pièce haute dont le bras de levier augmente (tour mince, centre de gravité haut)
+  - Coupure ou chute de la chauffe du plateau (télémétrie heater_bed sous la consigne)
+  - Vibrations fortes du plateau aux changements de direction en Y (accélérations élevées)
+  - Buse qui frotte sur la surface (bruit de raclage) à cause de surplombs relevés
+  moment_typique: milieu
+  point_de_non_retour: 'Dès que la base s''est déplacée : la suite est imprimée à côté et devient du spaghetti.'
+  causes:
+  - Contraintes internes accumulées (retrait) qui finissent par vaincre l'adhérence
+  - Plateau qui refroidit (consigne baissée, défaut de chauffe, PLA sur plateau trop chaud qui se ramollit dans
+    certains cas)
+  - Accélérations élevées sur un plateau mobile lourd avec pièce haute
+  - Chocs de la buse sur des surplombs recourbés
+  corrections_immediates:
+  - PAUSE pour inspection si la pièce bouge légèrement
+  - 'Réduire vitesse et accélérations : M220 S70 et SET_VELOCITY_LIMIT ACCEL=1000'
+  - '[RISQUÉ] Coller la base avec du ruban ou de la colle chaude pendant la pause : faisable si la pièce n''a pas
+    bougé, risque de déplacer l''origine'
+  - Vérifier que la consigne du plateau est toujours active (SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=<consigne>)
+  corrections_durables:
+  - Bordure, oreilles de souris, ou ajout de renforts à la conception
+  - Limiter max_accel pour les pièces hautes sur ce type d'imprimante (plateau mobile)
+  - Activer un Z-hop modéré pour éviter les collisions
+  - Vérifier l'alimentation et le connecteur du plateau (chute de chauffe intermittente)
+  specifique_cr10s: 'Plateau Y lourd (300 mm) : l''inertie secoue les pièces hautes ; garder des accélérations Y
+    raisonnables et utiliser l''input shaper mesuré.'
+  gravite: 3
+  detectable_camera: oui
+  sources:
+  - https://help.prusa3d.com/en/article/warping_2011/
+  - https://www.klipper3d.org/Resonance_Compensation.html
+  - https://www.obico.io/blog/how-obico-ai-failure-detection-works/
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/layer_shifting.html
+- id: piece_renversee_par_buse
+  titre: Pièce renversée ou arrachée par la buse
+  categorie: adhesion
+  symptomes_visuels:
+  - Pièce couchée sur le flanc ou absente de sa position
+  - Support ou petite pièce arrachée et traînée
+  - Buse qui continue à imprimer au-dessus d'un emplacement vide
+  signes_precurseurs:
+  - Bords ou surplombs recourbés vers le haut sur les couches précédentes
+  - Bruit de choc (« clac ») à chaque passage au même endroit
+  - Blob ou paquet de matière accroché à la buse
+  - Pièce fine/haute qui vacille visuellement
+  moment_typique: milieu
+  point_de_non_retour: Au moment du renversement ; avant, la collision répétée peut être stoppée par une pause.
+  causes:
+  - Surplombs ou coins qui se recourbent (refroidissement insuffisant)
+  - Sur-extrusion qui fait monter des bourrelets
+  - Absence de Z-hop
+  - Pièce trop élancée ou supports trop fins
+  - Matière accumulée sur la buse
+  corrections_immediates:
+  - PAUSE dès qu'un choc répété est entendu ou vu
+  - 'Si plusieurs objets : EXCLUDE_OBJECT NAME=<objet> pour l''objet menacé'
+  - 'Augmenter le refroidissement : M106 S255 (PLA)'
+  - 'Réduire le débit si la cause est une sur-extrusion : M221 S95'
+  corrections_durables:
+  - Z-hop 0,2–0,4 mm, ou Z-hop seulement au-dessus des parties imprimées
+  - Meilleur refroidissement des surplombs, vitesse réduite sur surplombs
+  - Ajouter bordure et renforts (oreilles, nervures) aux pièces élancées
+  - Calibrer le débit (extrusion multiplier)
+  specifique_cr10s: ''
+  gravite: 3
+  detectable_camera: oui
+  sources:
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/layer_shifting.html
+  - https://help.prusa3d.com/en/article/layer-shifting_2020
+  - https://www.klipper3d.org/Exclude_Object.html
+  - https://www.creality.com/blog/3d-printing-curling
+- id: pied_elephant
+  titre: Pied d'éléphant (base évasée)
+  categorie: geometrie
+  symptomes_visuels:
+  - Les premières couches dépassent vers l'extérieur et forment un bourrelet à la base
+  - Base plus large que le reste de la paroi, souvent visible sur les cubes de test
+  signes_precurseurs:
+  - Première couche très écrasée (voir première couche trop basse)
+  - Plateau réglé en haut de la plage recommandée
+  - Pièce lourde ou à remplissage dense qui pèse sur des couches basses encore molles
+  moment_typique: premiere_couche
+  point_de_non_retour: Défaut dimensionnel, jamais irrécupérable pour l'impression elle-même ; non corrigeable après
+    coup sauf ponçage.
+  causes:
+  - Plateau trop chaud qui garde les couches basses molles
+  - Buse trop proche du plateau
+  - Débit de première couche > 100 %
+  - Refroidissement faible sur les premières couches
+  corrections_immediates:
+  - 'Remonter légèrement la buse pendant la première couche : SET_GCODE_OFFSET Z_ADJUST=+0.01 MOVE=1'
+  - 'Baisser le plateau de 5 °C après la première couche : SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=<consigne-5>'
+  corrections_durables:
+  - Compensation de pied d'éléphant (PrusaSlicer) / expansion horizontale négative de la couche initiale (Cura),
+    égale à l'évasement mesuré
+  - Chanfrein à la base dans le modèle CAO
+  - Plateau au bas de la plage du fabricant, débit de première couche 95–100 %
+  specifique_cr10s: ''
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://www.wevolver.com/article/3d-printing-elephant-foot
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+- id: decalage_couches
+  titre: Décalage de couches (layer shift) en X ou Y
+  categorie: mecanique
+  symptomes_visuels:
+  - 'Marche d''escalier nette : toutes les couches au-dessus d''une hauteur donnée sont décalées dans une direction'
+  - Plusieurs marches successives (escalier) si la poulie patine
+  - Impression qui continue « à côté » de la pièce, parfois dans le vide
+  signes_precurseurs:
+  - Bruit de claquement/grognement du moteur X ou Y (pas perdus)
+  - Chocs de la buse sur des surplombs recourbés ou un blob
+  - Moteurs ou pilotes très chauds (impression longue, enceinte)
+  - Accélérations ou vitesses récemment augmentées
+  - Courroie qui semble molle, poussière de courroie près des poulies
+  - 'Commande GET_POSITION : écart entre position commandée et compteur de pas après un choc (diagnostic hors impression)'
+  moment_typique: tout_moment
+  point_de_non_retour: Le premier décalage rend la pièce non conforme ; si le décalage est petit (< 1 mm) et la
+    pièce décorative, on peut laisser finir. Un grand décalage mène au spaghetti.
+  causes:
+  - Poulie dont la vis sans tête est desserrée (cause n°1 des décalages en escalier)
+  - Courroie trop lâche ou trop tendue, mal alignée
+  - Collision buse/pièce (surplomb relevé, blob)
+  - Vitesse/accélération au-delà de ce que le moteur peut fournir
+  - Pilote moteur en surchauffe, courant moteur mal réglé
+  - Câble ou sertissage défectueux, point dur sur un axe
+  corrections_immediates:
+  - PAUSE dès le bruit de pas perdus pour inspecter (pièce encore récupérable si aucun décalage visible)
+  - 'Réduire immédiatement : M220 S60 et SET_VELOCITY_LIMIT ACCEL=800 SQUARE_CORNER_VELOCITY=5'
+  - '[RISQUÉ] Tenter de recaler un petit décalage avec SET_GCODE_OFFSET X_ADJUST=<mm> ou Y_ADJUST=<mm> : précision
+    très incertaine, seulement pour pièces non critiques'
+  - 'Si le décalage est important : CANCEL_PRINT'
+  corrections_durables:
+  - Resserrer les vis sans tête des poulies (une sur le méplat de l'axe)
+  - Régler la tension des courroies (par fréquence de préférence) et vérifier leur trajet
+  - Mesurer l'input shaper et fixer max_accel en conséquence
+  - Refroidir les pilotes, vérifier le courant moteur
+  - Z-hop et meilleur refroidissement pour éviter les collisions
+  - 'Vérifier les galets excentriques (V-slot) : ni jeu ni point dur'
+  specifique_cr10s: 'Axe Y = plateau 300×300 lourd : c''est l''axe le plus exposé aux pas perdus à forte accélération.
+    Galets V-slot sur extrusions : un galet trop serré crée un point dur, trop lâche un jeu. Sur la carte d''origine,
+    le courant moteur ne se règle pas par logiciel (aucune section TMC dans l''exemple de config Klipper).'
+  gravite: 4
+  detectable_camera: oui
+  sources:
+  - https://help.prusa3d.com/en/article/layer-shifting_2020
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/layer_shifting.html
+  - https://www.klipper3d.org/FAQ.html
+  - https://www.klipper3d.org/Resonance_Compensation.html
+  - https://www.klipper3d.org/G-Codes.html
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: ringing_ghosting
+  titre: Ringing / ghosting (ondulations après les angles)
+  categorie: mecanique
+  symptomes_visuels:
+  - Échos répétés d'un angle ou d'un détail (lettres, trous) sur la surface qui suit
+  - Ondulations régulières qui s'atténuent en s'éloignant de l'angle
+  - Plus marqué sur les faces parallèles à l'axe le plus lourd (Y sur plateau mobile)
+  signes_precurseurs:
+  - Aucune menace pour la réussite ; signe d'accélérations trop élevées pour la rigidité
+  - Vibration audible du cadre ou du plateau aux changements de direction
+  - Augmentation des vitesses/accélérations, courroies détendues, pièce de la tête modifiée
+  moment_typique: tout_moment
+  point_de_non_retour: Défaut purement esthétique, jamais bloquant.
+  causes:
+  - Vibrations mécaniques (cadre peu rigide, courroies, masse mobile élevée)
+  - Accélérations trop fortes
+  - Input shaper absent ou mal réglé (fréquence erronée)
+  corrections_immediates:
+  - 'Réduire les accélérations : SET_VELOCITY_LIMIT ACCEL=1500'
+  - 'Activer/ajuster l''input shaper si déjà mesuré : SET_INPUT_SHAPER SHAPER_FREQ_X=<f> SHAPER_FREQ_Y=<f> SHAPER_TYPE=mzv'
+  corrections_durables:
+  - Corriger d'abord la mécanique (cadre, courroies, vis, galets)
+  - Mesurer les résonances (tour de ringing ou accéléromètre ADXL345 avec TEST_RESONANCES / SHAPER_CALIBRATE)
+  - Choisir le shaper (MZV par défaut, EI si fréquence instable) et fixer max_accel selon ringing et lissage
+  - Refaire le réglage de pressure advance après un changement d'input shaper
+  - Garder square_corner_velocity à la valeur par défaut
+  specifique_cr10s: 'Plateau mobile lourd : fréquence de résonance Y basse ; en dessous de ~20–25 Hz le lissage
+    devient fort, il faut alors rigidifier ou utiliser ZV. Pour un plateau mobile, l''accéléromètre se monte sur
+    le plateau pour l''axe Y.'
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://www.klipper3d.org/Resonance_Compensation.html
+  - https://www.klipper3d.org/Measuring_Resonances.html
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://teachingtechyt.github.io/calibration.html
+- id: z_banding_wobble
+  titre: Z-banding / Z-wobble (bandes horizontales régulières)
+  categorie: mecanique
+  symptomes_visuels:
+  - Bandes ou côtes horizontales périodiques sur les parois
+  - Paroi qui ondule légèrement en XY de façon périodique avec la hauteur (wobble)
+  - Motif régulier dont la période correspond souvent au pas de la vis trapézoïdale (8 mm)
+  signes_precurseurs:
+  - Défaut cosmétique, pas un précurseur d'échec
+  - Oscillation périodique de la température du plateau (régulation bang-bang ou PID mal réglé) synchronisée avec
+    les bandes
+  - Vis Z voilée visible lorsqu'elle tourne, accouplement desserré
+  moment_typique: tout_moment
+  point_de_non_retour: Esthétique uniquement.
+  causes:
+  - Vis trapézoïdale voilée ou mal alignée, accouplement desserré
+  - Écrou de vis trop contraint, portique qui frotte
+  - Hauteur de couche non multiple d'un pas moteur entier
+  - Température buse ou plateau qui oscille
+  - Extrusion irrégulière
+  corrections_immediates:
+  - Aucune correction utile en cours, sauf stabiliser la température (vérifier la courbe dans Mainsail/Fluidd)
+  corrections_durables:
+  - Vérifier la rectitude des vis Z et le serrage des accouplements
+  - Choisir des hauteurs de couche multiples du pas complet (rotation_distance 8 mm, 200 pas/tour → 0,04 mm)
+  - PID_CALIBRATE HEATER=heater_bed TARGET=<consigne> puis SAVE_CONFIG
+  - Lubrifier les vis, laisser une liberté à l'écrou (découplage)
+  specifique_cr10s: Le CR-10S a deux vis Z entraînées par deux moteurs en parallèle ; un léger désaccord entre les
+    deux côtés peut produire des bandes asymétriques. rotation_distance Z = 8 dans la config d'exemple.
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://www.obico.io/blog/fixing-z-banding-wobble-a-comprehensive-guide/
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+  - https://www.klipper3d.org/Config_checks.html
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+- id: gantry_z_desynchronise
+  titre: Portique X incliné (vis Z gauche/droite désynchronisées)
+  categorie: mecanique
+  symptomes_visuels:
+  - Première couche correcte d'un côté du plateau et trop haute ou trop écrasée de l'autre
+  - Pièces placées à gauche et à droite qui n'ont pas la même hauteur
+  signes_precurseurs:
+  - Mesure à la cale/papier différente aux deux extrémités du portique
+  - Moteurs coupés (M84) puis une vis tournée à la main ou portique poussé
+  - Bruit de saut de pas sur un moteur Z en montée
+  moment_typique: premiere_couche
+  point_de_non_retour: Pas de point de non-retour en soi, mais conduit au décollement d'un côté.
+  causes:
+  - 'Deux moteurs Z sur un seul pilote : ils ne se recalent pas l''un sur l''autre'
+  - Accouplement ou poulie qui patine
+  - Choc mécanique sur le portique
+  corrections_immediates:
+  - Rattraper partiellement avec SET_GCODE_OFFSET Z_ADJUST si une seule pièce, sinon CANCEL_PRINT et réaligner
+  corrections_durables:
+  - Remettre le portique parallèle (cales identiques des deux côtés), éventuellement synchroniser les vis par une
+    courroie
+  - Refaire le maillage après réalignement (un maillage ne doit pas compenser un portique tordu)
+  - Éviter de manipuler le portique moteurs coupés
+  specifique_cr10s: Spécifique aux machines à double vis Z sans recalage indépendant comme le CR-10S.
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://www.klipper3d.org/Bed_Mesh.html
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+  - https://www.obico.io/blog/fixing-z-banding-wobble-a-comprehensive-guide/
+- id: sous_extrusion
+  titre: Sous-extrusion (manque de matière)
+  categorie: extrusion
+  symptomes_visuels:
+  - Lignes fines, trous entre périmètres et remplissage, couches supérieures ajourées
+  - Parois translucides ou poreuses, pièce fragile
+  - Remplissage filandreux, mal soudé
+  signes_precurseurs:
+  - Diminution progressive de la largeur de ligne visible sur les parois récentes
+  - Claquement intermittent de l'extrudeur (début de bouchon ou débit trop élevé)
+  - 'Capteur de mouvement de filament : distance mesurée inférieure à la distance commandée'
+  - Température buse qui chute sous la consigne pendant les remplissages rapides (puissance chauffe à 100 %)
+  - Bobine qui accroche, Bowden qui frotte, filament marqué par les dents
+  moment_typique: tout_moment
+  point_de_non_retour: Quand les couches ne se soudent plus (délaminage) ou que l'extrusion s'arrête complètement
+    ; une sous-extrusion légère et stable donne seulement une pièce faible.
+  causes:
+  - Débit volumique supérieur à la capacité de fusion de la tête
+  - Bouchon partiel, buse usée ou sale
+  - rotation_distance de l'extrudeur faux
+  - Tension du galet presseur incorrecte
+  - Filament humide ou de diamètre variable
+  - Friction dans le Bowden ou à la bobine
+  - Heat creep
+  - Température trop basse
+  corrections_immediates:
+  - 'Augmenter le débit : M221 S105 à S110 (palliatif si la cause est mécanique)'
+  - 'Réduire la vitesse pour rester dans la capacité de fusion : M220 S70'
+  - '[RISQUÉ] Augmenter la température de 5–10 °C : SET_HEATER_TEMPERATURE HEATER=extruder TARGET=<consigne+5> (risque
+    de stringing, ne pas dépasser la limite du liner PTFE)'
+  - Vérifier visuellement la bobine et libérer le filament s'il accroche
+  corrections_durables:
+  - Calibrer rotation_distance (marque, extrusion lente de 50 mm, mesure)
+  - Calibrer le multiplicateur d'extrusion (paroi simple mesurée au pied à coulisse)
+  - Déterminer le débit volumique max de la tête et le limiter dans le trancheur
+  - Nettoyer ou remplacer la buse, cold pull
+  - Sécher le filament
+  - Régler la tension du galet presseur, nettoyer les dents
+  specifique_cr10s: 'Bowden long : la pression met du temps à s''établir, la sous-extrusion apparaît d''abord après
+    les rétractions et dans les remplissages rapides. Tête d''origine à liner PTFE (max_temp 250 °C dans l''exemple
+    Klipper) : capacité de fusion modeste, ne pas compter sur des débits élevés.'
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/en/article/under-extrusion_2007
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://www.klipper3d.org/Rotation_Distance.html
+  - https://teachingtechyt.github.io/calibration.html
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+  - https://link.springer.com/article/10.1007/s40964-019-00089-3
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: sur_extrusion
+  titre: Sur-extrusion (excès de matière)
+  categorie: extrusion
+  symptomes_visuels:
+  - Parois bombées, surfaces grasses, bourrelets sur les bords
+  - Couches supérieures rugueuses avec crêtes
+  - Trous et ajustements trop serrés
+  - Matière accumulée sur la buse qui laisse des traces
+  signes_precurseurs:
+  - Buse qui traîne dans la couche précédente (bruit de frottement)
+  - Amas qui se forment aux angles et grossissent
+  - Calibrage récent de rotation_distance ou de débit
+  moment_typique: tout_moment
+  point_de_non_retour: Rarement irrécupérable ; devient grave si les bourrelets provoquent une collision ou un blob.
+  causes:
+  - Multiplicateur d'extrusion trop élevé
+  - rotation_distance trop petit
+  - Diamètre de filament réel inférieur au réglage
+  - Largeur de ligne/hauteur mal réglées
+  corrections_immediates:
+  - 'Réduire le débit : M221 S95 (pas de 2–5 %)'
+  - 'Si la buse frotte fortement : PAUSE puis vérifier'
+  corrections_durables:
+  - Calibrer le multiplicateur d'extrusion et rotation_distance
+  - Mesurer le diamètre du filament en plusieurs points
+  specifique_cr10s: ''
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://teachingtechyt.github.io/calibration.html
+  - https://www.klipper3d.org/Rotation_Distance.html
+  - https://ellis3dp.com/Print-Tuning-Guide/
+- id: bouchon_partiel_buse
+  titre: Bouchon partiel de la buse
+  categorie: extrusion
+  symptomes_visuels:
+  - Lignes irrégulières, plus fines par endroits, trous aléatoires
+  - Filament qui sort de travers ou en boucle lors d'une purge
+  - Surface supérieure striée de manques
+  signes_precurseurs:
+  - Claquement périodique de l'extrudeur
+  - 'Capteur de mouvement : glissement entre commande et mouvement réel'
+  - 'Courant moteur extrudeur plus élevé pour le même débit (si mesurable) : la recherche montre une hausse de courant
+    quand le diamètre effectif de la buse diminue'
+  - Changement récent de filament à température plus haute (résidus carbonisés)
+  - Particules ou poussière sur le filament
+  moment_typique: tout_moment
+  point_de_non_retour: Quand la sous-extrusion devient assez forte pour que les couches ne se soudent plus ou que
+    le bouchon devient complet.
+  causes:
+  - Résidus carbonisés, poussière, particules (charges, pigments)
+  - Ancien filament haute température resté dans la buse
+  - Liner PTFE dégradé ou décollé de la buse (CR-10S)
+  - Heat creep
+  corrections_immediates:
+  - 'Réduire vitesse et augmenter légèrement la température : M220 S70, SET_HEATER_TEMPERATURE HEATER=extruder TARGET=<+5>'
+  - 'Augmenter le débit en palliatif : M221 S105'
+  - '[RISQUÉ] PAUSE puis tentative de purge/aiguille à chaud : la pièce peut être abîmée par la reprise (voir pause_reprise_defectueuse)'
+  corrections_durables:
+  - Cold pull (tirage à froid) répété
+  - Aiguille 0,3–0,35 mm par le dessous, à chaud
+  - Remplacer la buse, nettoyer l'entrée PTFE
+  - Filtre à poussière sur le filament
+  - Purger à la température la plus haute utilisée lors d'un changement de matière
+  specifique_cr10s: 'Vérifier en priorité que le tube PTFE descend bien jusqu''à la buse : un jeu crée un bouchon
+    récurrent (voir bowden_espace_ptfe).'
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/article/WWVRzOY1dX-clogged-nozzle
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+  - https://link.springer.com/article/10.1007/s40964-019-00089-3
+  - https://3dprintingspace.com/t/crs10s-clogging-after-a-certain-height/5452
+- id: arret_extrusion_bouchon_complet
+  titre: Arrêt complet de l'extrusion en cours d'impression
+  categorie: extrusion
+  symptomes_visuels:
+  - La tête continue de bouger mais plus rien ne se dépose
+  - La pièce cesse de grandir, les couches supérieures disparaissent
+  - Fins filaments ou aucun dépôt sur les déplacements
+  signes_precurseurs:
+  - Sous-extrusion croissante sur les dernières couches
+  - Claquement de l'extrudeur de plus en plus fréquent
+  - Capteur de mouvement de filament qui ne voit plus de mouvement (déclenche runout si configuré)
+  - Ventilateur de radiateur arrêté ou température ambiante élevée (heat creep)
+  - Filament creusé par l'engrenage (grinding)
+  moment_typique: milieu
+  point_de_non_retour: 'Dès quelques couches sans dépôt : la reprise laisse une ligne de faiblesse ; au-delà, la
+    pièce est perdue.'
+  causes:
+  - Bouchon complet de buse
+  - Heat creep
+  - Filament grignoté
+  - Fin ou nœud de bobine
+  - Liner PTFE déformé
+  corrections_immediates:
+  - PAUSE immédiat (l'impression sans dépôt n'a aucune valeur)
+  - 'Diagnostiquer : filament présent ? engrenage qui tourne ? filament creusé ?'
+  - '[RISQUÉ] Si le problème est réglé, RESUME : risque de mauvaise reprise en Z et de couche manquante'
+  corrections_durables:
+  - Capteur de mouvement de filament ([filament_motion_sensor], detection_length adapté au Bowden)
+  - Traiter la cause (voir heat creep, grinding, bouchon)
+  specifique_cr10s: 'Le capteur d''origine du CR-10S est un simple interrupteur de présence : il ne détecte pas
+    un bouchon. Un capteur à encodeur (motion sensor) détecte aussi l''arrêt du défilement.'
+  gravite: 4
+  detectable_camera: oui
+  sources:
+  - https://help.prusa3d.com/article/extrusion-stopped-mid-print-heat-creep_1948
+  - https://help.prusa3d.com/article/WWVRzOY1dX-clogged-nozzle
+  - https://www.klipper3d.org/Config_Reference.html
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://www.mdpi.com/1424-8220/18/3/749
+- id: heat_creep
+  titre: Heat creep (filament qui ramollit trop haut dans le radiateur)
+  categorie: thermique
+  symptomes_visuels:
+  - Sous-extrusion qui s'aggrave puis arrêt complet de l'extrusion
+  - Filament retiré avec une extrémité gonflée en champignon
+  signes_precurseurs:
+  - Ventilateur du radiateur de la tête ralenti, bruyant ou arrêté (vérifiable à l'oreille, par la caméra si visible,
+    ou par tachymètre si câblé)
+  - Température ambiante élevée, enceinte fermée avec PLA
+  - Impressions lentes avec beaucoup de rétractions (le filament reste longtemps dans la zone chaude)
+  - Claquement de l'extrudeur qui commence après un temps long d'impression
+  - Augmentation de la température mesurée par un capteur placé sur le radiateur ([temperature_sensor])
+  moment_typique: milieu
+  point_de_non_retour: 'Quand le filament s''est bloqué dans le radiateur : l''impression ne peut plus reprendre
+    sans démontage ou tirage.'
+  causes:
+  - Refroidissement du radiateur insuffisant (ventilateur, poussière, pâte thermique)
+  - Ambiance trop chaude (> ~30–35 °C)
+  - Rétractions trop longues ou trop nombreuses
+  - Température de buse trop haute
+  - Débit très faible (petites pièces lentes)
+  corrections_immediates:
+  - Ouvrir l'enceinte / ventiler la pièce
+  - 'Augmenter légèrement la vitesse pour augmenter le débit : M220 S110 (si la qualité le permet)'
+  - 'Réduire la longueur de rétraction si firmware_retraction : SET_RETRACTION RETRACT_LENGTH=<plus court>'
+  - 'Si l''extrusion s''est arrêtée : PAUSE'
+  corrections_durables:
+  - Vérifier/remplacer le ventilateur du radiateur, le nettoyer, contrôler son sens de soufflage
+  - Pâte thermique sur le filetage du heatbreak (selon conception)
+  - Ne pas imprimer de PLA en enceinte fermée
+  - Rétractions plus courtes
+  - Décharger le filament à chaud en fin d'impression
+  - Surveiller le ventilateur via tachometer_pin dans [heater_fan] si le matériel le permet
+  specifique_cr10s: Sur la tête d'origine à liner PTFE, le PTFE limite la remontée de chaleur mais se dégrade si
+    on monte trop en température ; un liner décollé de la buse crée un ressaut qui ressemble à un heat creep.
+  gravite: 4
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/article/extrusion-stopped-mid-print-heat-creep_1948
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+  - https://www.klipper3d.org/Config_Reference.html
+  - https://3dprintingspace.com/t/crs10s-clogging-after-a-certain-height/5452
+- id: filament_grignote
+  titre: Filament grignoté (grinding) par l'engrenage d'extrusion
+  categorie: extrusion
+  symptomes_visuels:
+  - Extrusion qui faiblit puis s'arrête
+  - Poussière de plastique autour de l'extrudeur (visible si filmé)
+  - Encoche creusée dans le filament au retrait
+  signes_precurseurs:
+  - Claquements de l'extrudeur répétés au même endroit du filament
+  - Rétractions nombreuses sur la même zone (petits détails, stringing tuning)
+  - 'Capteur de mouvement : arrêt du défilement malgré la commande'
+  - Température trop basse ou débit trop élevé pour la tête
+  moment_typique: milieu
+  point_de_non_retour: 'Quand l''engrenage a creusé une gorge : le filament n''avance plus, l''impression est perdue
+    sans intervention.'
+  causes:
+  - Pression trop forte dans la buse (bouchon, température basse, vitesse élevée)
+  - Rétraction excessive ou trop rapide
+  - Tension du galet presseur trop forte ou trop faible
+  - Dents encrassées
+  corrections_immediates:
+  - PAUSE dès l'arrêt d'extrusion
+  - 'Réduire vitesse et augmenter température : M220 S70, SET_HEATER_TEMPERATURE HEATER=extruder TARGET=<+5>'
+  - '[RISQUÉ] Couper le filament au-dessus de la zone grignotée, le repousser, puis RESUME : la reprise peut laisser
+    un défaut'
+  corrections_durables:
+  - Réduire longueur et vitesse de rétraction
+  - Régler la tension du galet, nettoyer les dents
+  - Limiter le débit volumique
+  - Extrudeur à double entraînement si le problème se répète
+  specifique_cr10s: 'Extrudeur d''origine monté sur le cadre (Bowden) avec levier en plastique sur les premières
+    versions : ce levier peut se fissurer et réduire la pression ; à vérifier si le grinding/skip apparaît sans
+    autre cause.'
+  gravite: 4
+  detectable_camera: partiel
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+  - https://help.prusa3d.com/article/WWVRzOY1dX-clogged-nozzle
+- id: extrudeur_saute_des_pas
+  titre: Extrudeur qui saute des pas (clic/claquement)
+  categorie: extrusion
+  symptomes_visuels:
+  - Lignes manquantes répétées à intervalles
+  - Sous-extrusion localisée sur les zones rapides
+  signes_precurseurs:
+  - Son de « clic » caractéristique, détectable par un micro près de l'extrudeur
+  - Arrive surtout sur remplissage rapide ou première couche trop écrasée
+  - Pressure advance élevé (> ~0,2 en direct, plus en Bowden) combiné à des accélérations fortes
+  - Moteur extrudeur chaud
+  moment_typique: tout_moment
+  point_de_non_retour: Sans conséquence si sporadique ; devient grave s'il conduit au grinding ou au bouchon.
+  causes:
+  - 'Résistance trop forte : bouchon, température basse, débit volumique trop élevé'
+  - Première couche trop basse
+  - Courant moteur insuffisant ou pilote trop chaud
+  - Pressure advance trop élevé
+  - Friction dans le Bowden, bobine qui accroche
+  corrections_immediates:
+  - 'Réduire la vitesse : M220 S80'
+  - 'Réduire pressure advance : SET_PRESSURE_ADVANCE ADVANCE=<valeur-0.1>'
+  - 'Augmenter température : SET_HEATER_TEMPERATURE HEATER=extruder TARGET=<+5>'
+  - 'Si première couche : SET_GCODE_OFFSET Z_ADJUST=+0.02 MOVE=1'
+  corrections_durables:
+  - Mesurer le débit volumique maximal et le limiter
+  - Vérifier tension galet, état du Bowden et de la bobine
+  - 'Régler le courant moteur (TMC : run_current ; sinon potentiomètre Vref)'
+  - Re-régler pressure advance
+  specifique_cr10s: 'Bowden long : pressure advance typiquement élevé, donc plus de sollicitations brusques du moteur
+    extrudeur ; garder des accélérations raisonnables.'
+  gravite: 2
+  detectable_camera: non
+  sources:
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+  - https://www.klipper3d.org/Pressure_Advance.html
+  - https://www.klipper3d.org/TMC_Drivers.html
+  - https://help.prusa3d.com/article/WWVRzOY1dX-clogged-nozzle
+- id: depassement_debit_volumique
+  titre: Dépassement du débit volumique maximal de la tête
+  categorie: extrusion
+  symptomes_visuels:
+  - Sous-extrusion uniquement sur les longues lignes rapides (remplissage), parois correctes
+  - Remplissage pâle ou mat (plastique pas assez fondu)
+  signes_precurseurs:
+  - La température buse baisse de quelques degrés pendant les remplissages rapides puis remonte
+  - Claquement de l'extrudeur à vitesse élevée seulement
+  - Changement de vitesse ou de largeur de ligne dans le trancheur
+  moment_typique: tout_moment
+  point_de_non_retour: Pièce faible mais terminée, sauf si cela dégénère en grinding.
+  causes:
+  - Vitesse × largeur × hauteur de couche au-delà de la capacité de fusion
+  corrections_immediates:
+  - M220 S70 pour ralentir
+  - SET_HEATER_TEMPERATURE HEATER=extruder TARGET=<+5> (prudence avec le liner PTFE)
+  corrections_durables:
+  - Mesurer le débit max (test d'extrusion à vitesses croissantes) et le fixer dans le trancheur
+  - max_extrude_cross_section protège contre des sections aberrantes
+  specifique_cr10s: 'Tête d''origine à liner PTFE et bloc chauffant standard : capacité de fusion limitée ; en Klipper
+    ne pas pousser les vitesses sans mesure.'
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://ellis3dp.com/Print-Tuning-Guide/
+  - https://teachingtechyt.github.io/calibration.html
+  - https://www.klipper3d.org/Config_Reference.html
+- id: extrusion_inconstante
+  titre: Extrusion inconstante (largeur de ligne variable)
+  categorie: extrusion
+  symptomes_visuels:
+  - Parois avec zones plus épaisses et plus fines sans périodicité claire
+  - Surface supérieure irrégulière
+  signes_precurseurs:
+  - Oscillation de température de la buse (± quelques degrés) visible sur la courbe
+  - Filament de diamètre variable
+  - Bobine qui se coince de façon intermittente
+  - Bowden qui bouge dans son raccord (jeu de rétraction)
+  moment_typique: tout_moment
+  point_de_non_retour: Rarement bloquant ; signal d'un problème qui peut s'aggraver (bouchon, nœud).
+  causes:
+  - Filament de mauvaise qualité
+  - Friction variable dans le trajet
+  - Régulation PID instable
+  - Raccord pneumatique usé (le tube bouge)
+  corrections_immediates:
+  - Vérifier la bobine
+  - Stabiliser la température (si PID instable, recalibrer après impression)
+  corrections_durables:
+  - PID_CALIBRATE HEATER=extruder TARGET=<temp>
+  - Remplacer le raccord pneumatique usé et fixer le tube avec un clip
+  - Changer de filament
+  specifique_cr10s: 'Raccords pneumatiques et tube Bowden d''origine : le jeu dans le raccord fait varier la pression
+    ; un clip de blocage aide.'
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://www.klipper3d.org/Config_checks.html
+  - https://3dprintingspace.com/t/crs10s-clogging-after-a-certain-height/5452
+- id: bowden_espace_ptfe
+  titre: Jeu entre le tube Bowden/PTFE et la buse
+  categorie: extrusion
+  symptomes_visuels:
+  - Bouchons récurrents après quelques heures
+  - Stringing et suintement accrus
+  - Filament retiré avec une collerette ou un bourrelet à son extrémité
+  signes_precurseurs:
+  - Sous-extrusion progressive après plusieurs heures
+  - Tube qui remonte légèrement dans le raccord à chaque rétraction
+  - 'Historique : buse changée ou resserrée récemment'
+  moment_typique: milieu
+  point_de_non_retour: 'Quand le plastique remplit l''espace et forme un bouchon : arrêt d''extrusion.'
+  causes:
+  - Tube PTFE non poussé jusqu'à la buse
+  - Buse serrée à froid puis desserrée en chauffant
+  - Raccord pneumatique usé laissant le tube reculer
+  - Extrémité du tube coupée de travers ou brûlée
+  corrections_immediates:
+  - Aucune correction fiable pendant l'impression ; réduire la rétraction si possible (SET_RETRACTION) et surveiller
+  - 'Si arrêt d''extrusion : PAUSE / CANCEL_PRINT'
+  corrections_durables:
+  - Couper le tube bien droit, le pousser jusqu'à la buse, puis serrer la buse à chaud
+  - Remplacer le raccord, ajouter un clip anti-recul
+  - Réduire longueur de rétraction
+  - Remplacer le tube s'il est dégradé (couleur brune)
+  specifique_cr10s: 'Problème classique des têtes Creality de cette génération (CR-10S) : le liner PTFE va jusqu''à
+    la buse ; un jeu de quelques dixièmes suffit à provoquer des bouchons après de longues heures.'
+  gravite: 3
+  detectable_camera: non
+  sources:
+  - https://3dprintingspace.com/t/crs10s-clogging-after-a-certain-height/5452
+  - https://help.prusa3d.com/article/WWVRzOY1dX-clogged-nozzle
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+- id: blob_of_doom
+  titre: 'Blob of doom : plastique fondu qui englobe le bloc chauffant'
+  categorie: securite
+  symptomes_visuels:
+  - Grosse masse de plastique autour de la buse et du bloc chauffant
+  - Pièce ou spaghetti collé à la buse et entraîné avec elle
+  - Câbles de thermistance/cartouche noyés dans le plastique
+  signes_precurseurs:
+  - Pièce décollée qui reste accrochée à la buse (visible de face)
+  - Spaghetti qui s'accumule près de la buse au lieu de tomber
+  - Chaussette silicone absente ou abîmée
+  - Température buse qui devient instable (plastique qui isole ou arrache la thermistance)
+  - Score de détection de spaghetti qui monte pendant plusieurs images
+  moment_typique: debut
+  point_de_non_retour: 'Dès que le plastique entoure le bloc : nettoyage lourd, risque d''arracher fils de thermistance/cartouche
+    ; risque de défaut thermique.'
+  causes:
+  - Décollement de la pièce dans les premières couches
+  - Extrusion continue sans dépôt
+  - Absence de chaussette silicone
+  corrections_immediates:
+  - PAUSE puis TURN_OFF_HEATERS ou CANCEL_PRINT dès qu'une pièce reste accrochée à la buse
+  - '[RISQUÉ] Retirer le plastique tant qu''il est tiède/souple, chauffe coupée et gants : ne pas tirer sur les
+    fils'
+  - Ne pas relancer de chauffe tant que l'état de la thermistance n'est pas vérifié
+  corrections_durables:
+  - Chaussette silicone
+  - Détection de spaghetti avec pause automatique et coupure de chauffe
+  - Meilleure adhérence de première couche
+  - Vérifier visuellement les fils de thermistance et de cartouche après tout incident
+  specifique_cr10s: 'Bloc chauffant d''origine non protégé : un blob peut écraser les fils de la thermistance, ce
+    qui peut produire un ADC out of range ou, pire, une mesure fausse.'
+  gravite: 5
+  detectable_camera: oui
+  sources:
+  - https://wiki.bambulab.com/en/h2/maintenance/hotend_blob
+  - https://www.obico.io/blog/how-obico-ai-failure-detection-works/
+  - https://docs.duet3d.com/User_manual/Overview/Fire_safety
+- id: stringing
+  titre: Stringing (fils d'ange entre parties)
+  categorie: surface
+  symptomes_visuels:
+  - Fils fins comme des toiles d'araignée entre parties séparées
+  - Poils sur les surfaces, notamment PETG
+  signes_precurseurs:
+  - Augmentation progressive des fils au fil des couches (filament qui absorbe l'humidité pendant l'impression)
+  - Bulles, petits crépitements à la sortie de buse (humidité)
+  - Température élevée ou rétraction réduite récemment
+  moment_typique: tout_moment
+  point_de_non_retour: Esthétique ; devient gênant si les fils s'accumulent sur la buse et forment des blobs.
+  causes:
+  - Rétraction trop courte ou trop lente
+  - Température trop haute
+  - Filament humide
+  - Déplacements longs au-dessus du vide
+  - Buse sale (résidus)
+  corrections_immediates:
+  - 'Baisser la température de 5 °C : SET_HEATER_TEMPERATURE HEATER=extruder TARGET=<-5>'
+  - 'Si firmware_retraction utilisé : SET_RETRACTION RETRACT_LENGTH=<+0.5> RETRACT_SPEED=<...>'
+  - 'Augmenter la ventilation : M106 S255 (PLA)'
+  corrections_durables:
+  - Tour de température puis tour de rétraction (un paramètre à la fois)
+  - Sécher le filament
+  - Activer essuyage, rétraction au changement de couche, éviter de croiser les périmètres
+  - Nettoyer la buse
+  specifique_cr10s: 'Bowden : rétractions typiquement de plusieurs mm (souvent 4–7 mm) au lieu de < 2 mm en direct
+    ; trop de rétraction favorise le grinding et le heat creep.'
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/article/stringing-and-oozing_1805
+  - https://teachingtechyt.github.io/calibration.html
+  - https://wiki.bambulab.com/en/filament-acc/filament/dry-filament
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+- id: suintement_blobs
+  titre: Suintement, blobs et boutons (zits)
+  categorie: surface
+  symptomes_visuels:
+  - Petites bosses sur les parois, souvent alignées sur la couture
+  - Pâté de matière au démarrage d'une ligne après un déplacement
+  - Gouttes qui tombent de la buse pendant les pauses
+  signes_precurseurs:
+  - 'Pressure advance trop bas : bourrelets aux angles sur les premières couches'
+  - Matière qui pend de la buse pendant les déplacements
+  - Accumulation de matière sur la buse (PETG)
+  moment_typique: tout_moment
+  point_de_non_retour: Esthétique, sauf accumulation qui se détache sur la pièce et provoque une collision.
+  causes:
+  - Rétraction/détraction mal réglées (unretract extra)
+  - Pressure advance mal réglé
+  - Température trop haute
+  - Ralentissements de l'hôte (pauses brèves dans le flux de commandes)
+  corrections_immediates:
+  - SET_PRESSURE_ADVANCE ADVANCE=<valeur ajustée>
+  - Baisser légèrement la température
+  - SET_RETRACTION UNRETRACT_EXTRA_LENGTH=0 si firmware_retraction
+  corrections_durables:
+  - Régler pressure advance puis rétraction
+  - Placer la couture dans un angle (alignée/arrière)
+  - Essuyage, coasting modéré
+  - Nettoyer la buse
+  specifique_cr10s: ''
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://www.klipper3d.org/Pressure_Advance.html
+  - https://help.prusa3d.com/article/stringing-and-oozing_1805
+- id: surchauffe_petites_couches
+  titre: Surchauffe des petites couches (déformation, détails fondus)
+  categorie: surface
+  symptomes_visuels:
+  - Petits détails ramollis, pointes arrondies, sommets affaissés
+  - Surface brillante et déformée sur les petites sections
+  - Couches qui se soulèvent derrière la buse sur les pointes
+  signes_precurseurs:
+  - Temps de couche très court (< ~5–10 s) détecté par la télémétrie de progression
+  - Ventilateur de pièce faible ou à l'arrêt
+  - Température élevée pour le matériau
+  moment_typique: fin
+  point_de_non_retour: Défaut esthétique ; peut entraîner une collision si la pointe se recourbe.
+  causes:
+  - Temps de couche minimal insuffisant
+  - Ventilation insuffisante
+  - Température trop haute
+  corrections_immediates:
+  - 'Ralentir : M220 S60'
+  - 'Ventilation max : M106 S255'
+  - 'Baisser la température : SET_HEATER_TEMPERATURE HEATER=extruder TARGET=<-5>'
+  corrections_durables:
+  - Temps de couche minimal dans le trancheur
+  - Imprimer plusieurs copies pour allonger le temps de couche
+  - Améliorer le conduit de ventilation
+  specifique_cr10s: 'Ventilateur de pièce d''origine soufflant d''un seul côté : les surplombs du côté opposé refroidissent
+    moins.'
+  gravite: 2
+  detectable_camera: oui
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://www.creality.com/blog/3d-printing-curling
+  - https://ellis3dp.com/Print-Tuning-Guide/
+- id: cicatrices_surface_superieure
+  titre: Cicatrices / traînées sur la surface supérieure
+  categorie: surface
+  symptomes_visuels:
+  - Rayures ou traits laissés par la buse sur les surfaces du dessus
+  - Matière arrachée en surface
+  signes_precurseurs:
+  - Sur-extrusion qui soulève la surface
+  - Absence de Z-hop
+  - Bruit de frottement de la buse
+  moment_typique: fin
+  point_de_non_retour: Esthétique.
+  causes:
+  - Sur-extrusion
+  - Pas de Z-hop sur les déplacements
+  - Pillowing qui soulève la surface
+  corrections_immediates:
+  - M221 S97 pour réduire légèrement le débit
+  corrections_durables:
+  - Z-hop sur la couche supérieure
+  - Calibrer le débit
+  - Ironing si besoin
+  specifique_cr10s: ''
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+- id: pillowing
+  titre: Pillowing (surface supérieure boursouflée ou trouée)
+  categorie: surface
+  symptomes_visuels:
+  - Bosses et trous sur la dernière face plane, aspect de coussin
+  - Lignes du dessus qui s'affaissent entre les mailles du remplissage
+  signes_precurseurs:
+  - Premières couches de dessus qui pendent visiblement entre les lignes de remplissage
+  - Remplissage faible et peu de couches pleines prévues
+  moment_typique: fin
+  point_de_non_retour: Esthétique ; sans risque pour l'impression.
+  causes:
+  - Trop peu de couches supérieures
+  - Remplissage trop peu dense
+  - Refroidissement insuffisant
+  - Température trop haute
+  - Sous-extrusion
+  corrections_immediates:
+  - 'Ventilation max sur les couches supérieures : M106 S255'
+  - Baisser la température de 5 °C
+  corrections_durables:
+  - Épaisseur de dessus ~1,2–1,5 mm (5–6 couches)
+  - Remplissage 15–20 % ou gyroïde
+  - Améliorer le refroidissement
+  - Corriger toute sous-extrusion
+  specifique_cr10s: ''
+  gravite: 1
+  detectable_camera: oui
+  sources:
+  - https://all3dp.com/2/3d-printing-top-layer-problems-easy-fixes-for-pillowing/
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+- id: surplombs_qui_roulent
+  titre: Surplombs qui se recourbent (curling)
+  categorie: geometrie
+  symptomes_visuels:
+  - Bords de surplomb relevés vers le haut
+  - Lignes de surplomb affaissées puis relevées en vagues
+  signes_precurseurs:
+  - Les premières couches de surplomb se soulèvent légèrement ; la buse commence à les toucher
+  - Bruit de frottement/choc au passage des surplombs
+  - Ventilateur de pièce faible ou d'un seul côté
+  moment_typique: milieu
+  point_de_non_retour: Quand la buse heurte le bord relevé assez fort pour décrocher la pièce ou provoquer un décalage
+    de couche.
+  causes:
+  - Refroidissement insuffisant ou asymétrique
+  - Angle de surplomb trop fort
+  - Vitesse élevée sur surplomb
+  - Température trop haute
+  corrections_immediates:
+  - M106 S255 (PLA, PETG avec prudence)
+  - 'Ralentir : M220 S70'
+  - Baisser la température de 5 °C
+  corrections_durables:
+  - Supports au-delà de ~45–50°
+  - Ralentir les surplombs dans le trancheur
+  - Améliorer le conduit de ventilation
+  - Z-hop pour éviter les chocs
+  specifique_cr10s: 'Ventilation d''origine unilatérale : orienter les surplombs critiques vers la sortie du ventilateur.'
+  gravite: 2
+  detectable_camera: oui
+  sources:
+  - https://www.creality.com/blog/3d-printing-curling
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/layer_shifting.html
+- id: ponts_affaisses
+  titre: Ponts affaissés (bridging)
+  categorie: support
+  symptomes_visuels:
+  - Lignes de pont qui pendent ou se rompent
+  - Dessous de pont rugueux, filaments tombants
+  signes_precurseurs:
+  - Premières lignes du pont qui pendent visiblement
+  - Ventilation faible au moment du pont
+  moment_typique: milieu
+  point_de_non_retour: Rarement bloquant ; un pont raté peut laisser des fils qui accrochent la buse.
+  causes:
+  - Refroidissement insuffisant
+  - Pont trop long
+  - Débit ou vitesse de pont mal réglés
+  - Orientation du remplissage non perpendiculaire au vide
+  corrections_immediates:
+  - M106 S255 au moment du pont
+  - 'Ralentir légèrement : M220 S80'
+  corrections_durables:
+  - Paramètres de pont dédiés (vitesse, débit ≥ 100 %, ventilation max)
+  - Ajouter supports si pont trop long
+  - Vérifier que le trancheur reconnaît la zone comme un pont
+  specifique_cr10s: ''
+  gravite: 1
+  detectable_camera: oui
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/poor-bridging/
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+- id: delamination_couches
+  titre: Délaminage / séparation des couches
+  categorie: geometrie
+  symptomes_visuels:
+  - Fente horizontale entre deux couches
+  - Couches qui se séparent quand on presse la pièce
+  - Paroi qui s'ouvre sur plusieurs couches
+  signes_precurseurs:
+  - Température buse qui chute sous la consigne (courant d'air, ventilateur trop fort, chaussette absente)
+  - Sous-extrusion qui précède
+  - Matériau à fort retrait sans enceinte
+  - Hauteur de couche proche du diamètre de buse
+  moment_typique: milieu
+  point_de_non_retour: 'Quand la fente traverse la paroi : la pièce est mécaniquement compromise même si l''impression
+    continue.'
+  causes:
+  - Hauteur de couche > ~80 % du diamètre de buse
+  - Température trop basse
+  - Refroidissement excessif
+  - Ambiance froide / courant d'air
+  - Sous-extrusion
+  corrections_immediates:
+  - 'Augmenter la température : SET_HEATER_TEMPERATURE HEATER=extruder TARGET=<+5>'
+  - 'Réduire le ventilateur : M106 S<plus bas>'
+  - 'Ralentir : M220 S80'
+  corrections_durables:
+  - Hauteur de couche ≤ 80 % de la buse
+  - Tour de température
+  - Enceinte pour ABS/ASA
+  - Corriger la sous-extrusion
+  specifique_cr10s: ''
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/layer-separation-and-splitting/
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+  - https://help.prusa3d.com/fr/article/abs_2058
+- id: fissuration
+  titre: Fissuration (cracking) des pièces, notamment ABS/ASA
+  categorie: geometrie
+  symptomes_visuels:
+  - Fissures verticales ou en escalier sur les grandes parois, souvent près des coins
+  - Craquement audible pendant le refroidissement
+  signes_precurseurs:
+  - Coins déjà légèrement relevés (warping) sur les premières couches
+  - Écart de température important entre le bas (plateau chaud) et le haut de la pièce
+  - Courant d'air
+  moment_typique: milieu
+  point_de_non_retour: 'Dès la première fissure : elle se propage avec le retrait ; pièce mécaniquement compromise.'
+  causes:
+  - Retrait thermique et contraintes internes
+  - Ambiance froide, pas d'enceinte
+  - Température d'impression trop basse
+  - Ventilation excessive
+  corrections_immediates:
+  - Couper les courants d'air, fermer l'enceinte
+  - M106 S0 pour ABS
+  - Augmenter légèrement la température buse
+  corrections_durables:
+  - Enceinte chauffée passivement
+  - Draft shield
+  - Ventilation nulle ou très faible pour ABS/ASA
+  - Arrondir les angles
+  - Laisser refroidir lentement dans l'enceinte
+  specifique_cr10s: 'Machine ouverte et grand volume : impossible de garder une ambiance chaude homogène sans enceinte
+    ; éviter ABS/ASA de grande taille.'
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/fr/article/abs_2058
+  - https://help.prusa3d.com/en/article/warping_2011/
+  - https://matterhackers.com/articles/3d-printer-troubleshooting-guide
+- id: echec_supports
+  titre: Échec des supports (supports renversés ou mal construits)
+  categorie: support
+  symptomes_visuels:
+  - Supports tombés, cassés ou déplacés
+  - Surplomb imprimé dans le vide au-dessus d'un support absent
+  - Spaghetti localisé sous un surplomb
+  signes_precurseurs:
+  - Supports fins qui oscillent quand la buse passe
+  - Base de support décollée du plateau
+  - Sous-extrusion qui rend les supports fragiles
+  moment_typique: milieu
+  point_de_non_retour: Quand un support porteur tombe sous une zone qui doit être imprimée dessus.
+  causes:
+  - Supports trop fins ou sans base
+  - Adhérence de la base insuffisante
+  - Collision avec la buse
+  - Sous-extrusion
+  corrections_immediates:
+  - PAUSE et inspection
+  - EXCLUDE_OBJECT pour l'objet concerné s'il y en a plusieurs
+  - 'Réduire la vitesse : M220 S70'
+  corrections_durables:
+  - Supports plus denses, arbres/organiques bien ancrés, bordure de support
+  - Z-hop
+  - Corriger la sous-extrusion
+  specifique_cr10s: ''
+  gravite: 3
+  detectable_camera: oui
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://www.obico.io/blog/how-obico-ai-failure-detection-works/
+  - https://www.klipper3d.org/Exclude_Object.html
+- id: supports_trop_adherents
+  titre: Supports trop soudés / surface sous supports médiocre
+  categorie: support
+  symptomes_visuels:
+  - Dessous de surplomb rugueux, supports impossibles à retirer
+  signes_precurseurs:
+  - Interface de support imprimée trop proche
+  moment_typique: milieu
+  point_de_non_retour: Défaut de finition, pas d'échec d'impression.
+  causes:
+  - Distance Z de support trop faible
+  - Température trop haute
+  - Matériau (PETG, TPU) très adhérent
+  corrections_immediates:
+  - Aucune correction en cours utile
+  corrections_durables:
+  - Distance Z de support ~ une hauteur de couche (0,2–0,3 mm pour TPU)
+  - Interface de support
+  - Écart XY suffisant
+  specifique_cr10s: ''
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://help.prusa3d.com/fr/article/materiaux-flexibles_2057
+  - https://help.prusa3d.com/article/petg_2059
+- id: filament_humide
+  titre: Filament humide
+  categorie: materiau
+  symptomes_visuels:
+  - Stringing fort, surfaces rugueuses et mates
+  - Petites bulles/trous dans les parois
+  - Sous-extrusion et pièces fragiles
+  signes_precurseurs:
+  - Crépitements ou petits claquements à la sortie de buse, vapeur visible
+  - Bobine laissée à l'air libre (humidité relative ambiante > ~50 %)
+  - Qualité qui se dégrade au fil d'une impression longue alors que la bobine est à l'air
+  moment_typique: tout_moment
+  point_de_non_retour: Pas de point de non-retour brutal ; la pièce est de mauvaise qualité.
+  causes:
+  - Absorption d'humidité (PETG, TPU, nylon très sensibles ; PLA aussi à la longue)
+  corrections_immediates:
+  - Baisser légèrement la température pour limiter l'ébullition
+  - 'Pour une impression longue : passer la bobine dans un séchoir alimentant l''imprimante si disponible'
+  corrections_durables:
+  - 'Séchage selon le fabricant (ordre de grandeur : PLA 50–60 °C, PETG 60–70 °C, TPU 65–75 °C, ABS/ASA 75–85 °C,
+    ~8 h en étuve)'
+  - Stockage < 20 % HR avec dessiccant, hygromètre
+  specifique_cr10s: 'Bobine sur support latéral à l''air libre : prévoir une boîte sèche, mais vérifier qu''elle
+    n''ajoute pas trop de friction au Bowden.'
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://wiki.bambulab.com/en/filament-acc/filament/dry-filament
+  - https://help.prusa3d.com/en/article/under-extrusion_2007
+  - https://help.prusa3d.com/article/stringing-and-oozing_1805
+- id: fin_de_filament
+  titre: Fin de filament (runout)
+  categorie: materiau
+  symptomes_visuels:
+  - Extrusion qui s'arrête, la tête bouge sans déposer
+  - Bobine vide visible
+  signes_precurseurs:
+  - Bobine presque vide (estimation de longueur restante vs longueur du G-code)
+  - Capteur de fin de filament déclenché
+  - Extrémité de filament qui passe dans le champ de la caméra
+  moment_typique: tout_moment
+  point_de_non_retour: 'Après que le bout du filament a passé l''engrenage d''extrusion sans pause : la reprise
+    devient délicate (filament à recharger dans un Bowden long).'
+  causes:
+  - Bobine insuffisante pour le travail
+  corrections_immediates:
+  - 'PAUSE (automatique si pause_on_runout: True), changer la bobine, purger, RESUME'
+  - '[RISQUÉ] RESUME : vérifier que la buse ne laisse pas de blob à la reprise'
+  corrections_durables:
+  - '[filament_switch_sensor] ou [filament_motion_sensor] avec pause_on_runout'
+  - Comparer longueur restante et longueur estimée du travail avant lancement
+  specifique_cr10s: 'Le CR-10S est livré avec un capteur de présence (interrupteur) sur le trajet : il se déclare
+    dans Klipper par [filament_switch_sensor] ; avec un Bowden long, prévoir la longueur de filament restant entre
+    capteur et buse.'
+  gravite: 3
+  detectable_camera: oui
+  sources:
+  - https://www.klipper3d.org/Config_Reference.html
+  - https://www.klipper3d.org/G-Codes.html
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+- id: filament_emmele
+  titre: Filament emmêlé sur la bobine (nœud)
+  categorie: materiau
+  symptomes_visuels:
+  - Sous-extrusion croissante puis arrêt
+  - Bobine qui ne tourne plus, filament tendu
+  signes_precurseurs:
+  - Bobine qui tourne par à-coups
+  - Claquements de l'extrudeur de plus en plus fréquents
+  - 'Capteur de mouvement : défilement qui ralentit'
+  - Le support de bobine se déplace ou se soulève
+  moment_typique: tout_moment
+  point_de_non_retour: 'Quand le nœud bloque complètement : l''extrudeur grignote ou tire la tête/le support.'
+  causes:
+  - Spire passée sous une autre lors du stockage
+  - Bobine relâchée sans tension
+  corrections_immediates:
+  - PAUSE, défaire le nœud, RESUME
+  corrections_durables:
+  - Toujours fixer le bout libre de la bobine
+  - Support de bobine roulant
+  - Capteur de mouvement de filament
+  specifique_cr10s: ''
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://www.klipper3d.org/Config_Reference.html
+- id: petg_specifique
+  titre: 'PETG : problèmes typiques'
+  categorie: materiau
+  symptomes_visuels:
+  - Fils et poils fins
+  - Matière qui s'accumule sur la buse puis se dépose en paquets brunâtres
+  - Pièce collée trop fort au plateau lisse (arrache la surface)
+  signes_precurseurs:
+  - Boule de matière visible autour de la buse
+  - Première couche trop écrasée
+  - Humidité ambiante élevée
+  moment_typique: tout_moment
+  point_de_non_retour: Un paquet qui se détache de la buse peut heurter la pièce et provoquer un décalage ou un
+    décollement.
+  causes:
+  - Matériau collant et visqueux
+  - Température trop haute
+  - Ventilation faible
+  - Humidité
+  corrections_immediates:
+  - M106 S128 ou plus si stringing, en gardant l'adhérence intercouches
+  - Baisser la température de 5 °C
+  - PAUSE pour nettoyer la buse si un paquet se forme
+  corrections_durables:
+  - Première couche un peu moins écrasée qu'avec le PLA
+  - Colle en bâton comme agent de démoulage sur PEI lisse
+  - Sécher le filament
+  - Rétraction ajustée, vitesse modérée
+  specifique_cr10s: 'Sur liner PTFE limité à ~240–250 °C : rester dans le bas de la plage PETG.'
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/article/petg_2059
+  - https://help.prusa3d.com/article/stringing-and-oozing_1805
+  - https://wiki.bambulab.com/en/filament-acc/filament/dry-filament
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: tpu_specifique
+  titre: 'TPU / filaments flexibles : problèmes typiques'
+  categorie: materiau
+  symptomes_visuels:
+  - Filament qui flambe et se tord dans l'extrudeur
+  - Sous-extrusion, stringing
+  - Extrusion qui s'arrête
+  signes_precurseurs:
+  - Filament qui ressort par le côté de l'engrenage
+  - Claquements
+  - Vitesse > 30–40 mm/s
+  moment_typique: tout_moment
+  point_de_non_retour: 'Quand le filament s''enroule autour de l''engrenage : démontage nécessaire.'
+  causes:
+  - Bowden long (le flexible se comprime)
+  - Vitesse trop haute
+  - Rétractions
+  - Galet trop serré
+  corrections_immediates:
+  - M220 S50
+  - 'Réduire/annuler la rétraction si firmware_retraction : SET_RETRACTION RETRACT_LENGTH=0'
+  corrections_durables:
+  - Vitesse ~20 mm/s
+  - Rétraction minimale
+  - Galet moins serré
+  - Filament sec
+  specifique_cr10s: 'Le CR-10S est en Bowden long : le TPU souple (95A et moins) est très difficile ; préférer des
+    grades plus durs ou une conversion direct drive.'
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/fr/article/materiaux-flexibles_2057
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+- id: abs_asa_specifique
+  titre: 'ABS/ASA : problèmes typiques'
+  categorie: materiau
+  symptomes_visuels:
+  - Warping, fissures, délaminage
+  - Odeur forte
+  signes_precurseurs:
+  - Coins qui se relèvent dès les premières couches
+  - Courant d'air
+  - Ambiance froide
+  moment_typique: debut
+  point_de_non_retour: Au premier coin décollé ou à la première fissure sur une grande pièce.
+  causes:
+  - Fort retrait thermique
+  - Pas d'enceinte
+  corrections_immediates:
+  - M106 S0
+  - Fermer l'enceinte / couper les courants d'air
+  corrections_durables:
+  - Enceinte, draft shield, bordure
+  - Plateau ~100 °C
+  - Ventilation de la pièce (fumées) sans souffler sur l'imprimante
+  specifique_cr10s: 'Liner PTFE : l''ABS à ~250 °C est à la limite ; préférer une tête tout métal pour les matériaux
+    techniques.'
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/fr/article/abs_2058
+  - https://help.prusa3d.com/en/article/warping_2011/
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: usure_buse
+  titre: Usure de buse (diamètre élargi, pointe arrondie)
+  categorie: materiau
+  symptomes_visuels:
+  - Détails moins nets, stringing accru
+  - Première couche qui s'épaissit au fil du temps
+  - Trous dans les parois, surplombs dégradés
+  signes_precurseurs:
+  - Historique d'impressions abrasives (fibres de carbone, phosphorescent, chargés) sur buse laiton
+  - Dérive lente du Z offset nécessaire
+  - Pointe de buse visiblement émoussée (macro photo)
+  moment_typique: tout_moment
+  point_de_non_retour: Dégradation progressive ; pas d'échec brutal.
+  causes:
+  - Matériaux abrasifs
+  - Buse laiton bon marché
+  - Raclage du plateau
+  corrections_immediates:
+  - 'Compenser la première couche : SET_GCODE_OFFSET Z_ADJUST=<...> MOVE=1'
+  corrections_durables:
+  - Remplacer la buse ; buse acier trempé/rubis/carbure pour abrasifs
+  - Mesurer l'orifice par cold pull
+  - Refaire le Z offset après changement
+  specifique_cr10s: ''
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://cnckitchen.com/blog/how-much-abrasive-filaments-damage-your-nozzle
+  - https://help.prusa3d.com/en/article/under-extrusion_2007
+- id: retraction_mal_reglee
+  titre: Rétraction mal réglée
+  categorie: calibration
+  symptomes_visuels:
+  - 'Trop faible : stringing, blobs'
+  - 'Trop forte : trous au début des lignes, grinding, bouchons'
+  signes_precurseurs:
+  - Claquement pendant les séquences de rétractions rapprochées
+  - Sous-extrusion juste après les déplacements
+  moment_typique: tout_moment
+  point_de_non_retour: Une rétraction excessive peut mener au heat creep ou au grinding et donc à l'arrêt d'extrusion.
+  causes:
+  - Valeurs non adaptées au Bowden/direct
+  - Pressure advance non pris en compte (réduit le besoin de rétraction)
+  corrections_immediates:
+  - 'Uniquement si le G-code utilise G10/G11 avec [firmware_retraction] : SET_RETRACTION RETRACT_LENGTH=<mm> RETRACT_SPEED=<mm/s>
+    UNRETRACT_EXTRA_LENGTH=<mm> UNRETRACT_SPEED=<mm/s>'
+  corrections_durables:
+  - Tour de rétraction en changeant un seul paramètre
+  - Régler pressure advance avant la rétraction
+  - Activer [firmware_retraction] pour pouvoir ajuster en direct
+  specifique_cr10s: 'Bowden : rétraction de plusieurs millimètres ; vitesse modérée pour ne pas grignoter.'
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://teachingtechyt.github.io/calibration.html
+  - https://help.prusa3d.com/article/stringing-and-oozing_1805
+  - https://www.klipper3d.org/Config_Reference.html
+  - https://www.klipper3d.org/G-Codes.html
+- id: pressure_advance_mal_regle
+  titre: Pressure advance mal réglé
+  categorie: calibration
+  symptomes_visuels:
+  - 'Trop bas : bourrelets aux angles, parois plus fines après les angles'
+  - 'Trop haut : angles arrondis/creusés, manque de matière avant les angles, trous au début des lignes'
+  signes_precurseurs:
+  - Extrudeur qui saute des pas aux changements d'accélération (valeur trop haute)
+  - Changement de filament, de température ou d'input shaper sans re-réglage
+  moment_typique: tout_moment
+  point_de_non_retour: Esthétique, sauf sauts de pas répétés.
+  causes:
+  - Valeur non mesurée
+  - Changement de matériau ou de Bowden
+  corrections_immediates:
+  - SET_PRESSURE_ADVANCE ADVANCE=<valeur> [SMOOTH_TIME=<s>]
+  - '[RISQUÉ] Valeurs très élevées combinées à des accélérations fortes : sauts de pas extrudeur'
+  corrections_durables:
+  - 'Procédure de la tour carrée : SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=1 ACCEL=500 puis TUNING_TOWER COMMAND=SET_PRESSURE_ADVANCE
+    PARAMETER=ADVANCE START=0 FACTOR=.020 (Bowden) ou .005 (direct), mesurer la hauteur des meilleurs angles'
+  - Enregistrer pressure_advance dans [extruder], refaire après changement d'input shaper
+  specifique_cr10s: 'Bowden : facteur de tour 0,020 et valeurs finales souvent élevées (plage typique 0,05–1,0,
+    haut de plage pour Bowden).'
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://www.klipper3d.org/Pressure_Advance.html
+  - https://www.klipper3d.org/G-Codes.html
+  - https://teachingtechyt.github.io/calibration.html
+- id: input_shaper_mal_regle
+  titre: Input shaper absent ou mal réglé
+  categorie: calibration
+  symptomes_visuels:
+  - Ringing résiduel
+  - Détails lissés/arrondis à forte accélération (lissage excessif)
+  signes_precurseurs:
+  - Changement de masse de la tête, de tension de courroie ou de plateau depuis la dernière mesure
+  moment_typique: tout_moment
+  point_de_non_retour: Esthétique ; à l'excès, max_accel trop haut favorise les décalages.
+  causes:
+  - Fréquence non mesurée ou obsolète
+  - Type de shaper inadapté
+  - max_accel trop élevé pour le shaper
+  corrections_immediates:
+  - SET_INPUT_SHAPER SHAPER_TYPE=mzv SHAPER_FREQ_X=<f> SHAPER_FREQ_Y=<f>
+  - SET_VELOCITY_LIMIT ACCEL=<plus bas>
+  corrections_durables:
+  - Mesurer avec ADXL345 (TEST_RESONANCES AXIS=X/Y, SHAPER_CALIBRATE) ou tour de ringing
+  - Fixer max_accel selon ringing et lissage
+  - Refaire pressure advance ensuite
+  specifique_cr10s: Pour Y (plateau mobile), monter l'accéléromètre sur le plateau.
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://www.klipper3d.org/Resonance_Compensation.html
+  - https://www.klipper3d.org/Measuring_Resonances.html
+  - https://www.klipper3d.org/G-Codes.html
+- id: bed_mesh_problemes
+  titre: Problèmes de maillage du plateau (bed mesh)
+  categorie: calibration
+  symptomes_visuels:
+  - Première couche bonne au centre et mauvaise sur certaines zones
+  - Motif de première couche qui ne correspond pas à la forme du plateau
+  signes_precurseurs:
+  - Maillage non chargé au démarrage (BED_MESH_PROFILE LOAD absent)
+  - Maillage mesuré à froid ou avec un autre plateau
+  - Z offset du palpeur modifié après le maillage
+  moment_typique: premiere_couche
+  point_de_non_retour: Pendant la première couche ; au-delà, la compensation s'estompe (fade) et le problème devient
+    un décollement.
+  causes:
+  - Maillage absent/périmé
+  - Offset de palpeur faux
+  - Zone défectueuse (aimants sous la plaque)
+  - fade_end trop court sur plateau très déformé
+  corrections_immediates:
+  - SET_GCODE_OFFSET Z_ADJUST pour la zone imprimée si une seule pièce
+  - Sinon CANCEL_PRINT puis BED_MESH_CALIBRATE
+  corrections_durables:
+  - Calibrer l'offset Z du palpeur avant le maillage
+  - BED_MESH_CALIBRATE à chaud, BED_MESH_PROFILE SAVE=<nom>, SAVE_CONFIG
+  - Charger le profil dans le G-code de début
+  - Maillage adaptatif pour petites pièces (ne pas le réutiliser)
+  - fade_start/fade_end pour estomper la correction
+  - faulty_region si nécessaire
+  specifique_cr10s: 'Sans palpeur d''origine : BED_MESH_CALIBRATE METHOD=manual (fastidieux) ou ajout d''un BLTouch.
+    Plateau aluminium 300×300 souvent creux ou bombé.'
+  gravite: 3
+  detectable_camera: partiel
+  sources:
+  - https://www.klipper3d.org/Bed_Mesh.html
+  - https://www.klipper3d.org/G-Codes.html
+- id: rotation_distance_extrudeur
+  titre: rotation_distance de l'extrudeur faux
+  categorie: calibration
+  symptomes_visuels:
+  - Sous- ou sur-extrusion systématique sur toutes les impressions
+  signes_precurseurs:
+  - Changement d'extrudeur, d'engrenage ou de micro-pas sans recalcul
+  moment_typique: tout_moment
+  point_de_non_retour: Défaut systématique.
+  causes:
+  - Valeur par défaut non calibrée
+  - Formules de conversion steps/mm mal appliquées
+  corrections_immediates:
+  - M221 S<%> en palliatif, ou SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=extruder DISTANCE=<valeur> (à valider hors
+    impression)
+  corrections_durables:
+  - Marquer le filament, extruder 50 mm lentement (G91 puis G1 E50 F60), mesurer ; nouvelle = ancienne × réel /
+    demandé
+  - Répéter si l'écart dépasse ~2 mm
+  specifique_cr10s: 'Exemple de config Klipper CR-10S : rotation_distance extrudeur 33,683 (à recalibrer sur sa
+    machine).'
+  gravite: 2
+  detectable_camera: non
+  sources:
+  - https://www.klipper3d.org/Rotation_Distance.html
+  - https://www.klipper3d.org/G-Codes.html
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: pause_reprise_defectueuse
+  titre: Reprise après pause défectueuse
+  categorie: firmware_klipper
+  symptomes_visuels:
+  - Ligne de défaut ou blob à la hauteur de reprise
+  - Couche décalée en Z ou en XY après RESUME
+  - Couche manquante
+  signes_precurseurs:
+  - 'Pause longue : la buse suinte et refroidit la pièce'
+  - Position modifiée pendant la pause (homing, déplacement manuel)
+  moment_typique: tout_moment
+  point_de_non_retour: Au RESUME ; si la position a été perdue, la suite est décalée.
+  causes:
+  - Suintement pendant la pause
+  - Pas de rétraction/relevage en pause
+  - Moteurs coupés pendant la pause (position perdue)
+  corrections_immediates:
+  - Garder les moteurs actifs pendant la pause
+  - Purger hors pièce avant RESUME
+  - RESUME VELOCITY=<lent>
+  corrections_durables:
+  - Macros PAUSE/RESUME avec relevage Z, rétraction, parking, purge
+  - '[pause_resume] recover_velocity adapté'
+  - Ne pas augmenter idle_timeout trop court (coupe les moteurs)
+  specifique_cr10s: 'Bowden : une pause longue laisse le filament suinter ; prévoir une rétraction avant parking.'
+  gravite: 2
+  detectable_camera: oui
+  sources:
+  - https://www.klipper3d.org/G-Codes.html
+  - https://www.klipper3d.org/Config_Reference.html
+- id: emballement_thermique
+  titre: Emballement thermique (thermal runaway)
+  categorie: securite
+  symptomes_visuels:
+  - Fumée, odeur de brûlé, plastique qui bout ou noircit au niveau de la buse ou du plateau
+  - Plateau ou bloc qui rougeoie (cas extrême)
+  signes_precurseurs:
+  - Température mesurée qui reste basse alors que la puissance de chauffe est à 100 % (thermistance sortie du bloc)
+  - Température lue qui chute brutalement ou devient incohérente
+  - Écart croissant entre consigne et mesure sans raison (courant d'air ne suffit pas à l'expliquer)
+  - 'Klipper : erreur « not heating at expected rate » ou « ADC out of range » (protections qui se déclenchent)'
+  moment_typique: tout_moment
+  point_de_non_retour: 'Dès qu''il y a combustion ou que la thermistance ne mesure plus le bloc : arrêt d''urgence
+    obligatoire.'
+  causes:
+  - Thermistance détachée du bloc
+  - MOSFET ou relais en court-circuit qui chauffe en continu
+  - Câblage endommagé
+  - Protections logicielles désactivées ou relâchées
+  corrections_immediates:
+  - M112 (arrêt d'urgence) immédiatement
+  - Couper l'alimentation secteur (prise pilotée Moonraker [power] ou manuelle)
+  - Ne pas relancer avant inspection physique ; extincteur à proximité
+  corrections_durables:
+  - Ne jamais désactiver ni relâcher [verify_heater] (max_error 120, check_gain_time 20 s buse / 60 s plateau par
+    défaut)
+  - Fixer correctement la thermistance (vis/collier), vérifier les fils
+  - Fusible thermique sur le plateau
+  - Détecteur de fumée, éventuellement relié à la coupure secteur
+  - Cartouche de puissance raisonnable
+  specifique_cr10s: 'Électronique de 2017 : vérifier MOSFET et connecteurs de lit. Les firmwares Marlin d''origine
+    de certaines séries Creality anciennes n''activaient pas toujours la protection thermique ; avec Klipper, verify_heater
+    est actif par défaut.'
+  gravite: 5
+  detectable_camera: partiel
+  sources:
+  - https://docs.duet3d.com/User_manual/Overview/Fire_safety
+  - https://hackaday.com/2016/12/07/dont-leave-3d-printers-unattended-they-can-catch-fire/
+  - https://www.klipper3d.org/Config_Reference.html
+  - https://www.klipper3d.org/FAQ.html
+- id: chauffe_pas_au_rythme_attendu
+  titre: 'Klipper : « Heater extruder not heating at expected rate »'
+  categorie: firmware_klipper
+  symptomes_visuels:
+  - Impression arrêtée net (Klipper en shutdown) ; buse et plateau refroidissent
+  signes_precurseurs:
+  - Température buse qui chute de plusieurs degrés quand le ventilateur de pièce passe à fond
+  - Chaussette silicone absente
+  - Puissance PWM de la buse proche de 100 % pour tenir la consigne
+  - Montée en température plus lente que d'habitude au démarrage
+  moment_typique: tout_moment
+  point_de_non_retour: Le shutdown arrête l'impression ; la pièce est perdue (pas de reprise native).
+  causes:
+  - Ventilateur de pièce qui souffle sur le bloc
+  - Chaussette absente
+  - PID mal calibré
+  - Cartouche chauffante faible ou connexion défaillante
+  - Thermistance mal fixée
+  corrections_immediates:
+  - 'Avant le shutdown, si dérive détectée : réduire le ventilateur M106 S<plus bas>'
+  - 'Après shutdown : FIRMWARE_RESTART seulement après diagnostic'
+  corrections_durables:
+  - PID_CALIBRATE HEATER=extruder TARGET=<temp> avec le ventilateur à sa vitesse d'impression
+  - Chaussette silicone
+  - Orienter le conduit pour ne pas refroidir le bloc
+  - Vérifier cartouche et thermistance
+  - N'augmenter max_error qu'en connaissance de cause (masque le symptôme)
+  specifique_cr10s: ''
+  gravite: 4
+  detectable_camera: non
+  sources:
+  - https://klipper.discourse.group/t/heater-extruder-not-heating-at-expected-rate/87
+  - https://www.klipper3d.org/Config_Reference.html
+  - https://www.klipper3d.org/Config_checks.html
+- id: adc_out_of_range
+  titre: 'Klipper : « ADC out of range » (thermistance hors plage)'
+  categorie: electronique
+  symptomes_visuels:
+  - Arrêt brutal de l'impression (shutdown MCU)
+  signes_precurseurs:
+  - Pics ou chutes brèves et incohérentes de la température lue (connecteur intermittent)
+  - Lecture qui saute quand la tête bouge (fil cassé dans la gaine)
+  - Température lue proche de min_temp/max_temp
+  moment_typique: tout_moment
+  point_de_non_retour: Le shutdown arrête l'impression.
+  causes:
+  - Thermistance ou fils endommagés (souvent par flexion répétée)
+  - Connecteur desserré
+  - min_temp/max_temp irréalistes
+  - Blob qui a écrasé les fils
+  corrections_immediates:
+  - Aucune ; après l'erreur, consulter klippy.log, inspecter puis FIRMWARE_RESTART
+  corrections_durables:
+  - Remplacer thermistance/câble, sécuriser le connecteur
+  - Garder des limites min_temp/max_temp réalistes (ne pas les élargir pour faire taire l'erreur)
+  - Gaine et décharge de traction sur le faisceau de la tête
+  specifique_cr10s: Faisceau de tête d'origine soumis à flexion sur tout le portique ; contrôler aussi le câble
+    du plateau Y (300 mm de course).
+  gravite: 4
+  detectable_camera: non
+  sources:
+  - https://klipper.discourse.group/t/adc-out-of-range/6643
+  - https://www.klipper3d.org/FAQ.html
+  - https://www.klipper3d.org/Config_Reference.html
+- id: oscillation_temperature
+  titre: Oscillation ou instabilité de température
+  categorie: thermique
+  symptomes_visuels:
+  - Bandes horizontales ou variations de brillance corrélées à la température
+  signes_precurseurs:
+  - Courbe de température qui oscille de plus de ±2 °C autour de la consigne
+  - Oscillations qui apparaissent avec le ventilateur de pièce
+  moment_typique: tout_moment
+  point_de_non_retour: Esthétique, mais peut déclencher verify_heater si l'amplitude grandit.
+  causes:
+  - PID non calibré
+  - Courants d'air
+  - Thermistance mal fixée
+  corrections_immediates:
+  - Réduire le ventilateur si c'est lui qui déstabilise
+  corrections_durables:
+  - PID_CALIBRATE puis SAVE_CONFIG
+  - Chaussette silicone
+  - Fixer la thermistance
+  specifique_cr10s: 'Exemple de config CR-10S : PID plateau et buse fournis à titre indicatif ; recalibrer sur sa
+    machine.'
+  gravite: 2
+  detectable_camera: non
+  sources:
+  - https://www.klipper3d.org/Config_checks.html
+  - https://www.obico.io/blog/fixing-z-banding-wobble-a-comprehensive-guide/
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: ventilateur_hotend_en_panne
+  titre: Ventilateur du radiateur de la tête en panne
+  categorie: thermique
+  symptomes_visuels:
+  - Pas de symptôme visuel au début ; puis heat creep et arrêt d'extrusion
+  signes_precurseurs:
+  - Bruit du ventilateur qui change ou disparaît
+  - Hélice arrêtée visible si la caméra la voit
+  - Tachymètre à 0 tr/min si câblé ([heater_fan] tachometer_pin)
+  moment_typique: tout_moment
+  point_de_non_retour: Quand le filament se bloque dans le radiateur (heat creep).
+  causes:
+  - Usure du roulement, poussière, câble coupé, filament dans l'hélice
+  corrections_immediates:
+  - PAUSE et TURN_OFF_HEATERS si le ventilateur est arrêté (évite le heat creep et la surchauffe du support de tête)
+  corrections_durables:
+  - Remplacer le ventilateur, ajouter surveillance tachymétrique
+  - Nettoyer régulièrement
+  specifique_cr10s: Sur le CR-10S, le ventilateur de radiateur est piloté de façon fixe sur certaines versions ;
+    vérifier qu'il démarre bien à chaque impression.
+  gravite: 4
+  detectable_camera: partiel
+  sources:
+  - https://help.prusa3d.com/article/extrusion-stopped-mid-print-heat-creep_1948
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/extruder_skipping.html
+  - https://www.klipper3d.org/Config_Reference.html
+- id: ventilateur_piece_en_panne
+  titre: Ventilateur de refroidissement de pièce en panne
+  categorie: thermique
+  symptomes_visuels:
+  - Surplombs qui pendent, petits détails fondus, ponts ratés
+  signes_precurseurs:
+  - Dégradation soudaine des surplombs alors que les couches précédentes étaient bonnes
+  - M106 commandé mais aucun bruit/flux
+  moment_typique: milieu
+  point_de_non_retour: 'Pour PLA avec surplombs : collision probable avec des bords recourbés.'
+  causes:
+  - Ventilateur cassé ou câble coupé
+  - Conduit bouché
+  corrections_immediates:
+  - 'Ralentir : M220 S50'
+  - Ajouter un ventilateur externe
+  - PAUSE si la pièce a beaucoup de surplombs
+  corrections_durables:
+  - Remplacer le ventilateur
+  - Vérifier le conduit
+  specifique_cr10s: ''
+  gravite: 3
+  detectable_camera: oui
+  sources:
+  - https://help.prusa3d.com/en/article/warping_2011/
+  - https://www.creality.com/blog/3d-printing-curling
+- id: pilotes_moteur_surchauffe
+  titre: Surchauffe des pilotes moteurs (drivers)
+  categorie: electronique
+  symptomes_visuels:
+  - Décalages de couches qui apparaissent après un long temps d'impression
+  signes_precurseurs:
+  - Décalages plus fréquents en fin d'impression longue
+  - Boîtier électronique chaud, ventilateur de boîtier arrêté
+  - 'TMC : drapeau ot/otpw dans DUMP_TMC, message « TMC reports error »'
+  moment_typique: fin
+  point_de_non_retour: Au premier décalage ; puis la pièce est perdue.
+  causes:
+  - Courant moteur trop élevé
+  - Mauvaise ventilation du boîtier
+  - Ambiance chaude
+  corrections_immediates:
+  - 'Réduire vitesses/accélérations : M220 S70, SET_VELOCITY_LIMIT ACCEL=<bas>'
+  - 'TMC seulement : SET_TMC_CURRENT STEPPER=<nom> CURRENT=<plus bas> (risque de perte de couple)'
+  corrections_durables:
+  - Ventiler le boîtier, dissipateurs
+  - Courant moteur adapté (moteur tiède, pas brûlant)
+  - Nettoyer les filtres/ventilateurs
+  specifique_cr10s: 'Boîtier électronique séparé du CR-10S avec ventilateur : le vérifier ; pilotes de la carte
+    d''origine non configurables par logiciel (pas de DUMP_TMC).'
+  gravite: 3
+  detectable_camera: non
+  sources:
+  - https://www.klipper3d.org/TMC_Drivers.html
+  - https://ellis3dp.com/Print-Tuning-Guide/articles/troubleshooting/layer_shifting.html
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: mcu_timer_too_close
+  titre: 'Klipper : « MCU shutdown: Timer too close » (et erreurs de timing associées)'
+  categorie: firmware_klipper
+  symptomes_visuels:
+  - Arrêt brutal ; la tête s'immobilise sur la pièce (risque de trou fondu si la chauffe n'était pas coupée — Klipper
+    coupe les chauffes en shutdown)
+  signes_precurseurs:
+  - Charge CPU de l'hôte élevée (rendu de timelapse, mises à jour, autres services)
+  - Swap, carte SD lente, sous-tension du Raspberry Pi
+  - Vitesses/micro-pas élevés sur MCU 8 bits
+  - Graphiques de charge (graphstats) proches de la saturation
+  moment_typique: tout_moment
+  point_de_non_retour: Le shutdown arrête l'impression sans reprise native.
+  causes:
+  - Hôte surchargé
+  - MCU proche de sa limite de génération de pas
+  - Problème USB
+  corrections_immediates:
+  - Aucune une fois déclenché ; FIRMWARE_RESTART après diagnostic
+  - 'Préventif : éviter de lancer des tâches lourdes (encodage timelapse, IA lourde) sur le même hôte pendant l''impression'
+  corrections_durables:
+  - Analyser klippy.log avec scripts/graphstats.py
+  - Alléger l'hôte, alimentation 5 V correcte
+  - Garder des micro-pas raisonnables sur ATmega2560
+  - Déporter l'IA de vision sur une autre machine que l'hôte Klipper
+  specifique_cr10s: 'MCU ATmega2560 à 16 MHz : capacité de pas limitée (de l''ordre de 157 k pas/s pour un seul
+    moteur selon les mesures Klipper), donc rester à 16 micro-pas et éviter des vitesses extrêmes. L''assistant
+    IA ne doit pas tourner sur le même Raspberry Pi s''il est chargé.'
+  gravite: 4
+  detectable_camera: non
+  sources:
+  - https://klipper.discourse.group/t/diagnose-timer-too-close-event/2121
+  - https://www.klipper3d.org/Debugging.html
+  - https://www.klipper3d.org/Features.html
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: perte_communication_mcu
+  titre: 'Klipper : « Lost communication with MCU »'
+  categorie: electronique
+  symptomes_visuels:
+  - Arrêt brutal de l'impression
+  signes_precurseurs:
+  - Déconnexions USB dans les journaux système
+  - Câble USB long/non blindé, alimentation 5 V partagée
+  - ModemManager actif sur l'hôte
+  moment_typique: tout_moment
+  point_de_non_retour: Immédiat.
+  causes:
+  - Câble USB, prise, alimentation de l'hôte insuffisante
+  - Bruit dû au mélange des alimentations 5 V
+  - Logiciel qui accapare le port série
+  corrections_immediates:
+  - Aucune ; reconnecter, FIRMWARE_RESTART
+  corrections_durables:
+  - Câble USB court et de qualité, ferrite
+  - Alimenter l'hôte correctement
+  - Retirer ModemManager
+  - Utiliser le chemin /dev/serial/by-id pour serial
+  specifique_cr10s: 'Carte d''origine en USB-série : préférer un chemin /dev/serial/by-id stable à /dev/ttyUSB0
+    de l''exemple.'
+  gravite: 4
+  detectable_camera: non
+  sources:
+  - https://www.klipper3d.org/FAQ.html
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: erreur_extrusion_klipper
+  titre: 'Klipper : erreurs d''extrusion (« Extrude below minimum temp », « Move exceeds maximum extrusion »)'
+  categorie: firmware_klipper
+  symptomes_visuels:
+  - Impression arrêtée en erreur au début ou après une pause
+  signes_precurseurs:
+  - Commande d'extrusion envoyée avant que la buse soit chaude
+  - G-code avec une section d'extrusion aberrante
+  moment_typique: debut
+  point_de_non_retour: Immédiat.
+  causes:
+  - Ordre de chauffe incorrect dans le G-code de début
+  - min_extrude_temp (170 °C par défaut)
+  - max_extrude_only_distance (50 mm par défaut) dépassé lors d'une purge ou d'un chargement
+  - max_extrude_cross_section dépassé (4 × diamètre buse² par défaut)
+  corrections_immediates:
+  - Corriger le G-code de début et relancer
+  corrections_durables:
+  - Utiliser TEMPERATURE_WAIT / M109 avant toute extrusion
+  - Adapter les macros de chargement pour un Bowden long (plusieurs mouvements < 50 mm ou relever max_extrude_only_distance
+    prudemment)
+  specifique_cr10s: 'Bowden long : une macro de chargement de filament dépasse facilement 50 mm d''un coup ; la
+    découper.'
+  gravite: 2
+  detectable_camera: non
+  sources:
+  - https://www.klipper3d.org/Config_Reference.html
+  - https://www.klipper3d.org/G-Codes.html
+- id: coupure_courant
+  titre: Coupure de courant
+  categorie: electronique
+  symptomes_visuels:
+  - Imprimante éteinte, caméra et hôte parfois aussi
+  signes_precurseurs:
+  - Micro-coupures, lumière qui vacille
+  - Onduleur qui bascule sur batterie (si présent)
+  moment_typique: tout_moment
+  point_de_non_retour: 'Immédiat : Klipper n''a pas de reprise native ; la pièce refroidit et se décolle souvent.'
+  causes:
+  - Réseau électrique
+  - Disjoncteur
+  - Alimentation de l'imprimante défaillante
+  corrections_immediates:
+  - 'Si onduleur : PAUSE dès bascule sur batterie, relever la buse, couper le plateau en dernier'
+  corrections_durables:
+  - Onduleur pour hôte (et imprimante si possible)
+  - Outils tiers de reprise (sauvegarde de la hauteur Z à chaque couche) en acceptant leurs risques
+  - 'Ne pas compter sur la reprise : relancer en sautant les couches faites demande un recalage manuel'
+  specifique_cr10s: ''
+  gravite: 3
+  detectable_camera: non
+  sources:
+  - https://klipper.discourse.group/t/resume-print-after-power-loss/2682
+  - https://github.com/The--Captain/plr-klipper
+  - https://moonraker.readthedocs.io/en/latest/configuration/
+- id: connecteur_plateau_surchauffe
+  titre: Connecteur ou câble du plateau qui chauffe
+  categorie: securite
+  symptomes_visuels:
+  - Plastique du connecteur bruni ou fondu, odeur de chaud près du câble du plateau
+  signes_precurseurs:
+  - Chauffe du plateau irrégulière, chutes de température en mouvement
+  - Connecteur tiède/chaud au toucher, décoloration
+  moment_typique: tout_moment
+  point_de_non_retour: 'Quand le connecteur carbonise : risque d''arc et d''incendie.'
+  causes:
+  - Fort courant du plateau à travers un connecteur sous-dimensionné ou mal serti
+  - Flexion répétée du câble (plateau mobile)
+  - Bornier desserré
+  corrections_immediates:
+  - M112 et coupure secteur si odeur de brûlé
+  corrections_durables:
+  - Inspection régulière, sertissage correct, connecteurs dimensionnés
+  - Relais/MOSFET externe pour le plateau
+  - Décharge de traction sur le câble du plateau
+  specifique_cr10s: 'Plateau 300×300 sur axe Y mobile : câble en flexion permanente et courant élevé ; point de
+    vigilance majeur sur le CR-10S.'
+  gravite: 5
+  detectable_camera: partiel
+  sources:
+  - https://hackaday.com/2016/12/07/dont-leave-3d-printers-unattended-they-can-catch-fire/
+  - https://docs.duet3d.com/User_manual/Overview/Fire_safety
+- id: risque_incendie_precautions
+  titre: 'Risque d''incendie : précautions générales'
+  categorie: securite
+  symptomes_visuels:
+  - Fumée, flammes, lueur anormale, plastique noirci
+  signes_precurseurs:
+  - Odeur de brûlé
+  - Température incohérente
+  - Défaut de chauffe répété
+  - Bruit de crépitement électrique
+  moment_typique: tout_moment
+  point_de_non_retour: Dès qu'il y a combustion.
+  causes:
+  - Défaut de thermistance
+  - MOSFET en court-circuit
+  - Connecteurs
+  - Filament accumulé près d'une source chaude
+  corrections_immediates:
+  - M112, coupure secteur, extincteur adapté (CO2/poudre), ne pas ouvrir une enceinte en feu sans précaution
+  - Prévenir les secours si le feu s'étend
+  corrections_durables:
+  - Détecteur de fumée au-dessus de l'imprimante (idéalement relié à une coupure)
+  - Fusibles thermiques
+  - Prise pilotée par Moonraker ([power]) pour coupure à distance
+  - Surface non inflammable autour et sous l'imprimante
+  - Ne jamais désactiver verify_heater ; limiter max_temp
+  - Ne pas laisser l'imprimante sans surveillance sur de longues périodes sans ces protections
+  specifique_cr10s: 'Imprimante de 2017 : vérifier MOSFET, borniers et câble plateau ; prévoir une prise pilotée.'
+  gravite: 5
+  detectable_camera: partiel
+  sources:
+  - https://docs.duet3d.com/User_manual/Overview/Fire_safety
+  - https://hackaday.com/2016/12/07/dont-leave-3d-printers-unattended-they-can-catch-fire/
+  - https://moonraker.readthedocs.io/en/latest/configuration/
+  - https://www.klipper3d.org/Config_Reference.html
+- id: fumee_odeur_anormale
+  titre: Fumée ou odeur anormale pendant l'impression
+  categorie: securite
+  symptomes_visuels:
+  - Volutes de fumée près de la buse, du plateau ou du boîtier électronique
+  signes_precurseurs:
+  - Odeur de plastique brûlé (filament surchauffé ou blob)
+  - Odeur électrique (connecteurs)
+  moment_typique: tout_moment
+  point_de_non_retour: Immédiat si la fumée vient de l'électronique ou d'un connecteur.
+  causes:
+  - Blob carbonisé
+  - Filament trop chaud
+  - Défaut électrique
+  corrections_immediates:
+  - PAUSE + TURN_OFF_HEATERS si la fumée vient de la buse ; M112 et coupure secteur si la source est électrique
+    ou inconnue
+  corrections_durables:
+  - Rechercher la cause avant toute relance
+  - Ventilation de la pièce
+  specifique_cr10s: ''
+  gravite: 5
+  detectable_camera: partiel
+  sources:
+  - https://docs.duet3d.com/User_manual/Overview/Fire_safety
+  - https://hackaday.com/2016/12/07/dont-leave-3d-printers-unattended-they-can-catch-fire/
+  - https://wiki.bambulab.com/en/h2/maintenance/hotend_blob
+- id: diametre_filament_variable
+  titre: Diamètre de filament variable ou ovale
+  categorie: materiau
+  symptomes_visuels:
+  - Extrusion irrégulière, parois d'épaisseur variable
+  signes_precurseurs:
+  - Mesures au pied à coulisse hors tolérance (±0,05 mm habituel)
+  - Filament qui force dans le Bowden
+  moment_typique: tout_moment
+  point_de_non_retour: Rarement bloquant, sauf surépaisseur qui bloque dans le tube.
+  causes:
+  - Fabrication de mauvaise qualité
+  corrections_immediates:
+  - Ajuster M221 si la dérive est systématique
+  corrections_durables:
+  - Changer de fournisseur
+  - Mesurer plusieurs points et régler filament_diameter/débit
+  specifique_cr10s: ''
+  gravite: 2
+  detectable_camera: non
+  sources:
+  - https://help.prusa3d.com/en/article/under-extrusion_2007
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+- id: precision_dimensionnelle
+  titre: Précision dimensionnelle insuffisante
+  categorie: calibration
+  symptomes_visuels:
+  - Trous trop petits, pièces qui ne s'emboîtent pas
+  - Dimensions extérieures trop grandes
+  signes_precurseurs:
+  - Sur-extrusion
+  - Pied d'éléphant
+  - Retrait thermique du matériau (ABS ~1–2 %)
+  moment_typique: tout_moment
+  point_de_non_retour: Non applicable.
+  causes:
+  - Débit mal calibré
+  - 'rotation_distance des axes faux (rare : à calculer, pas à mesurer)'
+  - Retrait matériau
+  corrections_immediates:
+  - Aucune
+  corrections_durables:
+  - Calibrer débit puis compenser trous/retrait dans le trancheur
+  - Calculer rotation_distance X/Y/Z à partir des poulies/vis (40 mm et 8 mm sur CR-10S)
+  specifique_cr10s: rotation_distance X/Y = 40 (poulie 20 dents GT2), Z = 8 dans la config d'exemple.
+  gravite: 1
+  detectable_camera: non
+  sources:
+  - https://www.klipper3d.org/Rotation_Distance.html
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://help.prusa3d.com/fr/article/abs_2058
+  - https://github.com/Klipper3d/klipper/blob/master/config/printer-creality-cr10s-2017.cfg
+- id: trous_couches_superieures
+  titre: Trous ou manques dans les couches supérieures
+  categorie: surface
+  symptomes_visuels:
+  - Surface du dessus ajourée, lignes qui ne se rejoignent pas
+  signes_precurseurs:
+  - Sous-extrusion
+  - Couches pleines insuffisantes
+  - Remplissage trop clairsemé
+  moment_typique: fin
+  point_de_non_retour: Esthétique.
+  causes:
+  - Pas assez de couches supérieures
+  - Sous-extrusion
+  - Refroidissement insuffisant
+  corrections_immediates:
+  - M221 S105, M106 S255
+  corrections_durables:
+  - Plus de couches supérieures
+  - Remplissage plus dense
+  - Corriger la sous-extrusion
+  specifique_cr10s: ''
+  gravite: 1
+  detectable_camera: oui
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+  - https://all3dp.com/2/3d-printing-top-layer-problems-easy-fixes-for-pillowing/
+- id: lacunes_parois_minces
+  titre: Manques dans les parois minces / petits détails non imprimés
+  categorie: geometrie
+  symptomes_visuels:
+  - Murs fins avec un vide au milieu, détails absents
+  signes_precurseurs:
+  - Visible dans l'aperçu du trancheur avant impression
+  moment_typique: tout_moment
+  point_de_non_retour: Non applicable (problème de tranchage).
+  causes:
+  - Épaisseur non multiple de la largeur de ligne
+  - Détails plus petits que la buse
+  corrections_immediates:
+  - Aucune
+  corrections_durables:
+  - Générateur de périmètres variable (Arachne)
+  - Adapter la largeur de ligne ou le modèle
+  - Buse plus fine
+  specifique_cr10s: ''
+  gravite: 1
+  detectable_camera: partiel
+  sources:
+  - https://www.simplify3d.com/resources/print-quality-troubleshooting/
+- id: detection_camera_limites
+  titre: Limites de la détection par caméra (à connaître pour l'assistant)
+  categorie: electronique
+  symptomes_visuels:
+  - 'Faux positifs : supports complexes, remplissage visible, filament transparent ou de la même couleur que le
+    plateau, éclairage variable'
+  - 'Faux négatifs : bouchons, sous-extrusion, stringing léger, premiers stades de spaghetti, première couche'
+  signes_precurseurs:
+  - Score de défaillance qui augmente lentement sur plusieurs images (préférer une tendance lissée à une image isolée)
+  - Changement d'éclairage brutal (lumière allumée) qui fait varier le score sans changement de la pièce
+  moment_typique: tout_moment
+  point_de_non_retour: Non applicable.
+  causes:
+  - Angle de caméra (vue de dessus peu adaptée aux décalages de couches)
+  - Fréquence d'image faible (une image toutes les 10–60 s)
+  - Modèle entraîné sur d'autres machines
+  corrections_immediates:
+  - 'Ne pas annuler automatiquement sur une seule image : alerter, puis PAUSE si la tendance se confirme'
+  corrections_durables:
+  - Éclairage fixe, caméra rigide, vue de côté en plus de la vue d'ensemble, ROI sur la zone de la pièce
+  - Combiner avec télémétrie (températures, capteur de mouvement filament, temps de couche)
+  specifique_cr10s: 'Grand volume (300×300×400) : une seule caméra voit les petites pièces de loin ; recadrer sur
+    la zone imprimée en se servant des coordonnées de l''objet (EXCLUDE_OBJECT_DEFINE).'
+  gravite: 2
+  detectable_camera: partiel
+  sources:
+  - https://www.obico.io/blog/how-obico-ai-failure-detection-works/
+  - https://github.com/TheSpaghettiDetective/obico-server
+  - https://www.klipper3d.org/Exclude_Object.html
+  - https://www.nature.com/articles/s41467-022-31985-y
+- id: stringing_entre_objets_multi
+  titre: Fils et collisions en impression multi-objets
+  categorie: surface
+  symptomes_visuels:
+  - Fils entre les objets, petites pièces arrachées lors des déplacements
+  signes_precurseurs:
+  - Longs déplacements au-dessus du vide
+  - Objets hauts et fins
+  moment_typique: milieu
+  point_de_non_retour: Quand un objet est arraché.
+  causes:
+  - Déplacements longs, rétraction insuffisante
+  corrections_immediates:
+  - EXCLUDE_OBJECT NAME=<objet> pour abandonner un objet défectueux sans arrêter les autres
+  corrections_durables:
+  - Impression séquentielle si possible (attention aux collisions de portique)
+  - Éviter de croiser les périmètres
+  specifique_cr10s: ''
+  gravite: 2
+  detectable_camera: oui
+  sources:
+  - https://www.klipper3d.org/Exclude_Object.html
+  - https://help.prusa3d.com/article/stringing-and-oozing_1805

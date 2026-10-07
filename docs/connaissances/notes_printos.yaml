@@ -1,0 +1,560 @@
+# Base de connaissances Printos — impression 3D FDM, réglages, Klipper, PrusaSlicer.
+# Chargée dans la mémoire FTS5 (RAG local) par `python -m printer_agent knowledge seed`.
+# Éditable : ajoutez vos notes, relancez seed (idempotent : les notes inchangées sont ignorées).
+#
+# Champs : topic (sujet court), kind (fact|decision|preference|calibration|design), tags (liste), text.
+# Les textes sont des consignes opérationnelles chiffrées : Printos les cite dans ses diagnostics.
+
+version: 1
+notes:
+
+  # ======================================================================
+  # SÉCURITÉ (toujours prioritaire)
+  # ======================================================================
+  - topic: securite
+    tags: [temperature, ptfe, bowden, cr10s, hotend]
+    text: >
+      Hotend CR-10S d'origine = tube PTFE jusqu'à la buse : ne JAMAIS dépasser 240 °C en continu
+      (dégradation du PTFE, fumées toxiques, bouchages). Au-delà (PETG chaud, ABS) il faut un
+      hotend all-metal ou un tube Capricorn + heatbreak bimétal. Plafond agent : extruder max 250 °C
+      par Klipper, mais viser ≤ 240 °C pour ce hotend.
+
+  - topic: securite
+    tags: [thermal_runaway, verify_heater, klipper]
+    text: >
+      Signes de défaillance thermique : température qui n'atteint pas la cible en > 3 min, écart cible/mesure
+      > 15 °C stable, chute brutale (thermistance décollée), montée sans chauffe commandée (MOSFET collé).
+      Réaction : pause, TURN_OFF_HEATERS, si la température continue de monter -> M112 et couper l'alimentation.
+      Klipper verify_heater protège déjà, mais l'agent doit surveiller les dérives lentes.
+
+  - topic: securite
+    tags: [save_config, klipper, restart]
+    text: >
+      SAVE_CONFIG redémarre Klipper : interdit pendant une impression (perte du job). Faire Z_OFFSET_APPLY_PROBE
+      puis SAVE_CONFIG uniquement imprimante à l'arrêt, buse froide de préférence.
+
+  - topic: securite
+    tags: [pause, resume, retract, ooze]
+    text: >
+      Une pause longue laisse la buse couler (ooze) : à la reprise, purger 5-10 mm en dehors de la pièce
+      si possible, sinon accepter un petit défaut local. Pause > 10 min sur PLA : baisser la buse à 170-180 °C
+      pour limiter la dégradation et la coulure, remonter avant RESUME.
+
+  # ======================================================================
+  # DÉFAUTS : reconnaissance -> causes -> correctifs ordonnés
+  # ======================================================================
+  - topic: defauts
+    tags: [spaghetti, detachment, critical]
+    text: >
+      SPAGHETTI : filament extrudé dans le vide (pièce décollée ou support effondré). Reconnaissance visuelle :
+      amas de fils bouclés au-dessus/à côté de la pièce, buse qui trace sans support. Action : annuler
+      immédiatement (continuer gaspille et risque d'emballer la buse dans le plastique). Causes : adhérence
+      1re couche, warping, support trop faible, choc buse/pièce (Z trop bas ou surextrusion en hauteur).
+
+  - topic: defauts
+    tags: [stringing, retraction, temperature, humidite]
+    text: >
+      STRINGING (fils entre les parties) : causes par ordre de probabilité : filament humide (crépite, bulles),
+      température trop haute (+5 °C = beaucoup plus de fils), rétraction insuffisante, déplacements lents.
+      Correctifs : sécher le filament ; -5 °C par pas ; rétraction bowden +0,5 mm (4-6 mm typique CR-10S)
+      ou vitesse de rétraction 40-50 mm/s ; activer wipe et "avoid crossing perimeters" ; vitesse travel 150+ mm/s.
+
+  - topic: defauts
+    tags: [warping, adhesion, bed, brim, refroidissement]
+    text: >
+      WARPING (coins qui se soulèvent) : retrait thermique. PLA : lit 60-65 °C, ventilateur pièce à 0 % sur
+      couche 1-2 puis progressif, brim 5-8 mm, "mouse ears" sur les coins, éviter courants d'air. PETG :
+      lit 75-85 °C, ventilo ≤ 50 %. ABS/ASA : lit 95-110 °C, caisson fermé indispensable, fan 0-20 %.
+      Grands plats fins et coins vifs = risque max ; arrondir les coins au design (r ≥ 3 mm) aide beaucoup.
+
+  - topic: defauts
+    tags: [detachment, adhesion, first_layer, z_offset]
+    text: >
+      DÉCOLLEMENT PLATEAU : 1re couche trop haute (fils ronds non écrasés, se décollent au doigt) ou plateau
+      gras/poussiéreux ou lit trop froid. Correctifs : nettoyage eau chaude + savon (l'IPA seul étale les gras),
+      Z-offset -0,02 à -0,05 mm par pas, lit +5 °C, vitesse 1re couche 15-20 mm/s, hauteur 1re couche 0,2-0,24 mm,
+      largeur 1re couche 120-140 %.
+
+  - topic: defauts
+    tags: [under_extrusion, flow, clog, temperature, debit]
+    text: >
+      SOUS-EXTRUSION : couches avec trous/gaps, périmètres fins, top layers troués. Causes : débit volumique
+      demandé > capacité hotend (PLA stock ≈ 10-12 mm³/s ; à 0,4 mm et 0,2 mm de couche, 100 mm/s = 8 mm³/s),
+      bouchage partiel, extrudeur qui patine (tension, dents encrassées), filament humide, température trop basse,
+      rotation_distance mal calibrée. Correctifs à chaud : flux +3 à +5 % (M221), +5 °C, vitesse -20 %.
+      Durable : calibrer rotation_distance puis flux, réduire filament_max_volumetric_speed.
+
+  - topic: defauts
+    tags: [over_extrusion, flow, blob, dimension]
+    text: >
+      SUR-EXTRUSION : surfaces bosselées, blobs aux angles, pièce trop grande, buse qui racle les couches.
+      Correctifs : extrusion_multiplier -2 % par pas (calibrer avec cube monoparoi), température -5 °C, vérifier
+      que le diamètre filament dans le profil = 1,75 (mesurer réellement : 1,72-1,78 change 3-7 % de débit).
+
+  - topic: defauts
+    tags: [blob, zits, seam, retraction, pressure_advance]
+    text: >
+      BLOBS / ZITS sur la surface : couture (seam) mal placée, pression résiduelle au démarrage d'un périmètre,
+      coasting absent. Correctifs : Pressure Advance calibrée (Klipper), retract_restart_extra 0, seam "rear"
+      ou "aligned", wipe activé, léger deretract plus lent (25-35 mm/s), température -5 °C.
+
+  - topic: defauts
+    tags: [layer_shift, mecanique, courroie, vitesse, acceleration]
+    text: >
+      DÉCALAGE DE COUCHE : pertes de pas moteur. Causes : courroie détendue, poulie desserrée, vitesse/accel trop
+      hautes, collision buse-pièce (blob dur, warping), courant driver trop faible, surchauffe driver. À chaud :
+      annuler si décalage > 1 mm (pièce fichue). Prévention : accel 500-1500 mm/s² sur CR-10S (portique lourd),
+      vérifier tension courroies (ton grave "ping"), Z-hop sur rétraction pour éviter les accrochages.
+
+  - topic: defauts
+    tags: [elephant_foot, first_layer, compensation]
+    text: >
+      PIED D'ÉLÉPHANT : 1re couche qui déborde. Causes : Z trop bas, lit trop chaud, 1re couche trop écrasée.
+      Correctif : elefant_foot_compensation 0,1-0,2 mm, Z-offset +0,02 mm, lit -5 °C, ou un chanfrein 0,5 mm au
+      design. Ne pas confondre avec une bonne 1re couche légèrement plus large (normal à 120 % de largeur).
+
+  - topic: defauts
+    tags: [ghosting, ringing, input_shaper, vibration]
+    text: >
+      GHOSTING / RINGING : ondulations écho des angles sur les surfaces. Vibrations du portique. Correctifs :
+      Klipper input shaper (mesure ADXL345 ou test de tour de ringing), accélération plus basse, serrer la structure,
+      pieds anti-vibration, vitesse périmètres externes 40-60 mm/s.
+
+  - topic: defauts
+    tags: [z_banding, z_wobble, axe_z, tige]
+    text: >
+      Z-BANDING : bandes horizontales régulières. Tige filetée voilée ou contrainte (coupleur rigide), écrou
+      trop serré, hauteur de couche non multiple du pas moteur (utiliser 0,12/0,16/0,20/0,24/0,28 sur un pas
+      standard 8 mm/200 pas). Vérifier aussi la température stable (PID) : les variations de ±3 °C font des bandes.
+
+  - topic: defauts
+    tags: [pillowing, top_layers, refroidissement, infill]
+    text: >
+      PILLOWING : dessus bosselé/troué. Trop peu de couches supérieures (mettre ≥ 5 à 0,2 mm, ou ≥ 1 mm d'épaisseur),
+      refroidissement insuffisant sur les top layers, infill trop faible (< 10 %). Augmenter top_solid_layers,
+      fan 100 % sur le dessus, ou infill 15-20 %.
+
+  - topic: defauts
+    tags: [cracks, layer_separation, adhesion_couche, temperature, refroidissement]
+    text: >
+      FISSURES / SÉPARATION DE COUCHES : couches qui ne fusionnent pas. Température trop basse, refroidissement
+      trop fort (surtout ABS/PETG), couche trop haute pour la buse (max 75 % du diamètre : 0,3 mm avec 0,4).
+      Correctifs : +5 à +10 °C, fan -20 à -50 %, caisson pour ABS.
+
+  - topic: defauts
+    tags: [clog, heat_creep, bowden, ptfe, jam]
+    text: >
+      BOUCHAGE / HEAT CREEP : extrudeur qui clique, sous-extrusion progressive, puis rien. Causes : PTFE
+      dégradé/mal enfoncé (jeu au niveau de la buse = fuite et bouchage), heat creep (ventilateur hotend faible,
+      rétractions longues et nombreuses), poussière/filament carbonisé, température trop basse pour le débit.
+      Traitement : cold pull (chauffer 200 -> refroidir 90 °C, tirer), changer PTFE/buse. Prévention : rétraction ≤ 6 mm
+      en bowden, ventilateur hotend toujours à 100 %.
+
+  - topic: defauts
+    tags: [overhang, surplomb, refroidissement, vitesse]
+    text: >
+      SURPLOMBS qui gondolent (au-delà de 45-50°) : refroidissement insuffisant, vitesse trop haute, température
+      trop haute. Correctifs : fan 100 %, vitesse surplombs 20-30 mm/s (PrusaSlicer : "overhangs" slowdown),
+      supports ou modifier le design (chanfrein 45°).
+
+  - topic: defauts
+    tags: [bridging, pont, refroidissement]
+    text: >
+      PONTS qui s'affaissent : bridge_fan_speed 100 %, vitesse pont 20-30 mm/s, bridge_flow_ratio 0,9-0,95,
+      ne pas dépasser 30-40 mm de pont sans support en PLA.
+
+  - topic: defauts
+    tags: [surface, mate, brillante, humidite, temperature]
+    text: >
+      Indices visuels de température : surface mate et cassante = trop froid ; surface très brillante, angles
+      mous, stringing = trop chaud ; petites bulles/cratères et crépitement = filament humide (pas un problème
+      de température !). Toujours écarter l'humidité avant de toucher aux températures.
+
+  - topic: defauts
+    tags: [first_layer, diagnostic_visuel, z_offset]
+    text: >
+      1re couche idéale : lignes légèrement aplaties se touchant sans espace ni bourrelet, surface mate uniforme,
+      pas de translucidité entre lignes. Trop haute : lignes rondes séparées, se détachent. Trop basse : lignes
+      très fines/transparentes, bourrelets entre lignes, buse qui racle, surface rugueuse. Pas de correction
+      Z : 0,02 mm.
+
+  # ======================================================================
+  # MATÉRIAUX
+  # ======================================================================
+  - topic: materiaux
+    tags: [pla, temperature, lit, fan, retraction]
+    text: >
+      PLA : buse 195-215 °C (PLA+ / PLA "silk" 210-225), 1re couche +5 à +10 °C, lit 55-65 °C (1re couche 60-65),
+      fan 80-100 % dès la couche 2-3, rétraction bowden 4-6 mm à 40-50 mm/s. Densité 1,24 g/cm³. Ramollit dès
+      55-60 °C : pas pour pièces au soleil/voiture. Hygroscopique modéré : sécher 45-50 °C 4-6 h si stringing/bulles.
+
+  - topic: materiaux
+    tags: [petg, temperature, lit, fan, retraction, adhesion]
+    text: >
+      PETG : buse 225-245 °C (attention PTFE ≤ 240 °C sur CR-10S stock), lit 70-85 °C, fan 30-50 % (0 % couche 1),
+      rétraction plus courte que PLA et plus lente (bowden 3-5 mm à 30-40 mm/s) car le PETG file beaucoup.
+      Densité 1,27. Colle TRÈS fort au PEI lisse (risque d'arracher la surface) : utiliser Z-offset +0,05 mm ou
+      colle/bâton comme couche de séparation. Très hygroscopique : sécher 65 °C 6 h. Vitesse modérée 40-60 mm/s.
+
+  - topic: materiaux
+    tags: [abs, asa, temperature, lit, caisson, fumees]
+    text: >
+      ABS/ASA : buse 235-255 °C (nécessite hotend all-metal sur CR-10S), lit 95-110 °C, fan 0-20 %, caisson fermé
+      obligatoire (retrait 0,8 %, warping violent), fumées : ventilation. ASA plus résistant UV, un peu moins de
+      warping. Densité 1,04-1,07. Rétraction 4-6 mm bowden.
+
+  - topic: materiaux
+    tags: [tpu, flexible, bowden, vitesse, retraction]
+    text: >
+      TPU (flexible, 95A) : buse 215-235 °C, lit 30-50 °C, fan 30-50 %, vitesse LENTE 15-30 mm/s, rétraction
+      minimale (0-2 mm) ou désactivée, accélération basse. En bowden c'est difficile (flambage dans le tube) :
+      95A seulement, chemin filament sans jeu. Densité 1,21. Très hygroscopique.
+
+  - topic: materiaux
+    tags: [nylon, pa, humidite, sechage]
+    text: >
+      Nylon (PA) : buse 250-275 °C (all-metal), lit 70-90 °C avec colle PVA, fan 0 %, caisson. Absorbe l'eau en
+      heures : IMPRIMER DEPUIS UN SÉCHOIR. Sécher 70-80 °C 12 h. Densité 1,12. Retrait élevé.
+
+  - topic: materiaux
+    tags: [densite, budget, grammes, calcul]
+    text: >
+      Densités pour le calcul des grammes (filament 1,75 mm, section 2,405 mm²) : PLA 1,24 ; PLA+ 1,25 ;
+      PETG 1,27 ; ABS 1,04 ; ASA 1,07 ; TPU 1,21 ; Nylon 1,12 ; PC 1,20. Formule : g = L(mm) x 2,405 x densité / 1000.
+      Ex. 1 m de PLA = 2,98 g. Une bobine 1 kg PLA ≈ 335 m.
+
+  - topic: materiaux
+    tags: [humidite, sechage, stockage, filament_box]
+    text: >
+      Filament humide : crépitements/vapeur à la buse, bulles, surface rugueuse mate, stringing massif, fragilité,
+      sous-extrusion aléatoire. Seuils caisson : < 35 %RH idéal, 35-50 % à surveiller (PETG/Nylon déjà pénalisés),
+      > 50 % critique. Séchage (four/déshydrateur) : PLA 45-50 °C 4-6 h, PETG 60-65 °C 6 h, ABS 70-80 °C 4 h,
+      TPU 55 °C 6 h, Nylon 75-80 °C 12 h. Stockage : boîte étanche + silice + hygromètre.
+
+  # ======================================================================
+  # CALIBRATION : ordre et procédures
+  # ======================================================================
+  - topic: calibration
+    tags: [ordre, procedure, methode]
+    text: >
+      ORDRE DE CALIBRATION (chaque étape dépend de la précédente) : 1) mécanique (courroies, excentriques, lit plan)
+      2) PID hotend et lit 3) rotation_distance extrudeur (e-steps) 4) Z-offset / 1re couche 5) bed mesh 6) tour de
+      température 7) flux (extrusion_multiplier) 8) Pressure Advance 9) rétraction 10) input shaper 11) vitesse /
+      débit volumique max. Refaire 6-9 pour CHAQUE nouveau filament (ou marque/couleur).
+
+  - topic: calibration
+    tags: [rotation_distance, esteps, extrudeur, klipper]
+    text: >
+      rotation_distance (Klipper) : marquer 120 mm de filament avant l'extrudeur, chauffer, extruder 100 mm lentement
+      (G1 E100 F60), mesurer le reste. Nouveau = ancien x (mesuré_extrudé / 100). Précision cible ±1 %. Filament
+      détaché de la buse pour la mesure (sans contre-pression) ou accepter ~2 % d'écart. Coût : ~0,3 g.
+
+  - topic: calibration
+    tags: [flow, extrusion_multiplier, cube_monoparoi, formule]
+    text: >
+      FLUX : cube 20-30 mm à 1 périmètre, 0 top, largeur d'extrusion connue W (ex. 0,45). Mesurer l'épaisseur des 4
+      parois au pied à coulisse (milieu de hauteur), moyenne M. Nouveau multiplicateur = ancien x W / M. Cible ±0,02 mm.
+      Alternative (plus fiable avec Arachne) : cube plein 5 top layers et juger la surface du dessus (trous = -,
+      bourrelets = +). Coût ≈ 1,5-2 g.
+
+  - topic: calibration
+    tags: [temp_tower, temperature, criteres]
+    text: >
+      TOUR DE TEMPÉRATURE : paliers de 5 °C, 10 mm de haut chacun, du plus chaud (bas) au plus froid (haut), plage
+      PLA 225 -> 195. Klipper : TUNING_TOWER COMMAND=M104 PARAMETER=S START=225 STEP_DELTA=-5 STEP_HEIGHT=10.
+      Choisir le palier avec : surplombs nets, pont propre, peu de stringing, couches bien fusionnées (test
+      de casse à la main). Si plusieurs sont bons, préférer le plus chaud pour la solidité. Coût ≈ 10-12 g.
+
+  - topic: calibration
+    tags: [pressure_advance, klipper, tuning_tower, formule]
+    text: >
+      PRESSURE ADVANCE (Klipper) : SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=1 ACCEL=500 puis
+      TUNING_TOWER COMMAND=SET_PRESSURE_ADVANCE PARAMETER=ADVANCE START=0 FACTOR=.020 (bowden ; .005 direct)
+      sur le carré test PA (square_tower.stl). Mesurer la hauteur H (mm) où les angles sont les plus nets sans
+      bosses ni creux : PA = START + H x FACTOR. Bowden CR-10S typique 0,4-0,9 ; direct 0,02-0,08.
+      Appliquer : SET_PRESSURE_ADVANCE ADVANCE=x puis dans [extruder] pressure_advance ou via start gcode.
+      Coût ≈ 4 g. Symptômes PA trop haute : angles creusés, gaps après les coins ; trop basse : bosses aux angles.
+
+  - topic: calibration
+    tags: [retraction, bowden, test, stringing]
+    text: >
+      RÉTRACTION : deux piliers à 50-70 mm, tester longueur 2 -> 7 mm par pas de 1 (bowden) ou 0,4 -> 1,6 (direct),
+      vitesse 30-60 mm/s. Choisir la plus courte sans fils. CR-10S bowden 1 m : commencer à 5 mm / 45 mm/s.
+      Une longueur > 7 mm en bowden provoque heat creep et bouchages. Pressure Advance bien réglée permet de
+      réduire la rétraction. Coût ≈ 3-4 g.
+
+  - topic: calibration
+    tags: [z_offset, first_layer, bltouch, probe, babystep]
+    text: >
+      Z-OFFSET (BLTouch) : PROBE_CALIBRATE + méthode papier (frottement léger) pour la base, puis affinage en
+      imprimant un patch 1re couche 50x50 : SET_GCODE_OFFSET Z_ADJUST=-0.02 MOVE=1 (descendre) / +0.02 (monter)
+      pendant l'impression. Sauver : Z_OFFSET_APPLY_PROBE puis SAVE_CONFIG (hors impression). Le z_offset varie
+      avec la température du lit : calibrer lit chaud. Valeur actuelle CR-10S : 2,115.
+
+  - topic: calibration
+    tags: [bed_mesh, klipper, plateau, mesh]
+    text: >
+      BED MESH : lit chaud à la température d'impression, BED_MESH_CALIBRATE avec 5x5 points mini pour 300x300,
+      algorithme bicubic. Écart max acceptable 0,3 mm ; au-delà, régler mécaniquement (vis, entretoises de verre).
+      Charger le mesh dans le start gcode (BED_MESH_PROFILE LOAD=default). Refaire après tout démontage du lit.
+
+  - topic: calibration
+    tags: [pid, klipper, temperature, stabilite]
+    text: >
+      PID : PID_CALIBRATE HEATER=extruder TARGET=210 (fan pièce à la vitesse d'impression, ~50 %) puis
+      PID_CALIBRATE HEATER=heater_bed TARGET=60, SAVE_CONFIG. Refaire après changement de ventilateur, silicone sock,
+      ou si la température oscille > ±2 °C.
+
+  - topic: calibration
+    tags: [input_shaper, resonance, adxl345, klipper]
+    text: >
+      INPUT SHAPER : avec ADXL345 : SHAPER_CALIBRATE, appliquer la recommandation, SAVE_CONFIG. Sans accéléro :
+      tour de ringing + mesure de la distance entre ondulations (f = v / d). CR-10S typique : X 35-45 Hz, Y 30-40 Hz,
+      shaper mzv ou ei. Permet d'accélérer à 2000-3000 mm/s² sans ghosting.
+
+  - topic: calibration
+    tags: [debit_volumique, max_volumetric_speed, hotend]
+    text: >
+      DÉBIT VOLUMIQUE MAX : extruder à vitesse croissante (ex. 100 mm de filament à F300, F360, F420...) et noter
+      où l'extrudeur clique/patine ; capacité = vitesse(mm/s) x 2,405 mm³. Hotend stock CR-10S PLA ≈ 10-12 mm³/s,
+      avec buse 0,4. Régler filament_max_volumetric_speed à 80 % de cette valeur : PrusaSlicer ralentira automatiquement.
+      Valeur profil actuelle 24 mm³/s = trop optimiste pour un hotend stock.
+
+  - topic: calibration
+    tags: [budget, cout, grammes, tests]
+    text: >
+      COÛT DES TESTS (PLA, buse 0,4) : cube flux monoparoi 1,5-2 g ; patch 1re couche 50x50 1-1,5 g ; tour de
+      température (7 paliers) 10-12 g ; carré PA 3-4 g ; test rétraction 3-4 g ; e-steps 0,3 g ; tour de ringing 6 g ;
+      calibration cube XYZ 20 mm 4 g. Ratio information/gramme : flux > PA > 1re couche > rétraction > température.
+
+  # ======================================================================
+  # KLIPPER : commandes utiles pour l'agent
+  # ======================================================================
+  - topic: klipper
+    tags: [commandes, m221, m220, flow, vitesse]
+    text: >
+      Réglages à chaud : M221 S105 (flux 105 %), M220 S80 (vitesse 80 %), M106 S128 (fan 50 %), M104 S210 (buse),
+      M140 S65 (lit), SET_GCODE_OFFSET Z_ADJUST=-0.02 MOVE=1 (babystep), SET_PRESSURE_ADVANCE ADVANCE=0.6,
+      SET_VELOCITY_LIMIT ACCEL=1000, SET_RETRACTION RETRACT_LENGTH=5 (si firmware_retraction). Ces réglages
+      sont perdus au redémarrage : reporter les bons dans le profil slicer ou printer.cfg.
+
+  - topic: klipper
+    tags: [pause, resume, cancel, macros, park]
+    text: >
+      PAUSE (macro) : parque la tête, garde les températures ; RESUME reprend ; CANCEL_PRINT stoppe et coupe les
+      chauffes. Après PAUSE, tout G1 en absolu sur X/Y est sûr ; en Z, rester >= Z_pause + 5 mm pour une inspection
+      caméra, et ne pas dépasser max Z 400. idle_timeout (600 s par défaut) coupe les chauffes en pause longue :
+      SET_IDLE_TIMEOUT TIMEOUT=3600 avant une inspection longue, remettre ensuite.
+
+  - topic: klipper
+    tags: [pressure_advance, smooth_time, extruder]
+    text: >
+      [extruder] pressure_advance et pressure_advance_smooth_time (0,04 défaut ; 0,02-0,03 pour direct drive rapide).
+      PA dépend du filament ET de la température : recalibrer si l'un change. Une PA trop haute en bowden crée des
+      gaps au démarrage des périmètres (l'extrudeur "tire" trop).
+
+  - topic: klipper
+    tags: [firmware_retraction, retraction, g10, g11]
+    text: >
+      [firmware_retraction] permet SET_RETRACTION à chaud ; le slicer doit alors utiliser G10/G11 (PrusaSlicer :
+      "use_firmware_retraction = 1"). Avantage : tester la rétraction sans re-slicer. Sinon la rétraction est figée
+      dans le G-code (retract_length du profil imprimante ou filament_retract_length).
+
+  - topic: klipper
+    tags: [moonraker, api, objets, print_stats]
+    text: >
+      Objets Moonraker utiles : print_stats (state, filename, filament_used, print_duration), display_status (progress),
+      toolhead (position, homed_axes), gcode_move (speed_factor, extrude_factor, homing_origin = babystep Z),
+      extruder/heater_bed (temperature, target, power), fan (speed), virtual_sdcard (file_position), idle_timeout.
+      filament_used (mm) -> grammes via densité : base du compteur de budget.
+
+  # ======================================================================
+  # PRUSASLICER : réglages et effets
+  # ======================================================================
+  - topic: prusaslicer
+    tags: [extrusion_multiplier, flow, filament]
+    text: >
+      extrusion_multiplier (profil filament) : facteur global de débit. Plage utile 0,90-1,10 ; au-delà, c'est un
+      autre problème (rotation_distance, diamètre filament, buse usée). Équivaut à M221 : si l'agent a imprimé
+      avec succès à M221 S105, porter le multiplicateur x1,05 et revenir à 100 % à chaud.
+
+  - topic: prusaslicer
+    tags: [temperature, first_layer_temperature, filament]
+    text: >
+      temperature / first_layer_temperature : la 1re couche +5 à +10 °C améliore l'adhérence ; ne jamais mettre la
+      1re couche plus froide que les autres. bed_temperature / first_layer_bed_temperature idem (+5 °C 1re couche).
+      Avec Klipper flavor, PrusaSlicer émet M104/M190 au démarrage selon le start_gcode.
+
+  - topic: prusaslicer
+    tags: [retraction, retract_length, retract_speed, retract_lift, wipe]
+    text: >
+      Rétraction : retract_length (profil imprimante) peut être surchargé par filament_retract_length (profil filament,
+      "nil" = hériter). retract_speed 40-50 ; deretract_speed 25-40 (plus lent = moins de blobs) ; retract_lift 0,2-0,4
+      (Z-hop : évite d'accrocher, trop haut = stringing) ; retract_before_travel 2 mm ; wipe = 1 (essuie la buse) ;
+      retract_layer_change 1 sur bowden. Le profil CR-10S actuel a 0,8 mm : très bas pour du bowden, compensé par
+      la PA ; si stringing, augmenter par pas de 0,5 jusqu'à 5 mm.
+
+  - topic: prusaslicer
+    tags: [first_layer, hauteur, vitesse, largeur, adhesion]
+    text: >
+      1re couche : first_layer_height 0,2-0,24 (plus tolérant aux défauts de planéité), first_layer_speed 15-25 mm/s,
+      first_layer_extrusion_width 120-140 % (0,5-0,55 mm avec buse 0,4), elefant_foot_compensation 0,1-0,2 mm.
+      brim_width 5-8 mm pour pièces hautes/fines, brim_type outer_only, brim_separation 0,1 pour décoller facilement.
+
+  - topic: prusaslicer
+    tags: [vitesses, perimeter_speed, infill_speed, external_perimeter_speed, qualite]
+    text: >
+      Vitesses (mm/s) CR-10S réalistes : external_perimeter 35-50 (qualité de surface), perimeter 60-80, infill 80-120,
+      travel 150-200, first_layer 20, small_perimeters 25, bridges 25-30, gap_fill 20. Le profil actuel infill 180 /
+      périmètres 100 est agressif pour un portique CR-10S : viser -20 % si ghosting ou layer shift.
+      slowdown_below_layer_time 15-20 s ; min_print_speed 10.
+
+  - topic: prusaslicer
+    tags: [refroidissement, fan, min_fan_speed, max_fan_speed, bridge_fan_speed]
+    text: >
+      Refroidissement : min_fan_speed / max_fan_speed (PrusaSlicer module la vitesse entre les deux selon le temps de
+      couche), disable_fan_first_layers 1-3, bridge_fan_speed 100, full_fan_speed_layer 4. PLA 80-100 %, PETG 30-50 %,
+      ABS 0-20 %. Trop de ventilation = fissures et warping ; trop peu = surplombs mous et blobs.
+
+  - topic: prusaslicer
+    tags: [perimetres, couches, infill, solidite]
+    text: >
+      Structure : perimeters 3 (solide) / 2 (rapide) ; top_solid_layers 5-7 et bottom 4-5 à 0,2 mm (viser ≥ 1 mm) ;
+      fill_density 15-20 % gyroid (isotrope, silencieux) ou cubic ; > 40 % rarement utile, préférer plus de
+      périmètres pour la solidité. infill_overlap 25 % (jonction infill/périmètre). Arachne (perimeter_generator)
+      améliore les parois fines.
+
+  - topic: prusaslicer
+    tags: [seam, couture, qualite_surface]
+    text: >
+      seam_position : "aligned" (ligne droite discrète), "rear" (cache la couture à l'arrière), "nearest" (rapide,
+      moche), "random" (pas de ligne mais zits partout). Pour pièces visibles : aligned ou rear + PA bien calibrée.
+      Une couture bosselée = PA trop basse ou deretract trop rapide.
+
+  - topic: prusaslicer
+    tags: [supports, support_material, overhang]
+    text: >
+      Supports : support_material 1 avec threshold 50-55° ; support_material_contact_distance 0,2 (PLA) permet le
+      détachement ; interface layers 2-3 ; pattern rectilinear ; "supports on build plate only" pour éviter les marques.
+      Support organique (organic) économise 30-50 % de matière et se retire mieux. Ne pas oublier : chaque support
+      est une zone à risque de spaghetti si sa base décolle.
+
+  - topic: prusaslicer
+    tags: [cli, ligne_de_commande, export_gcode, load]
+    text: >
+      CLI : prusa-slicer-console.exe --export-gcode --load profil.ini --output sortie.gcode modele.stl. Options utiles :
+      --center X,Y (placement), --scale 1.0, --rotate-z deg, --dont-arrange, --info (dimensions/volume STL sans slicer),
+      --export-stl (réparer/fusionner un mesh). Toute clé de config peut être passée en option : --temperature 205.
+      Le G-code produit contient la config complète en pied de page (base du profil appris de Printos).
+
+  - topic: prusaslicer
+    tags: [estimations, temps, grammes, gcode, commentaires]
+    text: >
+      Le G-code PrusaSlicer contient : "; estimated printing time (normal mode) = 9h 30m 12s", "; filament used [mm]",
+      "; filament used [g]", "; filament cost", ";LAYER_CHANGE" par couche, "; total layers count". Les temps réels
+      Klipper sont souvent +5 à +15 % (accélérations réelles, chauffe). Le budget filament utilise "filament used [g]".
+
+  # ======================================================================
+  # CR-10S : spécificités
+  # ======================================================================
+  - topic: cr10s
+    tags: [cinematique, bowden, portique, limites]
+    text: >
+      CR-10S : cartésienne "bed slinger" (lit mobile en Y, portique X/Z), volume 300x300x400, bowden ~700 mm, extrudeur
+      d'origine en plastique (dents en laiton, tension ressort à surveiller ; l'upgrade métal ou dual gear supprime
+      les patinages), BLTouch, double Z. Le lit lourd en Y limite l'accélération (500-1500 mm/s²) : le ghosting
+      apparaît d'abord sur les faces X.
+
+  - topic: cr10s
+    tags: [plateau, verre, pei, adhesion, nettoyage]
+    text: >
+      Surfaces CR-10S : verre (lisse brillant, PLA colle chaud/décolle froid, nettoyer au savon), PEI texturé
+      (excellent PLA/PETG, nettoyer IPA puis savon si baisse d'adhérence, jamais d'acétone), tapis "Cmagnet" (usure
+      rapide). Un plateau touché avec les doigts = gras = décollement. La texture PEI cache légèrement le pied d'éléphant.
+
+  - topic: cr10s
+    tags: [bltouch, probe, offset, mesh]
+    text: >
+      BLTouch monté à gauche/arrière de la buse (offset x -46,77 / y -3,29 dans cette config) : la zone palpable est
+      décalée ; le mesh ne couvre pas tout le bord droit. Une valeur z_offset qui dérive de > 0,1 mm entre deux
+      sessions = BLTouch desserré ou pin sale.
+
+  - topic: cr10s
+    tags: [ventilation, hotend_fan, heat_creep, carter]
+    text: >
+      Hotend CR-10S : ventilateur hotend 40 mm faible ; en caisson chaud (> 35 °C) le heat creep augmente (bouchages
+      PLA). Surveiller la température caisson via l'ESP32 : > 32 °C -> ouvrir/ventiler pour le PLA ; pour l'ABS au
+      contraire garder 40-50 °C.
+
+  # ======================================================================
+  # STRATÉGIE D'INTERVENTION À CHAUD (ce que Printos peut faire pendant une impression)
+  # ======================================================================
+  - topic: intervention
+    tags: [protocole, flow, temperature, vitesse, pas]
+    text: >
+      Interventions sûres pendant une impression, une seule à la fois, attendre 2-3 couches avant de juger :
+      flux ±3 à ±5 % (borne 90-115 %), température ±5 °C (borne filament, PTFE ≤ 240), vitesse -10 à -30 %,
+      fan ±20 %, Z babystep ±0,02 (1re couche uniquement), pause pour nettoyage buse. Ne jamais cumuler flux + température
+      dans le même sens sans re-vérifier : les deux augmentent le débit apparent.
+
+  - topic: intervention
+    tags: [cancel, criteres, spaghetti, layer_shift, arret]
+    text: >
+      Annuler sans hésiter si : spaghetti confirmé, pièce détachée du plateau, décalage de couche > 1 mm, buse qui
+      construit un blob autour d'elle, extrudeur silencieux (plus rien ne sort) depuis > 2 couches, humidité/température
+      caisson dangereuses. Une annulation à 20 % coûte 20 % ; un spaghetti sur la buse peut coûter le hotend.
+
+  - topic: intervention
+    tags: [inspection, camera, position, pause]
+    text: >
+      Inspection caméra : PAUSE, lever Z de +5 à +10 mm, déplacer la tête pour que la caméra "toolhead" voie la zone
+      suspecte (homographie pixel -> XY), allumer l'éclairage 0,6 s avant capture, prendre gros plan + vue d'ensemble.
+      Pause totale ≤ 60-90 s pour limiter la coulure et la marque sur la pièce. Les faux positifs fréquents : ombres,
+      supports, brim, reflets sur le verre, filament de purge au bord.
+
+  - topic: intervention
+    tags: [apprentissage, profil, fin_impression, persistance]
+    text: >
+      Fin d'impression réussie : si des réglages à chaud sont restés stables ≥ 20 min, les reporter dans le profil
+      filament (slicer : extrusion_multiplier, temperature ; Klipper : pressure_advance, z_offset via
+      Z_OFFSET_APPLY_PROBE + SAVE_CONFIG). Échec : ne rien persister, noter le défaut et l'hypothèse pour le prochain
+      test de calibration.
+
+  # ======================================================================
+  # CONCEPTION POUR L'IMPRESSION (utile au module CAO)
+  # ======================================================================
+  - topic: design
+    tags: [cao, regles, epaisseur, tolerance, orientation]
+    text: >
+      Règles de conception FDM (buse 0,4) : parois ≥ 1,2 mm (3 périmètres) pour la solidité, 0,8 mm minimum ; trous
+      imprimés -0,2 à -0,3 mm plus petits que nominal (compenser +0,2) ; jeu d'assemblage 0,2-0,3 mm (serré) à 0,5 mm
+      (libre) ; surplombs ≤ 45° sans support ; chanfrein 0,5 mm sous la pièce contre le pied d'éléphant ; orienter les
+      efforts dans le plan XY (les couches sont le point faible) ; grande face plane sur le plateau ; éviter les
+      grandes surfaces planes horizontales en hauteur sans supports (ponts ≤ 30 mm).
+
+  - topic: design
+    tags: [cao, texte, details, resolution]
+    text: >
+      Détails : texte en relief ≥ 0,6 mm de haut, traits ≥ 0,8 mm de large (2 lignes), gravure profondeur 0,4-0,6 mm ;
+      détails < 0,4 mm ne s'impriment pas ; filetages imprimés ≥ M8 (pas 1,25) sinon insert ; arrondis verticaux
+      r ≥ 1 mm ; pièces > 280 mm : découper (plateau utile 285x300 sur cette CR-10S, hauteur 400).
+
+  - topic: design
+    tags: [cadquery, openscad, stl, export, manifold]
+    text: >
+      Génération paramétrique : CadQuery (Python, BREP OCC, exporte STL/STEP propres, booléens fiables) ou OpenSCAD
+      (langage simple, mesh parfois non-manifold). Toujours vérifier le STL : manifold/watertight, normales cohérentes,
+      volume > 0, dimensions dans le volume d'impression, base plate au Z=0. Réparer via trimesh (fill_holes, fix_normals)
+      ou Blender headless (remesh/3D-print toolbox) si nécessaire.
+
+  # ======================================================================
+  # PRÉFÉRENCES / CONTEXTE UTILISATEUR (à compléter par Printos au fil du temps)
+  # ======================================================================
+  - topic: contexte
+    kind: preference
+    tags: [imprimante, filament, profil, utilisateur]
+    text: >
+      Imprimante de l'atelier : CR-10S, Klipper/Moonraker sur 192.168.1.4, BLTouch, buse 0,4, PrusaSlicer 2.9.6 avec
+      profils "doxei detail" (0,18 mm, 3 périmètres, gyroid 15 %, brim 5 mm) et filament "deeplee noir" PLA
+      (205 °C / 1re couche 215, lit 60/65, rétraction 0,8 mm à 45 mm/s, densité 1,25, 17,99 €/kg).
+      Deux caméras : vue d'ensemble (pc) et gros plan buse (extrudeur). Ollama local Qwen3-VL 8B, détecteur Obico sur GPU.

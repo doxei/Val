@@ -1,0 +1,407 @@
+"""Ligne de commande Valdar.
+
+  valdar chat         parler à Valdar au clavier (cœur, mémoire, outils, Gemma 4 via Ollama)
+                      --voix : il répond aussi à voix haute, avec la voix de RAUB
+  valdar voix         faire dire une phrase à Valdar (test de la voix, mesures)
+  valdar import-raub  reprendre les données de RAUB, voix comprise (lecture seule côté RAUB)
+  valdar heart        cœur seul, en temps réel (Ctrl+C pour sauvegarder et quitter)
+  valdar status       état actuel du cœur (sans le modifier)
+  valdar sim          simulation accélérée de N jours (n'écrit jamais dans la vraie base)
+  valdar check        critères d'acceptation de la phase 1
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+
+from valdar.config import load
+from valdar.heart import Heart
+from valdar.heart.store import Store
+from valdar.sim.run import acceptance, report_to_text, run_sim
+from valdar.workspace import Initiative
+
+INITIATIVE_KEY = "initiative:state"
+
+
+def _status_text(heart: Heart) -> str:
+    s = heart.sample()
+    felt = heart.felt()
+    lines = [
+        f"Émotion : {s['emotion']} (intensité {s['intensity']:.2f})"
+        + (f", système dominant : {s['dominant']}" if s["dominant"] else ""),
+        f"Humeur  : {s['mood_label']}",
+        f"Éveillé : {'oui' if s['awake'] else 'non, il dort'}"
+        f"   énergie {s['variables']['energy']:.2f}   cœur {s['bpm']} bpm",
+        "Besoins : " + ", ".join(f"{k} {v:.2f}" for k, v in s["needs"].items())
+        + f", repos {s['need_rest']:.2f}",
+        "Ressenti :",
+    ]
+    lines += [f"  - {t}" for t in felt.values()]
+    return "\n".join(lines)
+
+
+def _cmd_heart(args: argparse.Namespace) -> int:
+    cfg = load()
+    heart = Heart.load_latest(cfg, profile=args.profile)
+    init = Initiative(cfg.initiative)
+    if heart.store is not None:
+        saved = heart.store.load(INITIATIVE_KEY)
+        if saved:
+            init.load_dict(saved)
+    print(f"Cœur de Valdar démarré (profil {heart.profile_name}). Ctrl+C pour arrêter.")
+    print(_status_text(heart), flush=True)
+    next_status = time.time() + args.every
+    try:
+        while True:
+            now = time.time()
+            if now - heart.now > 2 * cfg.heart.max_time_step:
+                heart.catch_up(now)
+            else:
+                heart.step(now - heart.now)
+            event = init.check(heart)
+            if event is not None:
+                verbe = "a envie de te parler" if event["kind"] == "talk" else \
+                    "a envie de découvrir quelque chose"
+                print(f"\n>>> Valdar {verbe} (émotion : {event['emotion']})", flush=True)
+            if now >= next_status:
+                b = heart.brief()
+                print(f"[{time.strftime('%H:%M:%S')}] {b['emotion']}, humeur {b['mood']}",
+                      flush=True)
+                next_status = now + args.every
+            time.sleep(max(0.05, cfg.heart.tick_seconds - (time.time() - now)))
+    except KeyboardInterrupt:
+        heart.save()
+        if heart.store is not None:
+            heart.store.save(INITIATIVE_KEY, init.to_dict())
+        heart.close()
+        print("\nSauvegardé.")
+    return 0
+
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    cfg = load()
+    store = Store(cfg.storage_path(cfg.storage.db))
+    snap = store.load("heart:state")
+    store.close()
+    if snap is None:
+        print("Aucun état sauvegardé : lance d'abord « valdar heart ».")
+        return 1
+    heart = Heart(cfg, profile=snap.get("profile"), persist=False)
+    if not heart.restore(snap):
+        print("L'état sauvegardé vient d'une ancienne version : il sera ignoré au prochain "
+              "démarrage de « valdar heart ».")
+        return 1
+    heart.catch_up()
+    print(_status_text(heart))
+    return 0
+
+
+def _cmd_sim(args: argparse.Namespace) -> int:
+    rep = run_sim(load(), days=args.days, seed=args.seed, profile=args.profile)
+    print(report_to_text(rep))
+    return 0
+
+
+def _cmd_check(args: argparse.Namespace) -> int:
+    results = acceptance(load(), seed=args.seed)
+    ok = True
+    for name, passed, detail in results:
+        ok &= passed
+        print(f"[{'OK ' if passed else 'ÉCHEC'}] {name} — {detail}")
+    print("Phase 1 validée." if ok else "Phase 1 NON validée.")
+    return 0 if ok else 1
+
+
+CHAT_HELP = """Commandes : /etat (mon état), /silence (plus d'initiatives), /parle (initiatives
+réactivées), /muet et /voix (couper ou rendre la voix), /quitter. Tout le reste, je le prends
+comme un message."""
+
+
+def _start_voice(cfg):
+    """Démarre la voix en arrière-plan. Retourne None si elle est impossible (texte seul)."""
+    from valdar.voice import Speaker, make_tts
+
+    try:
+        tts = make_tts(cfg)
+    except Exception as exc:
+        print(f"(voix désactivée : {exc})")
+        return None
+    missing = tts.check_files()
+    if missing:
+        print("(voix absente : " + ", ".join(missing) + " — lance tools\\valdar_voix.bat)")
+        return None
+    print("(je charge ma voix, une vingtaine de secondes ; on peut parler en attendant)")
+    return Speaker(cfg.voice, tts).start(preload=True)
+
+
+def _cmd_chat(args: argparse.Namespace) -> int:
+    import threading
+
+    from valdar.runtime import Runtime
+
+    cfg = load()
+    rt = Runtime(cfg)
+    llm = rt.llm
+    if hasattr(llm, "available") and not llm.available():
+        print(f"Ollama ne répond pas sur {cfg.llm.url}. Lance l'application Ollama puis "
+              "relance-moi (tools\\valdar_chat.bat le fait tout seul).")
+        rt.stop()
+        return 1
+    if hasattr(llm, "has_model") and not llm.has_model():
+        print(f"Le modèle {cfg.llm.model} n'est pas dans Ollama. Tape : ollama pull "
+              f"{cfg.llm.model}")
+        rt.stop()
+        return 1
+    rt.start()
+    stop = threading.Event()
+    rt_say = [lambda _text: None]
+
+    def show_events() -> None:
+        while not stop.is_set():
+            try:
+                ev = rt.events.get(timeout=0.5)
+            except Exception:
+                continue
+            if ev.kind == "rappel":
+                print(f"\n[rappel] {ev.text}\nToi > ", end="", flush=True)
+                rt_say[0](f"Rappel : {ev.text}")
+            elif ev.kind == "initiative":
+                print(f"\nValdar (de lui-même) > {ev.text}\nToi > ", end="", flush=True)
+                rt_say[0](ev.text)
+            else:
+                print(f"\n[{ev.kind}] {ev.text}\nToi > ", end="", flush=True)
+
+    speaker = _start_voice(cfg) if args.voix and cfg.voice.enabled else None
+    muted = False
+
+    def say(text: str) -> None:
+        if speaker is None or muted:
+            return
+        if speaker.ready.is_set() and speaker.load_error:
+            return
+        speaker.say(text)
+
+    def voice_problem() -> str | None:
+        if speaker is not None and speaker.ready.is_set() and speaker.load_error:
+            return speaker.load_error
+        return None
+
+    rt_say[0] = say
+    threading.Thread(target=show_events, name="valdar-affichage", daemon=True).start()
+    with rt.lock:
+        b = rt.heart.brief()
+    print(f"Valdar est là ({b['emotion']}, humeur {b['mood']}). {CHAT_HELP}")
+    warned = False
+    try:
+        while True:
+            try:
+                text = input("Toi > ").strip()
+            except EOFError:
+                break
+            if speaker is not None:
+                speaker.interrupt()          # on me parle : je me tais
+                problem = voice_problem()
+                if problem and not warned:
+                    print(f"(ma voix n'a pas pu démarrer : {problem})")
+                    warned = True
+            if not text:
+                continue
+            low = text.lower()
+            if low in ("/quitter", "/quit", "/exit"):
+                break
+            if low == "/muet":
+                muted = True
+                print("(voix coupée)")
+                continue
+            if low == "/voix":
+                muted = False
+                print("(voix rétablie)" if speaker else "(lance « valdar chat --voix »)")
+                continue
+            if low == "/etat":
+                with rt.lock:
+                    print(_status_text(rt.heart))
+                continue
+            if low == "/silence":
+                rt.initiative.silence(True)
+                print("(initiatives coupées)")
+                continue
+            if low == "/parle":
+                rt.initiative.silence(False)
+                print("(initiatives réactivées)")
+                continue
+            reply = rt.handle(text)
+            tools = f"  [outils : {', '.join(reply.tools_used)}]" if reply.tools_used and \
+                args.debug else ""
+            print(f"Valdar > {reply.text}{tools}")
+            say(reply.text)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop.set()
+        if speaker is not None:
+            speaker.close()
+        rt.stop()
+        print("\nÀ plus. (état sauvegardé)")
+    return 0
+
+
+def _cmd_voix(args: argparse.Namespace) -> int:
+    import wave
+
+    import numpy as np
+
+    from valdar.voice import Speaker, apply, make_tts, split_sentences, to_int16
+
+    cfg = load()
+    tts = make_tts(cfg)
+    missing = tts.check_files()
+    if missing:
+        print("Il manque : " + ", ".join(missing) + ".\nLance d'abord « valdar import-raub » "
+              "(tools\\valdar_voix.bat le fait tout seul).")
+        return 1
+    print("Chargement de la voix (XTTS sur la carte graphique)…", flush=True)
+    try:
+        tts.load()
+    except Exception as exc:
+        print(f"La voix n'a pas pu se charger : {exc}")
+        return 1
+    print(f"Voix chargée en {tts.load_seconds:.1f} s ({tts.mode}).")
+    text = " ".join(args.texte).strip() or ("Salut Olivier. C'est moi, Valdar. La voix que tu "
+                                            "avais construite pour RAUB, c'est la mienne "
+                                            "maintenant, et j'y tiens.")
+    if args.wav:
+        parts = [apply(tts.synthesize(s), tts.sample_rate, cfg.voice.character)
+                 for s in split_sentences(text, cfg.voice.max_sentence_chars)]
+        audio = to_int16(np.concatenate(parts)) if parts else np.zeros(0, np.int16)
+        with wave.open(args.wav, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(tts.sample_rate)
+            wf.writeframes(audio.tobytes())
+        print(f"Écrit : {args.wav} ({len(audio) / tts.sample_rate:.1f} s)")
+    else:
+        sp = Speaker(cfg.voice, tts).start(preload=False)
+        sp.say(text)
+        sp.wait_done(timeout=180)
+        sp.close()
+        st = sp.stats
+        if st.errors:
+            print("Erreur : " + st.errors[0])
+            return 1
+        synth, dur = sum(st.synth_seconds), sum(st.audio_seconds)
+        first = f"{st.first_audio_seconds:.1f} s" if st.first_audio_seconds else "?"
+        print(f"Premier son après {first} ; {dur:.1f} s de parole calculées en {synth:.1f} s "
+              f"(facteur temps réel {synth / dur if dur else 0:.2f}, < 1 = plus vite que la "
+              "parole).")
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            print(f"Mémoire de la carte graphique prise par la voix : "
+                  f"{torch.cuda.max_memory_reserved() / 1e9:.1f} Go.")
+    except ImportError:
+        pass
+    return 0
+
+
+def _cmd_import_raub(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from valdar.atelier import Checklist, Reminders, Stock
+    from valdar.memory import Facts
+    from valdar.migrate import RaubImport
+
+    cfg = load()
+    a = cfg.atelier
+    path = cfg.storage_path
+    imp = RaubImport(Path(args.raub), Facts(path(a.memory_db)), Stock(path(a.stock_db)),
+                     Reminders(path(a.reminders)), Checklist(path(a.checklist)),
+                     path(a.pinouts), path("x").parent,
+                     person=(cfg.agent.console_identity.person if cfg.agent else "") or "",
+                     voice_ref=cfg.repo_path(cfg.voice.xtts.reference),
+                     xtts_dir=cfg.repo_path(cfg.voice.xtts.model_dir))
+
+    def step(key: str) -> None:
+        if key == "voix":
+            print("… je reprends la voix de RAUB (environ 2 Go à copier, ça peut prendre une "
+                  "minute)", flush=True)
+
+    for line in imp.run(force=args.force, on_step=step):
+        print(f"- {line}")
+    return 0
+
+
+def _cmd_import_vecu(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from valdar.memory import Episodic, Facts
+    from valdar.migrate import VecuImport
+
+    cfg = load()
+    path = cfg.storage_path
+    imp = VecuImport(Path(args.dossier), cfg, Episodic(path(cfg.episodic.db), cfg.episodic),
+                     Facts(path(cfg.atelier.memory_db)), path("training"),
+                     person=(cfg.agent.console_identity.person if cfg.agent else "") or "")
+    print("Je fais de ces conversations mes souvenirs… (une à deux minutes)", flush=True)
+
+    def progress(i: int, n: int) -> None:
+        if i == n or i % 20 == 0:
+            print(f"  {i}/{n} conversations", flush=True)
+
+    for line in imp.run(on_progress=progress):
+        print(f"- {line}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(prog="valdar")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("chat", help="parler à Valdar au clavier")
+    p.add_argument("--debug", action="store_true", help="affiche les outils utilisés")
+    p.add_argument("--voix", action="store_true", help="répond aussi à voix haute")
+    p.set_defaults(func=_cmd_chat)
+
+    p = sub.add_parser("voix", help="faire parler Valdar (test de la voix)")
+    p.add_argument("texte", nargs="*", help="phrase à dire")
+    p.add_argument("--wav", default=None, help="écrire dans un fichier .wav au lieu de jouer")
+    p.set_defaults(func=_cmd_voix)
+
+    p = sub.add_parser("import-raub", help="reprendre les données de RAUB")
+    p.add_argument("--raub", default=r"C:\Users\doxei\raub", help="dossier de RAUB")
+    p.add_argument("--force", action="store_true", help="refaire même si déjà importé")
+    p.set_defaults(func=_cmd_import_raub)
+
+    p = sub.add_parser("import-vecu", help="faire des conversations d'Olivier des souvenirs")
+    p.add_argument("--dossier", default=r"C:\Users\doxei\Documents\training ia",
+                   help="dossier de l'export (conversations.json, memories)")
+    p.set_defaults(func=_cmd_import_vecu)
+
+    p = sub.add_parser("heart", help="cœur en continu, temps réel")
+    p.add_argument("--profile", default=None)
+    p.add_argument("--every", type=float, default=60.0, help="secondes entre deux lignes d'état")
+    p.set_defaults(func=_cmd_heart)
+
+    p = sub.add_parser("status", help="état actuel du cœur")
+    p.set_defaults(func=_cmd_status)
+
+    p = sub.add_parser("sim", help="simulation accélérée")
+    p.add_argument("--days", type=float, default=3.0)
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--profile", default=None)
+    p.set_defaults(func=_cmd_sim)
+
+    p = sub.add_parser("check", help="critères d'acceptation de la phase 1")
+    p.add_argument("--seed", type=int, default=42)
+    p.set_defaults(func=_cmd_check)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

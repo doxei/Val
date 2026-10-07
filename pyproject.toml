@@ -1,0 +1,47 @@
+[project]
+name = "valdar"
+version = "0.4.0"
+description = "Valdar — IA locale à cœur émotionnel continue, basée sur Gemma (hardware : i5-11400F / 64 Go RAM / RTX 2060 12 Go)."
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pydantic>=2.5",
+  "PyYAML>=6.0",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+api = ["fastapi>=0.110", "uvicorn>=0.27", "anyio>=4.0", "websockets>=12"]
+system = ["psutil>=5.9"]
+# Voix de RAUB (XTTS v2). torch 2.6.0+cu126 s'installe à part, avant (tools\valdar_voix.bat) :
+# mêmes versions que l'environnement de RAUB, où cette voix tourne déjà.
+vision = ["opencv-python-headless>=4.9", "onnxruntime>=1.17"]
+voice = ["coqui-tts==0.27.5", "transformers==4.57.6", "scipy>=1.13", "sounddevice>=0.5",
+         "soundfile>=0.12"]
+
+[project.scripts]
+valdar = "valdar.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["valdar", "valdar.heart", "valdar.appraisal", "valdar.workspace",
+            "valdar.memory", "valdar.expression", "valdar.llm", "valdar.interface",
+            "valdar.obs", "valdar.sim", "valdar.config", "valdar.agent", "valdar.tools",
+            "valdar.atelier", "valdar.devices", "valdar.migrate", "valdar.voice", "valdar.printwatch",
+            "valdar.knowledge"]

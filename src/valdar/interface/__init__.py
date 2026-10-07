@@ -1,0 +1,1 @@
+"""Phase 2 : API FastAPI + WebSocket et panneau/interface."""
