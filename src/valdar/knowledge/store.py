@@ -66,10 +66,8 @@ class Knowledge:
             row = con.execute("SELECT sha FROM docs WHERE doc=?", (doc,)).fetchone()
         if row and row[0] == sha:
             return 0
-        if path.suffix.lower() in (".yaml", ".yml"):
-            passages = _from_yaml(raw)
-        else:
-            passages = _from_text(raw)
+        is_yaml = path.suffix.lower() in (".yaml", ".yml")
+        passages = _from_yaml(raw) if is_yaml else _from_text(raw)
         return self.ingest(doc, passages, source or str(path.name), sha)
 
     def ingest(self, doc: str, passages: list[dict[str, str]], source: str = "",
@@ -138,7 +136,8 @@ class Knowledge:
             for i in range(idx["n"]):
                 f = idx["tf"][i].get(t, 0)
                 if f:
-                    bm[i] += idf * f * (k1 + 1) / (f + k1 * (1 - b + b * idx["len"][i] / idx["avg"]))
+                    norm = 1 - b + b * idx["len"][i] / idx["avg"]
+                    bm[i] += idf * f * (k1 + 1) / (f + k1 * norm)
         if bm.max() > 0:
             bm = bm / bm.max()
         sem = cosine_rows(idx["vec"], embed(query, self.dim))

@@ -1,4 +1,4 @@
-"""Vigie d'impression : Valdar regarde ses impressions (avenant 5)."""
+"""Vigie d'impression : Valdar regarde ses impressions (voir DECISIONS.md)."""
 from valdar.printwatch.evaluation import (
     GateReport,
     PrintRecord,

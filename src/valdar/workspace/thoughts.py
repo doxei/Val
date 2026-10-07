@@ -202,8 +202,8 @@ class Thoughts:
     def best_idea(self, min_score: float | None = None, kind: str | None = None) -> Idea | None:
         ms = self.cfg.propose_min_score if min_score is None else min_score
         with self._conn() as con:
-            q = ("SELECT id,t,kind,text,why,for_whom,score,status FROM ideas WHERE status='nouvelle' "
-                 "AND score>=?")
+            q = ("SELECT id,t,kind,text,why,for_whom,score,status FROM ideas "
+                 "WHERE status='nouvelle' AND score>=?")
             args: list[Any] = [ms]
             if kind:
                 q += " AND kind=?"

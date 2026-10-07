@@ -52,7 +52,8 @@ def clopper_pearson_lower(k: int, n: int, confidence: float = 0.95) -> float:
 
 
 def events_needed(target: float = 0.98, confidence: float = 0.95, misses: int = 0) -> int:
-    """Nombre d'échecs à observer (avec `misses` ratés) pour que la borne basse atteigne la cible."""
+    """Nombre d'échecs à observer (dont `misses` ratés) pour que la borne basse atteigne la
+    cible."""
     n = misses + 1
     while clopper_pearson_lower(n - misses, n, confidence) < target:
         n += 1

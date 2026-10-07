@@ -124,9 +124,10 @@ class Runtime:
 
     def _on_watch(self, ev: WatchEvent) -> None:
         """La vigie a vu quelque chose : voie basse vers le cœur, puis Valdar en parle."""
-        stim = {"alerte": ("novelty", 0.3), "pause": ("threat", 0.8), "pause_faite": ("threat", 0.7),
-                "telemetrie": ("concern", 0.6), "camera": ("failure", 0.3),
-                "fin": ("success", 0.8), "question": ("novelty", 0.3)}.get(ev.kind)
+        stim = {"alerte": ("novelty", 0.3), "pause": ("threat", 0.8),
+                "pause_faite": ("threat", 0.7), "telemetrie": ("concern", 0.6),
+                "camera": ("failure", 0.3), "fin": ("success", 0.8),
+                "question": ("novelty", 0.3)}.get(ev.kind)
         with self.lock:
             if stim is not None:
                 self.heart.fire(stim[0], scale=stim[1], source="vigie")

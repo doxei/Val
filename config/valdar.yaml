@@ -505,7 +505,7 @@ episodic:
     frustration: [-0.5, 0.4, 0.2]
     shame: [-0.4, 0.2, -0.3]
 
-# Vigie d'impression (avenant 5). Niveau 0 : observe et prévient. Niveau 1 (pause seul) :
+# Vigie d'impression (DECISIONS.md). Niveau 0 : observe et prévient. Niveau 1 (pause seul) :
 # seulement si la porte des 98 % est ouverte ET qu'Olivier a déverrouillé (valdar vigie --debloquer).
 printwatch:
   enabled: true
