@@ -63,7 +63,7 @@ def _intensity_word(cfg: ExpressionConfig, value: float) -> str:
 
 def self_block(sm: dict[str, Any]) -> str:
     lines = ["QUI TU ES :"]
-    for key in ("histoire", "corps", "nature"):
+    for key in ("identite", "histoire", "corps", "nature"):
         if sm.get(key):
             lines.append(f"- {sm[key]}")
     if sm.get("valeurs"):
