@@ -301,8 +301,8 @@ Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main 
 
 - **Tests** : 159 verts sous Windows (`.venv`, Python 3.11).
 - **Nocicepteurs** (`read_pc(Path("data"))`) : `gpu_temp` 39 °C, `gpu_mem` 15 %, `disk` 64 %.
-  `nvidia-smi` est dans le PATH (`C:\WINDOWS\system32`). **`ram` absent** : `psutil` n'est pas
-  installé dans le `.venv` (extra `[system]`), à installer avec `pip install -e .[system]`.
+  `nvidia-smi` est dans le PATH (`C:\WINDOWS\system32`). `ram` absent au départ : `psutil` n'était
+  pas installé (extra `[system]`) ; après `pip install -e .[system]`, `ram` remonte (31 %).
   `cpu_temp` absent attendu : `psutil.sensors_temperatures` n'existe pas sous Windows.
 - **Ollama** : modèles présents `gemma4:12b` (8,0 Go), `gemma4:e4b`, `qwen3:8b`,
   `qwen2.5:7b-instruct`, `qwen2.5vl:3b`. Le serveur ne tourne pas au démarrage.
