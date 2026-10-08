@@ -607,3 +607,29 @@ relations:
     électronique: [esp32, soudure, arduino, capteur, servo, pcb, led, moteur]
     code: [python, code, bug, script, programme, valdar]
     santé: [douleur, morphine, nevralgie, medecin, fatigue, migraine]
+
+# Écoute (phase 3) : micro → mémoire vive → parole ? → « Valdar » ? → seulement alors
+# transcription. Rien n'est écrit sur disque. Le mot d'éveil devrait être un modèle entraîné
+# (wake_model) ; en attendant, transcript_wake lit le début de la phrase avec un petit whisper,
+# en mémoire, et jette le texte aussitôt.
+ears:
+  enabled: true
+  names: [Valdar, Valdare, Val dar]
+  frame_ms: 32
+  vad_threshold: 0.5
+  preroll_seconds: 0.5
+  end_silence_ms: 800
+  min_segment_seconds: 0.4
+  max_segment_seconds: 20
+  engaged_seconds: 14
+  barge_in_frames: 8
+  min_logprob: -1.5
+  max_no_speech: 0.6
+  stt_model: large-v3-turbo       # sur le CPU : la carte graphique est pleine (Gemma + voix)
+  stt_device: cpu
+  stt_compute_type: int8
+  wake_model: ""
+  wake_threshold: 0.5
+  transcript_wake: true
+  wake_stt_model: tiny
+  microphones: [K66, USB Audio, Microphone]

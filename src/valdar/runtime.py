@@ -145,9 +145,30 @@ class Runtime:
                 self.heart.fire(stim[0], scale=stim[1], source="vigie")
         self.events.put(Event("vigie", ev.text, {"kind": ev.kind, "job": ev.job,
                                                  "image": ev.image is not None}))
+        if (ev.image and self.cfg.printwatch.triage
+                and ev.kind in ("alerte", "pause", "pause_faite")):
+            self._triage_async(ev)
+            return       # Valdar parlera avec ce qu'il a vu
         if ev.kind in ("pause", "pause_faite", "question", "telemetrie"):
             self._speak_async(f"ta vigie d'impression vient de te dire : « {ev.text} ». "
                               "Préviens Olivier, à ta façon.", {"vigie": ev.kind})
+
+    def _triage_async(self, ev: WatchEvent) -> None:
+        """Gemma regarde l'image hors du fil de la vigie (elle ne doit jamais attendre)."""
+        from valdar.printwatch.triage import Triage
+
+        def run() -> None:
+            res = Triage(self.llm, self.knowledge).assess(ev.image or b"", ev.text)
+            if res is not None and self.printwatch is not None:
+                self.printwatch.record_triage(ev.job, res.to_dict())
+            seen = res.text() if res is not None else "je n'ai pas réussi à analyser l'image"
+            self.events.put(Event("vigie_triage", seen, {"job": ev.job, "kind": ev.kind}))
+            if ev.kind != "alerte" or (res is not None and res.severity >= 4):
+                self._speak_async(f"ta vigie d'impression vient de te dire : « {ev.text} ». "
+                                  f"Tu as regardé l'image : {seen}. Préviens Olivier, à ta "
+                                  "façon, sans dramatiser ni minimiser.", {"vigie": ev.kind})
+
+        threading.Thread(target=run, name="valdar-tri", daemon=True).start()
 
     def _knowledge_block(self, query: str) -> list[str]:
         hits = self.knowledge.search(query, k=3)

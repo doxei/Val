@@ -451,3 +451,33 @@ chacun a son test de non-régression (`tests/test_audit_fixes.py`).
 - Connu, laissé tel quel : l'habituation à une gêne répétée est faible (rappel toutes les 5 min
   contre une fenêtre de 10 min) ; quelques tests dépendent de l'horloge réelle.
 - Tests : **184 verts** (Python 3.11 et 3.13), ruff propre, critères de la phase 1 verts.
+
+---
+
+## 2026-10-08 (matin) — Tri visuel de la vigie, et les oreilles de Valdar (phase 3)
+
+### Tri visuel (`printwatch/triage.py`)
+- Quand la vigie s'inquiète, Gemma 4 regarde l'image (Ollama, champ `images`), **hors du fil de
+  la vigie** (elle n'attend jamais). Prompt sobre, sans personnalité (celle de PrintOS
+  répondait à la place de l'analyse), réponse JSON : lisible ?, ce qui est visible, défaut le
+  plus probable parmi ceux de la base de connaissances, certitude en mots, gravité, conseil.
+- **Consultatif** : l'avis est gardé (`alerts`, genre `triage`) mais ne compte pas dans la
+  porte des 98 %. Valdar en parle quand c'est une pause, ou une alerte jugée grave (≥ 4).
+
+### Écoute (`ears/`) : faite, à essayer (`tools\valdar_ecoute.bat`)
+- Portier : micro → mémoire vive → Silero VAD → segment → mot d'éveil → transcription
+  (faster-whisper large-v3-turbo int8 **sur le CPU** : la carte est pleine avec Gemma + voix).
+  Conversation engagée 14 s après chaque échange (on répond sans redire « Valdar »).
+- **Rien n'est écrit sur disque** (testé en interdisant toute écriture). Ce qui ne s'adresse
+  pas à Valdar n'est jamais transcrit en entier.
+- Mot d'éveil : le vrai, c'est un modèle openWakeWord « Valdar » (`ears.wake_model`), **pas
+  encore entraîné**. En attendant, **compromis** : un petit whisper (« tiny ») lit seulement le
+  début de chaque phrase, en mémoire, cherche « Valdar » (tolère « val dar », « baldar »), puis
+  le texte est jeté. Désactivable (`ears.transcript_wake: false`).
+- Filtres de RAUB contre les hallucinations de whisper (« sous-titres… Amara », « merci
+  d'avoir regardé »), probabilité de parole et log-probabilité.
+- **Coupure** : quand on lui parle pendant qu'il parle (~250 ms de voix), il se tait.
+- Tonalité (énergie, débit) mesurée sur chaque phrase ; pas encore envoyée au cœur.
+- Reste : entraîner le mot d'éveil « Valdar », fin de tour sémantique (aujourd'hui : 0,8 s de
+  silence), tonalité → voie basse, mesurer la latence réelle de whisper sur l'i5.
+- Tests : 198 verts (Python 3.11 et 3.13), ruff propre.

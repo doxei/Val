@@ -280,6 +280,30 @@ class InitiativeConfig(_Strict):
     ignored_stimulus: str | None = "ignored"
 
 
+class EarsConfig(_Strict):
+    """Écoute (phase 3, avenant 3 §1)."""
+    enabled: bool = True
+    names: list[str] = ["Valdar", "Valdare", "Val dar"]
+    frame_ms: int = Field(default=32, ge=10, le=100)          # 512 échantillons pour Silero
+    vad_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
+    preroll_seconds: float = Field(default=0.5, ge=0.0, le=3.0)
+    end_silence_ms: int = Field(default=800, ge=200)
+    min_segment_seconds: float = Field(default=0.4, ge=0.1)
+    max_segment_seconds: float = Field(default=20.0, gt=1.0)
+    engaged_seconds: float = Field(default=14.0, ge=0.0)      # comme RAUB
+    barge_in_frames: int = Field(default=8, ge=1)             # ~250 ms de parole : il se tait
+    min_logprob: float = -1.5
+    max_no_speech: float = Field(default=0.6, ge=0.0, le=1.0)
+    stt_model: str = "large-v3-turbo"
+    stt_device: str = "cpu"
+    stt_compute_type: str = "int8"
+    wake_model: str = ""                                      # modèle « Valdar » entraîné
+    wake_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
+    transcript_wake: bool = True                              # compromis tant qu'il manque
+    wake_stt_model: str = "tiny"
+    microphones: list[str] = ["K66", "USB Audio", "Microphone"]
+
+
 class ThoughtsConfig(_Strict):
     """Pensée de fond (avenant 4 §6)."""
     enabled: bool = True
@@ -627,6 +651,7 @@ class ValdarConfig(_Strict):
     episodic: EpisodicConfig = EpisodicConfig()
     printwatch: PrintWatchConfig = PrintWatchConfig()
     thoughts: ThoughtsConfig = ThoughtsConfig()
+    ears: EarsConfig = EarsConfig()
     knowledge_db: str = "connaissances.db"
     nociception: NociceptionConfig = NociceptionConfig()
     relations: RelationsConfig = RelationsConfig()

@@ -137,6 +137,13 @@ class PrintWatch:
         self._set_state("unlocked", "0")
         return "Autonomie reverrouillée : j'observe et je préviens seulement."
 
+    def record_triage(self, job: str, result: dict[str, Any], t: float | None = None) -> None:
+        """Garde l'avis de Gemma sur l'image (consultatif : hors porte des 98 %)."""
+        with self._conn() as con:
+            con.execute("INSERT INTO alerts(job,t,kind,level,detail) VALUES(?,?,?,?,?)",
+                        (job, self.clock() if t is None else t, "triage", "avis",
+                         json.dumps(result, ensure_ascii=False)))
+
     # ------------------------------------------------------------------ étiquettes
     def label(self, failed: bool, job: str | None = None, minutes_before_end: float | None = None,
               by: str = "olivier") -> str:

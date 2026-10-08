@@ -1,0 +1,131 @@
+"""Modèles de l'écoute, chargés seulement sur la machine (extra `[ears]`).
+
+- VAD : Silero (ONNX, CPU, < 1 ms par trame).
+- Mot d'éveil :
+  * `OpenWakeWordWake` : modèle « Valdar » entraîné (fichier .onnx/.tflite) — la vraie solution ;
+  * `TranscriptWake` : **compromis temporaire** tant que ce modèle n'existe pas. Un petit
+    whisper (« tiny ») lit seulement le **début** du segment, en mémoire vive, cherche
+    « Valdar » (et ses déformations), puis le texte est jeté. Rien n'est gardé ni journalisé.
+- Transcription : faster-whisper (large-v3-turbo, int8). Sur le CPU par défaut : la carte
+  graphique est pleine avec Gemma + la voix (mesure de la phase 3).
+"""
+from __future__ import annotations
+
+import re
+import unicodedata
+from typing import Any
+
+import numpy as np
+
+from valdar.config.loader import EarsConfig
+from valdar.ears.gate import SR, Transcript
+
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFD", s.lower())
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
+def _lev(a: str, b: str) -> int:
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def says_name(text: str, names: list[str], tolerance: int = 1) -> bool:
+    """« Valdar » entendu, même mal transcrit (« valdare », « val dar », « baldar »)."""
+    t = _norm(text)
+    words = re.findall(r"[a-z]+", t)
+    joined = [a + b for a, b in zip(words, words[1:], strict=False)]
+    for name in names:
+        n = _norm(name)
+        if n in t.replace(" ", ""):
+            return True
+        if any(_lev(n, w) <= tolerance for w in words + joined if abs(len(w) - len(n)) <= 2):
+            return True
+    return False
+
+
+class SileroVAD:
+    def __init__(self) -> None:
+        from silero_vad import load_silero_vad
+
+        self.model = load_silero_vad(onnx=True)
+
+    def is_speech(self, frame: np.ndarray) -> float:
+        import torch
+
+        x = torch.from_numpy(frame.astype(np.float32))
+        return float(self.model(x, SR).item())
+
+
+class WhisperSTT:
+    def __init__(self, model: str, device: str = "cpu", compute_type: str = "int8",
+                 language: str = "fr", beam_size: int = 1):
+        from faster_whisper import WhisperModel
+
+        self.model = WhisperModel(model, device=device, compute_type=compute_type)
+        self.language = language
+        self.beam_size = beam_size
+
+    def transcribe(self, segment: np.ndarray) -> Transcript:
+        segs, _ = self.model.transcribe(segment.astype(np.float32), language=self.language,
+                                        beam_size=self.beam_size,
+                                        condition_on_previous_text=False, vad_filter=False)
+        texts, probs, nospeech = [], [], []
+        for s in segs:
+            if s.text.strip():
+                texts.append(s.text.strip())
+            probs.append(float(getattr(s, "avg_logprob", -1.0)))
+            nospeech.append(float(getattr(s, "no_speech_prob", 0.0)))
+        return Transcript(" ".join(texts), sum(probs) / len(probs) if probs else -99.0,
+                          max(nospeech) if nospeech else 1.0)
+
+
+class TranscriptWake:
+    def __init__(self, stt: Any, names: list[str], head_seconds: float = 2.5):
+        self.stt = stt
+        self.names = names
+        self.head = int(head_seconds * SR)
+
+    def heard(self, segment: np.ndarray) -> bool:
+        text = self.stt.transcribe(segment[: self.head]).text
+        found = says_name(text, self.names)
+        del text            # rien n'est gardé de ce qui ne s'adressait pas à Valdar
+        return found
+
+
+class OpenWakeWordWake:
+    def __init__(self, model_path: str, threshold: float = 0.5):
+        from openwakeword.model import Model
+
+        self.model = Model(wakeword_models=[model_path], inference_framework="onnx")
+        self.threshold = threshold
+
+    def heard(self, segment: np.ndarray) -> bool:
+        pcm = (np.clip(segment, -1, 1) * 32767).astype(np.int16)
+        self.model.reset()
+        best = 0.0
+        for i in range(0, len(pcm) - 1280 + 1, 1280):       # trames de 80 ms
+            scores = self.model.predict(pcm[i:i + 1280])
+            best = max([best, *scores.values()])
+        return best >= self.threshold
+
+
+def build(cfg: EarsConfig, model_path: Any) -> tuple[Any, Any, Any]:
+    """(vad, wake, stt) réels. Lève une exception claire si un morceau manque."""
+    vad = SileroVAD()
+    stt = WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type)
+    wake_file = model_path(cfg.wake_model) if cfg.wake_model else None
+    if wake_file is not None and wake_file.is_file():
+        wake: Any = OpenWakeWordWake(str(wake_file), cfg.wake_threshold)
+    elif cfg.transcript_wake:
+        wake = TranscriptWake(WhisperSTT(cfg.wake_stt_model, "cpu", "int8"), cfg.names)
+    else:
+        raise RuntimeError("aucun mot d'éveil : entraîne le modèle « Valdar » ou active "
+                           "ears.transcript_wake")
+    return vad, wake, stt

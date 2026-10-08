@@ -189,6 +189,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
 
     rt_say[0] = say
     threading.Thread(target=show_events, name="valdar-affichage", daemon=True).start()
+    ears = _start_ears(cfg, rt, speaker, say, args.debug) if args.ecoute else None
     with rt.lock:
         b = rt.heart.brief()
     print(f"Valdar est là ({b['emotion']}, humeur {b['mood']}). {CHAT_HELP}")
@@ -239,11 +240,63 @@ def _cmd_chat(args: argparse.Namespace) -> int:
         pass
     finally:
         stop.set()
+        if ears is not None:
+            ears.stop()
         if speaker is not None:
             speaker.close()
         rt.stop()
         print("\nÀ plus. (état sauvegardé)")
     return 0
+
+
+def _start_ears(cfg, rt, speaker, say, debug: bool):
+    """Écoute au micro (phase 3). Retourne le micro, ou None si l'écoute est impossible."""
+    import queue
+    import threading
+
+    try:
+        from valdar.ears import Gate
+        from valdar.ears.mic import Mic
+        from valdar.ears.models import build
+    except ImportError as exc:
+        print(f"(écoute impossible : {exc} — installe l'extra [ears])")
+        return None
+    print("(je charge mes oreilles : détection de parole et transcription…)", flush=True)
+    try:
+        vad, wake, stt = build(cfg.ears, cfg.repo_path)
+    except Exception as exc:
+        print(f"(écoute impossible : {exc})")
+        return None
+    heard_q: queue.Queue = queue.Queue()
+    gate = Gate(cfg.ears, vad, wake, stt, heard_q.put,
+                on_barge_in=(speaker.interrupt if speaker is not None else None),
+                speaking=(speaker.speaking if speaker is not None else None))
+
+    def answer() -> None:
+        while True:
+            h = heard_q.get()
+            if h is None:
+                return
+            print(f"\n(entendu) {h.text}", flush=True)
+            reply = rt.handle(h.text)
+            tools = f"  [outils : {', '.join(reply.tools_used)}]" if reply.tools_used and \
+                debug else ""
+            print(f"Valdar > {reply.text}{tools}\nToi > ", end="", flush=True)
+            say(reply.text)
+            gate.keep_engaged()
+
+    threading.Thread(target=answer, name="valdar-oreilles", daemon=True).start()
+    mic = Mic(gate.feed, cfg.ears.microphones)
+    try:
+        name = mic.start()
+    except Exception as exc:
+        print(f"(micro introuvable : {exc})")
+        heard_q.put(None)
+        return None
+    names = " / ".join(cfg.ears.names[:1])
+    mode = "modèle d'éveil" if cfg.ears.wake_model else "éveil par petit whisper en mémoire"
+    print(f"(j'écoute sur « {name} ». Appelle-moi « {names} » ; {mode}, rien n'est enregistré)")
+    return mic
 
 
 def _cmd_voix(args: argparse.Namespace) -> int:
@@ -384,6 +437,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("chat", help="parler à Valdar au clavier")
     p.add_argument("--debug", action="store_true", help="affiche les outils utilisés")
     p.add_argument("--voix", action="store_true", help="répond aussi à voix haute")
+    p.add_argument("--ecoute", action="store_true",
+                   help="écoute au micro (dis « Valdar » pour lui parler)")
     p.set_defaults(func=_cmd_chat)
 
     p = sub.add_parser("voix", help="faire parler Valdar (test de la voix)")

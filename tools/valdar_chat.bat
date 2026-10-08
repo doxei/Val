@@ -37,5 +37,8 @@ if exist data\models\xtts-v2\model.pth (
   .venv\Scripts\python -c "import TTS" >nul 2>&1
   if not errorlevel 1 set VOIX=--voix
 )
-.venv\Scripts\python -m valdar chat %VOIX% %*
+set ECOUTE=
+.venv\Scripts\python -c "import faster_whisper, silero_vad, sounddevice" >nul 2>&1
+if not errorlevel 1 set ECOUTE=--ecoute
+.venv\Scripts\python -m valdar chat %VOIX% %ECOUTE% %*
 pause

@@ -16,6 +16,8 @@ api = ["fastapi>=0.110", "uvicorn>=0.27", "anyio>=4.0", "websockets>=12"]
 system = ["psutil>=5.9"]
 # Voix de RAUB (XTTS v2). torch 2.6.0+cu126 s'installe à part, avant (tools\valdar_voix.bat) :
 # mêmes versions que l'environnement de RAUB, où cette voix tourne déjà.
+ears = ["faster-whisper>=1.1", "silero-vad>=5.1", "sounddevice>=0.5", "scipy>=1.13"]
+wake = ["openwakeword>=0.6"]
 vision = ["opencv-python-headless>=4.9", "onnxruntime>=1.17"]
 voice = ["coqui-tts==0.27.5", "transformers==4.57.6", "scipy>=1.13", "sounddevice>=0.5",
          "soundfile>=0.12"]
@@ -44,4 +46,4 @@ packages = ["valdar", "valdar.heart", "valdar.appraisal", "valdar.workspace",
             "valdar.memory", "valdar.expression", "valdar.llm", "valdar.interface",
             "valdar.obs", "valdar.sim", "valdar.config", "valdar.agent", "valdar.tools",
             "valdar.atelier", "valdar.devices", "valdar.migrate", "valdar.voice", "valdar.printwatch",
-            "valdar.knowledge", "valdar.relations"]
+            "valdar.knowledge", "valdar.ears", "valdar.relations"]
