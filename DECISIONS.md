@@ -500,3 +500,15 @@ chacun a son test de non-régression (`tests/test_audit_fixes.py`).
 - Le mot d'éveil reste le petit whisper sur le CPU (sinon chaque phrase de la pièce
   occuperait la carte graphique), en attendant le modèle « Valdar ».
 - À mesurer sur la machine : qualité du français et délai de transcription par Gemma.
+
+## 2026-10-08 — Avenant n°5 : le cyber-être (cahier des charges final d'Olivier)
+
+- Olivier veut un **être cybernétique**, pas un assistant : sensorialité complète, Ça / Moi /
+  Surmoi, doute méthodique et quarantaine des biais, apprentissage nocturne, agence.
+- Correspondance faite dans `docs/avenant-5-cyber-etre.md` : la parole spontanée, la douleur,
+  le cycle veille/sommeil, le socle et les réflexes existent déjà.
+- Nouveau : bruit ambiant brut vers le cœur, jauge de charge cognitive, fiches de croyance
+  (source, réfutation, pour/contre), quarantaine avant la nuit, nuit en 5 étapes, cadre
+  d'autonomie écrit par Olivier hors de Valdar.
+- Maintenu : pas de SNN simulé sur le processeur (avenant 3 §1.6) ; le Moi ne négocie jamais
+  un réflexe. LoRA hebdomadaire et non nocturne au début, toujours suivi des tests de socle.

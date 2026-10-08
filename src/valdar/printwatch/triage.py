@@ -1,4 +1,4 @@
-"""Tri visuel : quand la vigie s'inquiète, Gemma 4 regarde l'image (avenant 5).
+"""Tri visuel : quand la vigie s'inquiète, Gemma 4 regarde l'image (phase 5).
 
 Sobre et sans personnalité (PrintOS laissait son caractère « Printos » répondre à la place de
 l'analyse, et sa confiance ne valait rien). Le tri **ne décide rien** : il décrit ce qu'il voit,
