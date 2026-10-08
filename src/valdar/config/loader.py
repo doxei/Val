@@ -808,7 +808,8 @@ class VoiceCharacter(_Strict):
 
 class XttsConfig(_Strict):
     model_dir: str = "data/models/xtts-v2"
-    reference: str = "data/voice/xtts_ref.wav"
+    # Un fichier, ou une liste d'extraits (XTTS en tire des latents communs).
+    reference: str | list[str] = "data/voice/xtts_ref.wav"
     language: str = "fr"
     device: str = "cuda"
 
@@ -822,6 +823,9 @@ class VoiceConfig(_Strict):
     # En flux : XTTS rend la phrase morceau par morceau (inference_stream), le premier part
     # aux haut-parleurs avant que la phrase soit finie. Faux = phrase entière, comme avant.
     streaming: bool = True
+    # Chaîne d'effets « megatron » (filtre radio, saturation). Faux = la voix telle quelle,
+    # seulement mise au bon niveau.
+    effets: bool = True
     stream_chunk_size: int = Field(default=20, ge=5, le=100)   # jetons XTTS par morceau
 
 

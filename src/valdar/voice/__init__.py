@@ -11,7 +11,9 @@ def make_tts(cfg: ValdarConfig) -> XttsBackend:
     v = cfg.voice
     if v.backend != "xtts":
         raise TTSError(f"backend de voix inconnu : {v.backend}")
-    return XttsBackend(cfg.repo_path(v.xtts.model_dir), cfg.repo_path(v.xtts.reference),
+    refs = v.xtts.reference if isinstance(v.xtts.reference, list) else [v.xtts.reference]
+    paths = [cfg.repo_path(r) for r in refs]
+    return XttsBackend(cfg.repo_path(v.xtts.model_dir), paths if len(paths) > 1 else paths[0],
                        language=v.xtts.language, device=v.xtts.device)
 
 

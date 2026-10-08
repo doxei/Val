@@ -86,11 +86,13 @@ class XttsBackend:
     sample_rate = 24000
     _INFER_KEYS = ("temperature", "length_penalty", "repetition_penalty", "top_k", "top_p")
 
-    def __init__(self, model_dir: Path, reference: Path, language: str = "fr",
+    def __init__(self, model_dir: Path, reference: Path | list[Path], language: str = "fr",
                  device: str = "cuda",
                  loader: Callable[[Path, str], tuple[Any, Any]] | None = None):
         self.model_dir = Path(model_dir)
-        self.reference = Path(reference)
+        refs = reference if isinstance(reference, list) else [reference]
+        self.references = [Path(r) for r in refs]
+        self.reference = self.references[0]
         self.language = language
         self.device = device
         self._loader = loader or _default_loader
@@ -107,8 +109,9 @@ class XttsBackend:
         if not (self.model_dir / "config.json").is_file() or \
                 not (self.model_dir / "model.pth").is_file():
             missing.append(f"modèle XTTS ({self.model_dir})")
-        if not self.reference.is_file():
-            missing.append(f"référence de la voix ({self.reference})")
+        for ref in self.references:
+            if not ref.is_file():
+                missing.append(f"référence de la voix ({ref})")
         return missing
 
     def load(self) -> None:
@@ -127,7 +130,8 @@ class XttsBackend:
             conf = getattr(model, "config", None) or cfg
             try:
                 lat, emb = model.get_conditioning_latents(
-                    audio_path=str(self.reference),
+                    audio_path=(str(self.reference) if len(self.references) == 1
+                                else [str(r) for r in self.references]),
                     max_ref_length=_get(conf, "max_ref_len"),
                     gpt_cond_len=_get(conf, "gpt_cond_len"),
                     gpt_cond_chunk_len=_get(conf, "gpt_cond_chunk_len"),
@@ -153,7 +157,9 @@ class XttsBackend:
                 self.mode = "appel d'origine à l'identique"
         if out is None:
             out = self._infer(lambda: self.model.synthesize(
-                text, self.cfg, speaker_wav=str(self.reference), language=self.language))
+                text, self.cfg, language=self.language,
+                speaker_wav=(str(self.reference) if len(self.references) == 1
+                             else [str(r) for r in self.references])))
         wav = out["wav"] if isinstance(out, dict) else out[0]
         wav = np.asarray(wav).astype(np.float32)
         peak = float(np.max(np.abs(wav))) if wav.size else 0.0

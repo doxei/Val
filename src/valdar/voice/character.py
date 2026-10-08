@@ -245,3 +245,38 @@ def _shelf_sos(sr: int, fc: float, gain_db: float) -> np.ndarray:
                   2 * ((a_ - 1) - (a_ + 1) * c),
                   (a_ + 1) - (a_ - 1) * c - 2 * np.sqrt(a_) * alpha])
     return np.array([[b[0] / a[0], b[1] / a[0], b[2] / a[0], 1.0, a[1] / a[0], a[2] / a[0]]])
+
+
+def plain(audio: np.ndarray, sr: int, ch: VoiceCharacter) -> np.ndarray:
+    """Sans effets : la voix telle quelle, mise au niveau `peak` (`voice.effets: false`)."""
+    x = audio.astype(np.float64) / 32768.0
+    peak = float(np.max(np.abs(x))) if len(x) else 0.0
+    return np.clip(x * (ch.peak / (peak or 1.0)), -1.0, 1.0)
+
+
+class PlainStream:
+    """Sans effets, en flux : seulement le niveau (gain qui ne fait que baisser)."""
+
+    def __init__(self, sr: int, ch: VoiceCharacter):
+        self.ch = ch
+        self._gain: float | None = None
+
+    def process(self, audio: np.ndarray) -> np.ndarray:
+        x = np.asarray(audio, dtype=np.float64)
+        if np.issubdtype(np.asarray(audio).dtype, np.integer):
+            x = x / 32768.0
+        if not len(x):
+            return x
+        want = self.ch.peak / max(float(np.max(np.abs(x))), 0.05)
+        self._gain = want if self._gain is None else min(self._gain, want)
+        return np.clip(x * self._gain, -1.0, 1.0)
+
+
+def chain_for(sr: int, ch: VoiceCharacter, effets: bool):
+    """La chaîne en flux selon le réglage `voice.effets`."""
+    return CharacterStream(sr, ch) if effets else PlainStream(sr, ch)
+
+
+def render(audio: np.ndarray, sr: int, ch: VoiceCharacter, effets: bool) -> np.ndarray:
+    """Une phrase entière, avec ou sans effets."""
+    return apply(audio, sr, ch) if effets else plain(audio, sr, ch)

@@ -740,3 +740,24 @@ récite pas sa mémoire avant chaque phrase, il va la chercher quand le sujet l'
 - Chiffres après correctifs : **à mesurer sur la machine** (section suivante, après le
   premier `valdar chrono`). On ne garde que ce qui ne dégrade pas la voix : `voice.streaming`
   et `ears.early_ms` se coupent dans les réglages.
+
+## Nouvelle voix : ElevenLabs → référence XTTS
+
+- **Demande** : voix ElevenLabs `kmzDWJGT4adCbA85GELi`, **créée par Olivier**, comme nouvelle
+  référence de Valdar. Effets « megatron » : **enlevés** (choix d'Olivier).
+- **Où ça tourne** : sur le PC (`valdar voix-nouvelle`, tools\valdar_voix_nouvelle.bat). La
+  clé reste dans `ELEVENLABS_API_KEY` : jamais écrite dans un fichier, masquée (`***`) dans
+  les messages d'erreur. Le conteneur de dev n'a ni la clé ni l'accès à ElevenLabs.
+- **Extraits** : 5 phrases françaises (question, vanne, explication, émotion, calme), ~1 min,
+  `eleven_multilingual_v2`, PCM 24 kHz (sinon 22,05 kHz), WAV mono dans
+  `data/voix/elevenlabs_kmzDWJGT/` (hors git).
+- **Référence** : `voice.xtts.reference` accepte une **liste** ; les latents XTTS sont
+  calculés sur tous les extraits. `voice.effets: false` → `PlainStream` (seul le niveau
+  change, pas de filtre) en flux comme en phrase entière.
+- **Retour arrière** : l'ancienne référence et l'ancien réglage d'effets sont gardés une fois
+  dans `data/voix/voix_precedente.json` ; `valdar voix-nouvelle --revenir` les remet.
+  `--effets` garde la chaîne megatron, `--refaire` régénère les extraits.
+- **Écoute** : `data/voix/comparaison/avant_N.wav` / `apres_N.wav` (+ `_flux.wav`) et
+  `rapport.json` : 1er son en flux, nombre de morceaux, saut max aux raccords comparé au
+  99,9e centile du signal (`sans_clic`). Chiffres : **à relever après le premier lancement
+  sur le PC**.

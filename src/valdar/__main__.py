@@ -415,7 +415,8 @@ def _cmd_voix(args: argparse.Namespace) -> int:
 
     import numpy as np
 
-    from valdar.voice import Speaker, apply, make_tts, split_sentences, to_int16
+    from valdar.voice import Speaker, make_tts, split_sentences, to_int16
+    from valdar.voice.character import render
 
     cfg = load()
     tts = make_tts(cfg)
@@ -435,7 +436,8 @@ def _cmd_voix(args: argparse.Namespace) -> int:
                                             "as construite, c'est la mienne, et j'y "
                                             "tiens.")
     if args.wav:
-        parts = [apply(tts.synthesize(s), tts.sample_rate, cfg.voice.character)
+        parts = [render(tts.synthesize(s), tts.sample_rate, cfg.voice.character,
+                        cfg.voice.effets)
                  for s in split_sentences(text, cfg.voice.max_sentence_chars)]
         audio = to_int16(np.concatenate(parts)) if parts else np.zeros(0, np.int16)
         with wave.open(args.wav, "wb") as wf:
@@ -546,6 +548,13 @@ def _cmd_kiwix(args: argparse.Namespace) -> int:
     return interactive(cfg.repo_path(cfg.kiwix.dir))
 
 
+def _cmd_voix_nouvelle(args: argparse.Namespace) -> int:
+    from valdar.voice.nouvelle import main as nouvelle
+
+    return nouvelle(load(), args.voice_id, redo=args.refaire, back=args.revenir,
+                    effets=args.effets)
+
+
 def _cmd_chrono(args: argparse.Namespace) -> int:
     from valdar.chrono import main as chrono
 
@@ -598,6 +607,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--minutes", type=float, default=None,
                    help="avec --ratee : minutes avant la fin où c'était déjà fichu")
     p.set_defaults(func=_cmd_vigie)
+
+    p = sub.add_parser("voix-nouvelle",
+                       help="nouvelle voix depuis ElevenLabs (extraits, référence, avant/après)")
+    p.add_argument("--voice-id", default="kmzDWJGT4adCbA85GELi")
+    p.add_argument("--refaire", action="store_true", help="redemander les extraits")
+    p.add_argument("--revenir", action="store_true", help="remettre la voix précédente")
+    p.add_argument("--effets", action="store_true", help="garder les effets « megatron »")
+    p.set_defaults(func=_cmd_voix_nouvelle)
 
     p = sub.add_parser("chrono", help="chronomètre un tour complet (clavier, voix, oreilles)")
     p.add_argument("--sans-voix", action="store_true")
