@@ -115,7 +115,9 @@ class Heart:
         if not quiet and self.now >= self._next_journal:
             self.journal.log("state", t=self.now, **self.brief())
             self._next_journal = self.now + self.hc.journal_state_every_seconds
-        if self.persist and self.now >= self._next_save:
+        # En rattrapage (quiet), une seule sauvegarde à la fin : sous Windows, une écriture SQLite
+        # par minute simulée faisait durer le réveil après 3 jours d'absence ~9 minutes.
+        if not quiet and self.persist and self.now >= self._next_save:
             self.save()
 
     def advance(self, seconds: float, quiet: bool = False) -> None:

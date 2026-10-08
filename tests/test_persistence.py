@@ -58,3 +58,17 @@ def test_load_latest_keeps_saved_profile(quiet_cfg, tmp_path):
     h.close()
     back = Heart.load_latest(quiet_cfg, db_path=str(db), journal_path=str(tmp_path / "j.jsonl"))
     assert back.profile_name == "anxieux"
+
+
+def test_catch_up_saves_once(quiet_cfg, tmp_path, monkeypatch):
+    """Sous Windows, chaque écriture SQLite coûte cher : le rattrapage n'en fait qu'une."""
+    db = tmp_path / "v.db"
+    h = Heart(quiet_cfg, anchor=time.time() - 86400, db_path=str(db),
+              journal_path=str(tmp_path / "j.jsonl"))
+    h.save()
+    h.close()
+    saves = []
+    real_save = Store.save
+    monkeypatch.setattr(Store, "save", lambda self, *a: (saves.append(1), real_save(self, *a)))
+    Heart.load_latest(quiet_cfg, db_path=str(db), journal_path=str(tmp_path / "j.jsonl"))
+    assert len(saves) == 1
