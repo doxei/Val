@@ -553,3 +553,11 @@ vide, Valdar coupé quand il parle longtemps, réponses lentes.
 - **Streaming** : Ollama en flux, chaque phrase complète part vers la voix sans attendre la
   fin de la réponse.
 - Nocicepteur mémoire de la carte : alerte à 97,5 % (97 % est le régime normal mesuré).
+
+## 2026-10-08 — Correction : Gemma 4 12B n'a pas d'oreilles
+
+Je m'étais trompé (entrée « Oreilles natives » plus haut) : dans Gemma 4, **seuls E2B et E4B**
+ont l'entrée audio ; les grands modèles lisent texte et images seulement. Et Ollama ne passe
+pas encore l'audio à Gemma 4 (constaté par d'autres, et par l'essai d'Olivier : transcription
+vide). Transcription par défaut : **whisper « small » sur le processeur**. Le code Gemma reste
+(`stt_backend: gemma`) pour le jour où Ollama passera le son à un modèle qui l'entend.

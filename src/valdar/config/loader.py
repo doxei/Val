@@ -296,7 +296,7 @@ class EarsConfig(_Strict):
     echo_tau_seconds: float = Field(default=1.0, gt=0.0)
     min_logprob: float = -1.5
     max_no_speech: float = Field(default=0.6, ge=0.0, le=1.0)
-    stt_backend: Literal["gemma", "whisper"] = "gemma"   # oreilles natives de Gemma 4
+    stt_backend: Literal["gemma", "whisper"] = "whisper"   # le 12B n'a pas d'oreilles
     stt_model: str = "small"            # repli sur le processeur si Gemma n'entend pas
     stt_device: str = "cpu"
     stt_compute_type: str = "int8"

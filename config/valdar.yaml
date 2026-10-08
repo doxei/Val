@@ -630,7 +630,7 @@ ears:
   barge_in_margin_db: 10         # pour le couper, parler nettement plus fort que l'écho de sa voix
   min_logprob: -1.5
   max_no_speech: 0.6
-  stt_backend: gemma             # Gemma 4 12B transcrit lui-même (rien de plus en mémoire)
+  stt_backend: whisper          # Gemma 4 12B n'a pas d'oreilles (seuls E2B et E4B, et Ollama ne leur passe pas encore le son)
   stt_model: small                # repli sur le CPU quand Gemma n'entend pas (rapide)
   stt_device: cpu
   stt_compute_type: int8
