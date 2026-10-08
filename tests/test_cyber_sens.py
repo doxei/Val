@@ -101,7 +101,7 @@ def test_gate_forwards_frames_to_low_road():
 
     cfg = load().ears
     g = Gate(cfg, EnergyVAD(), NoWake(), NoSTT(), lambda h: None,
-             on_frame=lambda f: seen.append(len(f)))
+             on_frame=lambda f, p: seen.append(len(f)))
     g.feed(np.zeros(g.frame * 4, np.float32))
     assert seen == [g.frame] * 4
 
@@ -162,3 +162,55 @@ def test_runtime_saturation_stops_background_thought(runtime_factory):
         kinds.append(rt.events.get().kind)
     assert "sursaut" in kinds
     assert any("la pièce" in line for line in rt.world_lines())
+
+
+def test_gate_keeps_leftover_samples_between_blocks():
+    seen: list[int] = []
+
+    class NoWake:
+        def heard(self, seg):
+            return False
+
+    class NoSTT:
+        def transcribe(self, seg):
+            return Transcript("")
+
+    g = Gate(load().ears, EnergyVAD(), NoWake(), NoSTT(), lambda h: None,
+             on_frame=lambda f, p: seen.append(len(f)))
+    for _ in range(10):
+        g.feed(np.zeros(1600, np.float32))      # blocs de 100 ms du micro
+    assert len(seen) == 16000 // g.frame        # 31 trames : aucun échantillon perdu
+
+
+def test_voice_onset_does_not_startle_but_a_shout_does():
+    amb, clock, fired = make()
+    for _ in range(int(5 / DT)):
+        amb.feed(tone(0.002), 0.0)
+        clock.t += DT
+    amb.feed(tone(0.2), 0.9)                    # voix forte près du micro (≈ −17 dB)
+    assert not fired
+    clock.t += 10
+    amb.feed(tone(0.9), 0.9)                    # un cri (≈ −4 dB)
+    assert [f[0] for f in fired] == ["startle"]
+
+
+def test_wake_name_survives_bad_transcription():
+    from valdar.ears.models import says_name
+
+    names = ["Valdar", "Valdare", "Val dar"]
+    for heard in ("Baldar tu m'entends", "Val d'arc, tu m'entends ?", "Valdard", "Wall dar"):
+        assert says_name(heard, names), heard
+    for other in ("valeur", "voilà", "valider le truc", "val de marne", "valable"):
+        assert not says_name(other, names), other
+
+
+def test_resampler_is_continuous_across_blocks():
+    from valdar.ears.mic import Resampler
+
+    r = Resampler(48000)
+    t = np.arange(48000) / 48000
+    x = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+    out = np.concatenate([r(x[i:i + 4800]) for i in range(0, len(x), 4800)])
+    assert len(out) == 16000
+    step = 2 * np.pi * 440 / 16000
+    assert np.abs(np.diff(out[2000:])).max() < step * 1.05    # pas de clic entre les blocs

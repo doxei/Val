@@ -93,7 +93,8 @@ class Gate:
                  on_barge_in: Callable[[], None] | None = None,
                  speaking: Callable[[], bool] | None = None,
                  clock: Callable[[], float] = time.time,
-                 on_frame: Callable[[np.ndarray], None] | None = None):
+                 on_frame: Callable[[np.ndarray, float], None] | None = None,
+                 on_note: Callable[[str], None] | None = None):
         self.cfg = cfg
         self.vad, self.wake, self.stt = vad, wake, stt
         self.on_heard = on_heard
@@ -101,6 +102,9 @@ class Gate:
         self.speaking = speaking or (lambda: False)
         self.clock = clock
         self.on_frame = on_frame      # voie basse : niveau du son vers le cœur (ambient.py)
+        self.on_note = on_note        # diagnostic : ce que le portier décide (jamais le texte
+        self.notes: collections.deque = collections.deque(maxlen=12)   # non adressé)
+        self._rest = np.zeros(0, np.float32)
         frame = int(SR * cfg.frame_ms / 1000)
         self.frame = frame
         self.preroll: collections.deque = collections.deque(
@@ -114,14 +118,21 @@ class Gate:
     # ------------------------------------------------------------------ flux
     def feed(self, audio: np.ndarray) -> None:
         """Pousse de l'audio (float32 mono 16 kHz, n'importe quelle longueur)."""
-        buf = audio.astype(np.float32).reshape(-1)
-        for i in range(0, len(buf) - self.frame + 1, self.frame):
+        buf = np.concatenate([self._rest, audio.astype(np.float32).reshape(-1)])
+        n = len(buf) // self.frame * self.frame
+        for i in range(0, n, self.frame):
             self._frame(buf[i:i + self.frame])
+        self._rest = buf[n:].copy()          # rien n'est perdu entre deux blocs du micro
+
+    def _note(self, text: str) -> None:
+        self.notes.append(text)
+        if self.on_note is not None:
+            self.on_note(text)
 
     def _frame(self, f: np.ndarray) -> None:
-        if self.on_frame is not None:
-            self.on_frame(f)
         p = self.vad.is_speech(f)
+        if self.on_frame is not None:
+            self.on_frame(f, p)
         if self._segment:
             self._segment.append(f)
             if p >= self.cfg.vad_threshold:
@@ -156,6 +167,7 @@ class Gate:
         if not self.engaged():
             if not self.wake.heard(seg):
                 self.stats["ignored"] += 1      # parole qui ne s'adresse pas à Valdar : oubliée
+                self._note(f"parole {dur:.1f} s : pas de « {self.cfg.names[0]} » entendu")
                 return
             self.stats["woken"] += 1
         tr = self.stt.transcribe(seg)
@@ -163,6 +175,10 @@ class Gate:
         if is_junk(tr.text) or tr.logprob < self.cfg.min_logprob or \
                 tr.no_speech > self.cfg.max_no_speech:
             self.stats["junk"] += 1
+            err = getattr(self.stt, "last_error", None)
+            self._note(f"parole {dur:.1f} s adressée, mais transcription rejetée"
+                       + (f" (erreur : {err})" if err else
+                          " (vide)" if not tr.text.strip() else ""))
             return
         self.engaged_until = self.clock() + self.cfg.engaged_seconds
         self.on_heard(Heard(tr.text.strip(), self.clock(), dur, tone(seg)))
@@ -172,4 +188,4 @@ class Gate:
         self.engaged_until = max(self.engaged_until, self.clock() + self.cfg.engaged_seconds)
 
     def status(self) -> dict[str, Any]:
-        return dict(self.stats, engaged=self.engaged())
+        return dict(self.stats, engaged=self.engaged(), notes=list(self.notes))

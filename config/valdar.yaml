@@ -642,7 +642,8 @@ ears:
 # Double audition (avenant 5 §1) : le niveau du son va au cœur, sans langage, sans rien garder.
 ambient:
   enabled: true
-  startle_floor_db: -22          # un bruit doit au moins atteindre ce niveau pour faire sursauter
+  startle_floor_db: -14          # un bruit doit au moins atteindre ce niveau pour faire sursauter
+  shout_db: -6                   # si c'est de la voix, seul un cri fait sursauter
   startle_rise_db: 20            # … et monter d'autant au-dessus du fond et de l'instant d'avant
   loud_db: -32                   # fond sonore au-dessus : pièce bruyante
   quiet_db: -55                  # fond sonore en dessous : pièce calme

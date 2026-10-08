@@ -36,17 +36,33 @@ def _lev(a: str, b: str) -> int:
     return prev[-1]
 
 
+def _sound(w: str) -> str:
+    """Forme sonore grossière : b/w → v, fins muettes (d, t, s, e, h) et « ar/arc/ard »
+    ramenées à « ar ». « Baldar », « Valdard », « Val d'arc » sonnent comme « Valdar »."""
+    w = w.replace("w", "v").replace("b", "v").replace("ph", "f")
+    w = re.sub(r"(ar)(c|d|t|s|e|h)+$", r"\1", w)
+    w = re.sub(r"(?<=[a-z])[dtsehx]+$", "", w) if not w.endswith("ar") else w
+    return w
+
+
 def says_name(text: str, names: list[str], tolerance: int = 1) -> bool:
-    """« Valdar » entendu, même mal transcrit (« valdare », « val dar », « baldar »)."""
+    """« Valdar » entendu, même mal transcrit (« valdare », « val dar », « baldar »,
+    « val d'arc ») : par la forme écrite, puis par la forme sonore."""
     t = _norm(text)
     words = re.findall(r"[a-z]+", t)
-    joined = [a + b for a, b in zip(words, words[1:], strict=False)]
+    pairs = [a + b for a, b in zip(words, words[1:], strict=False)]
+    triples = ["".join(words[i:i + 3]) for i in range(len(words) - 2)]
+    cands = words + pairs + triples
     for name in names:
-        n = _norm(name)
+        n = _norm(name).replace(" ", "")
         if n in t.replace(" ", ""):
             return True
-        if any(_lev(n, w) <= tolerance for w in words + joined if abs(len(w) - len(n)) <= 2):
-            return True
+        ns = _sound(n)
+        for w in cands:
+            if abs(len(w) - len(n)) > 3:
+                continue
+            if _lev(n, w) <= tolerance or _lev(ns, _sound(w)) <= tolerance:
+                return True
     return False
 
 
@@ -87,7 +103,7 @@ class WhisperSTT:
 
 
 class TranscriptWake:
-    def __init__(self, stt: Any, names: list[str], head_seconds: float = 2.5):
+    def __init__(self, stt: Any, names: list[str], head_seconds: float = 4.0):
         self.stt = stt
         self.names = names
         self.head = int(head_seconds * SR)

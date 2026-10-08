@@ -113,9 +113,9 @@ def _cmd_check(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
-CHAT_HELP = """Commandes : /etat (mon état), /silence (plus d'initiatives), /parle (initiatives
-réactivées), /muet et /voix (couper ou rendre la voix), /quitter. Tout le reste, je le prends
-comme un message."""
+CHAT_HELP = """Commandes : /etat (mon état), /oreilles (ce que j'entends), /silence (plus
+d'initiatives), /parle (initiatives réactivées), /muet et /voix (couper ou rendre la voix),
+/quitter. Tout le reste, je le prends comme un message."""
 
 
 def _start_voice(cfg):
@@ -219,6 +219,9 @@ def _cmd_chat(args: argparse.Namespace) -> int:
                 muted = False
                 print("(voix rétablie)" if speaker else "(lance « valdar chat --voix »)")
                 continue
+            if low == "/oreilles":
+                print(_ears_text(rt))
+                continue
             if low == "/etat":
                 with rt.lock:
                     print(_status_text(rt.heart))
@@ -249,6 +252,22 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ears_text(rt) -> str:
+    gate = getattr(rt, "gate", None)
+    if gate is None:
+        return "(je n'écoute pas : lance tools\\valdar_ecoute.bat)"
+    st = gate.status()
+    amb = rt.ambient
+    lines = [f"segments de parole : {st['segments']} ; éveils : {st['woken']} ; ignorés (pas "
+             f"mon nom) : {st['ignored']} ; transcrits : {st['transcribed']} ; rejetés : "
+             f"{st['junk']} ; conversation ouverte : {'oui' if st['engaged'] else 'non'}"]
+    if amb is not None and amb.base is not None:
+        lines.append(f"fond sonore : {amb.base:.0f} dB ; niveau du moment : {amb.fast:.0f} dB"
+                     f" ; sursauts : {amb.stats['startle']}")
+    lines += ["- " + n for n in st["notes"][-6:]]
+    return "\n".join(lines)
+
+
 def _start_ears(cfg, rt, speaker, say, debug: bool):
     """Écoute au micro (phase 3). Retourne le micro, ou None si l'écoute est impossible."""
     import queue
@@ -271,9 +290,15 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
     speaking = speaker.speaking if speaker is not None else None
     ambient = rt.make_ambient(cfg.ears.frame_ms / 1000, speaking) if cfg.ambient.enabled \
         else None
+    def note(text: str) -> None:
+        if debug or "adressée" in text:
+            print(f"\n(oreilles) {text}\nToi > ", end="", flush=True)
+
     gate = Gate(cfg.ears, vad, wake, stt, heard_q.put,
                 on_barge_in=(speaker.interrupt if speaker is not None else None),
-                speaking=speaking, on_frame=(ambient.feed if ambient is not None else None))
+                speaking=speaking, on_frame=(ambient.feed if ambient is not None else None),
+                on_note=note)
+    rt.gate = gate
 
     def answer() -> None:
         while True:

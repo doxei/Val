@@ -310,7 +310,8 @@ class AmbientConfig(_Strict):
     enabled: bool = True
     base_tau_seconds: float = Field(default=30.0, gt=0.0)    # fond sonore
     fast_tau_seconds: float = Field(default=0.3, gt=0.0)     # niveau du moment
-    startle_floor_db: float = -22.0      # en dessous, rien ne fait sursauter (dB pleine échelle)
+    startle_floor_db: float = -14.0      # en dessous, rien ne fait sursauter (dB pleine échelle)
+    shout_db: float = -6.0               # quand c'est de la parole : seul un cri fait sursauter
     startle_rise_db: float = Field(default=20.0, gt=0.0)     # attaque au-dessus du fond
     startle_span_db: float = Field(default=15.0, gt=0.0)
     refractory_seconds: float = Field(default=3.0, ge=0.0)

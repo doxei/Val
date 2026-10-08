@@ -80,6 +80,7 @@ class Runtime:
         self.llm: LLMBackend = (TimedLLM(raw_llm, self.load)   # type: ignore[assignment]
                                 if self.cfg.interoception.enabled else raw_llm)
         self.ambient: Any = None          # double audition, branchée avec le micro
+        self.gate: Any = None             # le portier, quand le micro tourne
         self._triaging = 0
         self._triage_lock = threading.Lock()
 

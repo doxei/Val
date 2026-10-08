@@ -54,8 +54,11 @@ class Ambient:
         a = 1.0 - math.exp(-self.dt / max(tau, self.dt))
         return prev + a * (x - prev)
 
-    def feed(self, frame: np.ndarray) -> None:
-        """Une trame du micro (appelé par le portier, dans le fil du micro)."""
+    def feed(self, frame: np.ndarray, speech: float = 0.0) -> None:
+        """Une trame du micro, avec la probabilité de parole du portier.
+
+        Une voix qui commence près du micro est une attaque, elle aussi : quand le portier
+        reconnaît de la parole, seul un cri (`shout_db`) fait sursauter."""
         if not self.cfg.enabled:
             return
         level = db(frame)
@@ -65,7 +68,8 @@ class Ambient:
         # Un bruit qui dure ne fait sursauter qu'une fois.
         before = max(self.base if self.base is not None else level,
                      self.fast if self.fast is not None else level)
-        if (level >= c.startle_floor_db and level - before >= c.startle_rise_db
+        floor = c.shout_db if speech >= 0.5 else c.startle_floor_db
+        if (level >= floor and level - before >= c.startle_rise_db
                 and now - self.last_startle >= c.refractory_seconds and not self.speaking()):
             excess = level - before - c.startle_rise_db
             scale = min(1.0, 0.4 + excess / max(1.0, c.startle_span_db))
