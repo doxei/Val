@@ -56,3 +56,9 @@ def runtime_factory(p2cfg):
         rt.heart._refresh()
         return rt
     return _make
+
+
+def prompt_of(call) -> str:
+    """Tout ce que le modèle lit : partie stable + contexte du moment (dans les messages)."""
+    return call["system"] + "\n" + "\n".join(str(m.get("content") or "")
+                                             for m in call["messages"])

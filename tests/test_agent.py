@@ -1,4 +1,6 @@
 """Agent : dialogue, outils, permissions, effets sur le cœur (phase 2)."""
+from conftest import prompt_of
+
 from valdar.config.loader import Identity
 from valdar.llm.backend import ChatResult, LLMError, ToolCall
 from valdar.tools.registry import DANGEROUS, ELEVATED, Tool, params
@@ -124,4 +126,4 @@ def test_memory_tool_and_recall_in_prompt(runtime_factory):
                           ChatResult(content="Du PLA+.")])
     rt.handle("retiens que j'imprime en PLA+ sur une plaque PEI")
     rt.handle("j'imprime avec quel filament déjà ?")
-    assert "PLA+" in rt.llm.calls[-1]["system"]
+    assert "PLA+" in prompt_of(rt.llm.calls[-1])

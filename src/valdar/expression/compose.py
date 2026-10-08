@@ -139,17 +139,59 @@ def system_prompt(
 ) -> str:
     """`extra_blocks` : souvenirs vécus, fil de la dernière conversation, pensées de fond,
     connaissances (phases 2c et 2d)."""
+    stable, context = prompt_parts(cfg, self_model, heart, who, facts, world, urges,
+                                   extra_blocks)
+    return stable + "\n\n" + context
+
+
+def prompt_parts(
+    cfg: ValdarConfig,
+    self_model: dict[str, Any],
+    heart: Any,
+    who: Identity,
+    facts: list[dict[str, Any]],
+    world: list[str],
+    urges: dict[str, float],
+    extra_blocks: list[str] | None = None,
+) -> tuple[str, str]:
+    """(partie stable, contexte du moment).
+
+    La partie stable (qui il est, à qui il parle) ne change pas d'un tour à l'autre : Ollama
+    garde son calcul en cache et ne relit que ce qui est nouveau. Le contexte du moment
+    (souvenirs, émotion, heure, imprimante) change à chaque tour : il voyage avec le dernier
+    message, après tout ce qui peut rester en cache. C'est le plus gros gain de latence."""
     owner = str(self_model.get("createur", "Olivier"))
-    parts = [
+    stable = [
         PERSONA.format(nom=self_model.get("nom", "Valdar")),
         self_block(self_model),
         person_block(who, owner),
+    ]
+    moment = [
         facts_block(facts),
         *(extra_blocks or []),
         feeling_block(heart, cfg.expression, urges),
         world_block(world),
     ]
-    return "\n\n".join(p for p in parts if p)
+    return ("\n\n".join(p for p in stable if p), "\n\n".join(p for p in moment if p))
+
+
+CONTEXT_OPEN = "[CONTEXTE POUR TOI — personne ne l'a dit, ne le récite pas]"
+CONTEXT_CLOSE = ("[FIN DU CONTEXTE — réponds à l'oral, court, en pote, sans markdown ni « comment "
+                 "puis-je t'aider » ; voici le message]")
+
+
+def with_context(messages: list[dict[str, Any]], context: str) -> list[dict[str, Any]]:
+    """Copie de la fenêtre où le contexte du moment précède le dernier message de l'humain."""
+    if not context:
+        return messages
+    out = list(messages)
+    for i in range(len(out) - 1, -1, -1):
+        if out[i].get("role") == "user":
+            m = dict(out[i])
+            m["content"] = f"{CONTEXT_OPEN}\n{context}\n{CONTEXT_CLOSE}\n\n{m['content']}"
+            out[i] = m
+            return out
+    return [{"role": "user", "content": f"{CONTEXT_OPEN}\n{context}\n{CONTEXT_CLOSE}"}, *out]
 
 
 def memories_block(recollections: list, now: float, title: str) -> str:

@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 import httpx
-from conftest import DAY
+from conftest import DAY, prompt_of
 
 from valdar.config.loader import Identity, LLMConfig, PrinterConfig
 from valdar.devices.moonraker import Moonraker
@@ -81,7 +81,7 @@ def test_printer_tools_and_safety_tier(runtime_factory):
     reply = rt.handle("y a de la fumée, arrête l'imprimante !", who=Identity())
     assert reply.tools_used == ["imprimante_arret_urgence"]
     assert ("POST", "/printer/emergency_stop") in calls, "un inconnu peut toujours arrêter"
-    assert "imprimante : état : printing" in rt.llm.calls[0]["system"]
+    assert "imprimante : état : printing" in prompt_of(rt.llm.calls[0])
 
 
 def test_printer_offline_is_reported_not_raised():

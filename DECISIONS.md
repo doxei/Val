@@ -561,3 +561,17 @@ ont l'entrée audio ; les grands modèles lisent texte et images seulement. Et O
 pas encore l'audio à Gemma 4 (constaté par d'autres, et par l'essai d'Olivier : transcription
 vide). Transcription par défaut : **whisper « small » sur le processeur**. Le code Gemma reste
 (`stt_backend: gemma`) pour le jour où Ollama passera le son à un modèle qui l'entend.
+
+## 2026-10-08 — Latence : il entend, mais lentement
+
+Premier échange vocal réussi (« Allô Valdar, est-ce que tu m'entends frérot ? »), mais lent.
+- **Cache d'Ollama** : le prompt système ne contient plus que ce qui est stable (personnalité,
+  socle, à qui il parle). Souvenirs, émotion, heure, imprimante voyagent avec le dernier
+  message, calculés une fois par échange. Ollama ne relit plus des milliers de jetons à
+  chaque tour.
+- **Un seul passage de whisper** : le même whisper « small » écrit la phrase et y cherche
+  « Valdar » ; si c'est pour lui, la transcription sert directement (avant : deux passages).
+  Recherche gloutonne (beam 1), 6 cœurs, fin de phrase détectée après 0,7 s de silence.
+- Rappel de style juste avant le message (Gemma oubliait « pas d'assistant, pas de markdown »).
+- Voix trop grave : Olivier veut en changer plus tard. Interface : visage en dessin animé
+  2D, joli (accord d'Olivier).

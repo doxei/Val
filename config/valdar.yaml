@@ -622,7 +622,7 @@ ears:
   frame_ms: 32
   vad_threshold: 0.5
   preroll_seconds: 0.5
-  end_silence_ms: 800
+  end_silence_ms: 700
   min_segment_seconds: 0.4
   max_segment_seconds: 20
   engaged_seconds: 14

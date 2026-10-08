@@ -1,6 +1,7 @@
 """Phase 2c : mémoire épisodique, contexte temporel, amorçage, humeur, reprise du fil."""
 import numpy as np
 import pytest
+from conftest import prompt_of
 
 from valdar.config.loader import EpisodicConfig
 from valdar.llm.backend import ChatResult
@@ -98,7 +99,7 @@ def test_thread_and_preload_after_restart(runtime_factory):
     assert rt2.agent.thread is not None
     assert [m["role"] for m in rt2.agent.history] == ["user", "assistant"]
     rt2.handle("salut")
-    system = rt2.llm.calls[0]["system"]
+    system = prompt_of(rt2.llm.calls[0])
     assert "LE FIL" in system and "support de téléphone" in system
 
 
@@ -109,6 +110,6 @@ def test_reinstatement_moves_the_heart(runtime_factory):
                  pad=(-0.8, 0.4, -0.5))
     before = rt.heart.variables["cortisol"]
     rt.handle("tu te souviens du plateau en verre ?")
-    assert "plateau en verre" in rt.llm.calls[0]["system"]
+    assert "plateau en verre" in prompt_of(rt.llm.calls[0])
     assert rt.heart.variables["cortisol"] > before or any(
         p["target"] == "cortisol" for p in rt.heart.pending)

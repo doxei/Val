@@ -1,4 +1,6 @@
 """Relations, modèle de l'autre, leçons par personne, « oublie-moi » (phase 7)."""
+from conftest import prompt_of
+
 from valdar.config.loader import Identity
 from valdar.llm.backend import ChatResult, ToolCall
 from valdar.relations import Relations
@@ -75,7 +77,7 @@ def test_runtime_tracks_who_speaks_and_forgets_on_request(runtime_factory):
     rt.handle("j'adore les chats", ZOE)
     assert [le["text"] for le in rt.relations.lessons("zoe")] == ["les chats"]
     assert rt.relations.lessons("olivier") == []            # rangé chez Zoé, pas chez Olivier
-    assert "TA RELATION AVEC ZOÉ" in rt.llm.calls[-1]["system"]
+    assert "TA RELATION AVEC ZOÉ" in prompt_of(rt.llm.calls[-1])
 
     ask = rt.handle("oublie-moi", ZOE)
     assert "confirmes" in ask.text and rt.relations.get("zoe") is not None

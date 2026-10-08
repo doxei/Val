@@ -18,7 +18,13 @@ from typing import Any
 
 from valdar.appraisal import FastAppraisal, normalize
 from valdar.config.loader import Identity, ValdarConfig
-from valdar.expression.compose import gen_params, memories_block, system_prompt, thread_block
+from valdar.expression.compose import (
+    gen_params,
+    memories_block,
+    prompt_parts,
+    thread_block,
+    with_context,
+)
 from valdar.heart import Heart
 from valdar.llm.backend import ChatResult, LLMBackend, LLMError
 from valdar.memory import Episodic, Facts
@@ -168,16 +174,19 @@ class Agent:
     def _loop(self, who: Identity, query: str, allow_tools: bool = True) -> Reply:
         used: list[str] = []
         rounds = self.cfg.llm.max_tool_rounds
+        # Calculé une fois par échange : le même contexte d'un tour d'outil à l'autre, pour
+        # qu'Ollama réutilise son cache.
+        system, context, params = self._compose(who, query)
         for _ in range(rounds):
-            system, params = self._compose(who, query)
             tools = self._tool_schemas(who) if allow_tools else None
             try:
                 stream = ({"on_token": self._on_text}
                           if self._on_text is not None and getattr(self.llm, "supports_stream",
                                                                    False) else {})
                 with self._llm_lock:
-                    result = self.llm.chat(self._window(), system=system, tools=tools,
-                                           params=params, **stream)
+                    result = self.llm.chat(with_context(self._window(), context),
+                                           system=system, tools=tools, params=params,
+                                           **stream)
             except LLMError as exc:
                 self._feel("tool_failure")
                 if self.history and self.history[-1]["role"] == "user":
@@ -218,10 +227,10 @@ class Agent:
                 blocks += [b for b in self.extras(query) if b]
         with self.lock:
             urges = self.urges()
-            system = system_prompt(self.cfg, self.self_model, self.heart, who, facts,
-                                   world, urges, extra_blocks=blocks)
+            system, context = prompt_parts(self.cfg, self.self_model, self.heart, who, facts,
+                                           world, urges, extra_blocks=blocks)
             params = gen_params(self.cfg.expression, self.heart.sources())
-        return system, params
+        return system, context, params
 
     def _memory_blocks(self, query: str, who: Identity | None = None) -> list[str]:
         if self.memory is None:

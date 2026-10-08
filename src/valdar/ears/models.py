@@ -81,10 +81,11 @@ class SileroVAD:
 
 class WhisperSTT:
     def __init__(self, model: str, device: str = "cpu", compute_type: str = "int8",
-                 language: str = "fr", beam_size: int = 1, hint: str = ""):
+                 language: str = "fr", beam_size: int = 1, hint: str = "", threads: int = 0):
         from faster_whisper import WhisperModel
 
-        self.model = WhisperModel(model, device=device, compute_type=compute_type)
+        self.model = WhisperModel(model, device=device, compute_type=compute_type,
+                                  cpu_threads=threads)
         self.language = language
         self.beam_size = beam_size
         self.hint = hint      # un nom propre que whisper ne connaît pas : on le lui souffle
@@ -143,6 +144,36 @@ class FallbackSTT:
         return tr
 
 
+class OnePass:
+    """Éveil et transcription en **un seul passage** : le même whisper écrit la phrase, on y
+    cherche « Valdar » ; si c'est pour lui, cette transcription sert directement (au lieu de
+    tout retranscrire une deuxième fois). Ce qui ne lui est pas adressé est jeté aussitôt."""
+
+    def __init__(self, stt: Any, names: list[str]):
+        self.stt = stt
+        self.names = names
+        self.peek = False
+        self.last_text: str | None = None
+        self._kept: tuple[int, Transcript] | None = None
+        self.used = ""
+
+    def heard(self, segment: np.ndarray) -> bool:
+        tr = self.stt.transcribe(segment)
+        found = says_name(tr.text, self.names)
+        self.last_text = tr.text if self.peek else None
+        self._kept = (id(segment), tr) if found else None
+        del tr
+        return found
+
+    def transcribe(self, segment: np.ndarray) -> Transcript:
+        kept, self._kept = self._kept, None
+        if kept is not None and kept[0] == id(segment):
+            self.used = "whisper, en un passage"
+            return kept[1]
+        self.used = "whisper"
+        return self.stt.transcribe(segment)   # conversation déjà engagée : pas d'éveil
+
+
 class TranscriptWake:
     def __init__(self, stt: Any, names: list[str], head_seconds: float = 4.0):
         self.stt = stt
@@ -184,6 +215,13 @@ def build(cfg: EarsConfig, model_path: Any, llm: Any = None) -> tuple[Any, Any, 
     `stt_backend` : « gemma » (oreilles natives du cerveau, rien de plus en mémoire) ou
     « whisper » (faster-whisper sur le CPU)."""
     vad = SileroVAD()
+    wake_file = model_path(cfg.wake_model) if cfg.wake_model else None
+    has_model = wake_file is not None and wake_file.is_file()
+    if cfg.stt_backend == "whisper" and cfg.transcript_wake and not has_model:
+        main = WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type, beam_size=1,
+                          hint=cfg.names[0], threads=cfg.stt_threads)
+        both = OnePass(main, cfg.names)
+        return vad, both, both
     if cfg.stt_backend == "gemma":
         from valdar.ears.gemma import GemmaSTT, check
 
@@ -196,16 +234,17 @@ def build(cfg: EarsConfig, model_path: Any, llm: Any = None) -> tuple[Any, Any, 
                                "ears.stt_backend: whisper")
         stt: Any = FallbackSTT(GemmaSTT(llm),
                                WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type,
-                                          beam_size=3, hint=cfg.names[0]))
+                                          beam_size=1, hint=cfg.names[0],
+                                          threads=cfg.stt_threads))
     else:
-        stt = WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type, beam_size=3,
-                         hint=cfg.names[0])
-    wake_file = model_path(cfg.wake_model) if cfg.wake_model else None
-    if wake_file is not None and wake_file.is_file():
+        stt = WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type, beam_size=1,
+                         hint=cfg.names[0], threads=cfg.stt_threads)
+    if has_model:
         wake: Any = OpenWakeWordWake(str(wake_file), cfg.wake_threshold)
     elif cfg.transcript_wake:
         wake = TranscriptWake(WhisperSTT(cfg.wake_stt_model, "cpu", "int8",
-                                         beam_size=2, hint=cfg.names[0]), cfg.names)
+                                         beam_size=2, hint=cfg.names[0],
+                                         threads=cfg.stt_threads), cfg.names)
     else:
         raise RuntimeError("aucun mot d'éveil : entraîne le modèle « Valdar » ou active "
                            "ears.transcript_wake")

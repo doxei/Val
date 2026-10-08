@@ -287,7 +287,7 @@ class EarsConfig(_Strict):
     frame_ms: int = Field(default=32, ge=10, le=100)          # 512 échantillons pour Silero
     vad_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     preroll_seconds: float = Field(default=0.5, ge=0.0, le=3.0)
-    end_silence_ms: int = Field(default=800, ge=200)
+    end_silence_ms: int = Field(default=700, ge=200)
     min_segment_seconds: float = Field(default=0.4, ge=0.1)
     max_segment_seconds: float = Field(default=20.0, gt=1.0)
     engaged_seconds: float = Field(default=14.0, ge=0.0)      # comme RAUB
@@ -300,6 +300,7 @@ class EarsConfig(_Strict):
     stt_model: str = "small"            # repli sur le processeur si Gemma n'entend pas
     stt_device: str = "cpu"
     stt_compute_type: str = "int8"
+    stt_threads: int = Field(default=6, ge=0)      # i5-11400F : 6 cœurs (0 = automatique)
     wake_model: str = ""                                      # modèle « Valdar » entraîné
     wake_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     transcript_wake: bool = True                              # compromis tant qu'il manque

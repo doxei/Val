@@ -348,3 +348,27 @@ def test_his_own_voice_ramping_up_does_not_cut_him():
     for _ in range(60):
         g.feed(tone(0.06, g.frame))                # puis sa voix dans les haut-parleurs
     assert cut == []
+
+
+def test_one_pass_wake_reuses_the_transcription():
+    from valdar.ears.models import OnePass
+
+    class Counting:
+        def __init__(self, texts):
+            self.texts, self.calls = list(texts), 0
+
+        def transcribe(self, seg):
+            self.calls += 1
+            return Transcript(self.texts.pop(0), -0.2, 0.01)
+
+    stt = Counting(["Baldar, tu m'entends ?", "il fait beau", "et là ?"])
+    both = OnePass(stt, ["Valdar"])
+    heard: list = []
+    g = Gate(load().ears, EnergyVAD(0.005), both, both, heard.append)
+    g.feed(tone(0.3, SR))
+    g.feed(np.zeros(SR, np.float32))
+    assert [h.text for h in heard] == ["Baldar, tu m'entends ?"] and stt.calls == 1
+    g.engaged_until = 0
+    g.feed(tone(0.3, SR))
+    g.feed(np.zeros(SR, np.float32))
+    assert len(heard) == 1 and both._kept is None        # pas pour lui : rien de gardé
