@@ -221,7 +221,7 @@ def test_xtts_missing_files_says_what_to_do(tmp_path):
 def test_speaker_plays_sentence_by_sentence():
     sink = NullSink()
     tts = FakeTTS()
-    sp = Speaker(VoiceConfig(), tts, sink=sink).start()
+    sp = Speaker(VoiceConfig(streaming=False), tts, sink=sink).start()
     sp.say("Salut Olivier. *Ça* va ? Moi oui.")
     assert sp.wait_done(timeout=10)
     sp.close()
@@ -301,3 +301,67 @@ def test_import_takes_voice_and_nothing_personal(runtime_factory, tmp_path):
     assert "eleven.key" not in copied and "test_sony.wav" not in copied
     assert _tree_hash(ancien) == before, "l'ancienne installation n'est jamais modifiée"
     assert all("déjà importé" in line for line in importer().run())
+
+
+
+def test_speaker_streams_chunks_with_one_continuous_chain():
+    sink = NullSink()
+    tts = FakeTTS()
+    sp = Speaker(VoiceConfig(), tts, sink=sink).start()
+    sp.say("Salut Olivier. Ça va ?")
+    assert sp.wait_done(timeout=10)
+    sp.close()
+    assert len(sink.played) == 6                      # 3 morceaux par phrase, à la suite
+    assert sum(n for n, _ in sink.played) == sum(max(240, 60 * len(t)) for t in tts.texts)
+    assert sp.stats.first_chunk_seconds is not None
+
+
+def test_character_stream_matches_the_original_chain():
+    from valdar.voice.character import CharacterStream
+
+    ch = load().voice.character
+    sr = 24000
+    x = _speechlike(sr * 3)
+    ref = apply(x, sr, ch)
+    cs = CharacterStream(sr, ch)
+    st = np.concatenate([cs.process(x[i:i + 2048]) for i in range(0, len(x), 2048)])
+
+    def spec(y):
+        f = np.abs(np.fft.rfft(y * np.hanning(len(y))))
+        return 20 * np.log10(np.add.reduceat(f, np.linspace(0, len(f) - 1, 60).astype(int))
+                             + 1e-9)
+
+    assert np.corrcoef(spec(ref), spec(st))[0, 1] > 0.98          # même timbre
+    rms = [20 * np.log10(np.sqrt(np.mean(y ** 2))) for y in (ref, st)]
+    assert abs(rms[0] - rms[1]) < 1.5                              # même niveau
+    assert np.abs(st).max() <= ch.peak + 1e-9                      # jamais de saturation
+    jumps = [abs(st[i] - st[i - 1]) for i in range(2048, len(st), 2048)]
+    assert max(jumps) <= np.abs(np.diff(st)).max()                 # pas de clic aux raccords
+
+
+def test_xtts_stream_uses_cached_latents_and_original_settings(tmp_path):
+    mdir, ref = _voice_files(tmp_path)
+    model = _FakeXtts()
+    calls = []
+
+    def inference_stream(text, language, lat, emb, **kw):
+        calls.append((text, lat, emb, kw))
+        for i in range(3):
+            yield np.full(100, 0.1 * (i + 1), dtype=np.float32)
+
+    model.inference_stream = inference_stream
+    be = XttsBackend(mdir, ref, loader=lambda d, dev: (model, model.config))
+    chunks = list(be.stream("Salut.", chunk_size=15))
+    assert [round(float(c[0]), 2) for c in chunks] == [0.1, 0.2, 0.3]
+    text, lat, emb, kw = calls[0]
+    assert (lat, emb) == ("LAT", "EMB") and kw["stream_chunk_size"] == 15
+    assert kw["temperature"] == 0.75 and kw["enable_text_splitting"] is False
+    assert len(model.latent_calls) == 1
+
+
+def test_xtts_stream_falls_back_to_whole_sentence(tmp_path):
+    mdir, ref = _voice_files(tmp_path)
+    model = _FakeXtts()                          # pas d'inference_stream
+    be = XttsBackend(mdir, ref, loader=lambda d, dev: (model, model.config))
+    chunks = list(be.stream("Salut."))
+    assert len(chunks) == 1 and chunks[0].dtype == np.float32

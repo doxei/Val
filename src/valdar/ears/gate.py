@@ -14,6 +14,7 @@ Invariants (testés) :
 from __future__ import annotations
 
 import collections
+import concurrent.futures
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -54,6 +55,18 @@ class Heard:
     tone: dict[str, float]
     # La phrase elle-même, en mémoire vive seulement, pour reconnaître la voix de qui parle.
     audio: np.ndarray | None = field(default=None, repr=False)
+    # Chronométrage : fin de parole → texte prêt (secondes), transcription anticipée ou non.
+    timing: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class _Decision:
+    """Ce que le portier conclut d'un segment (calculé à part, appliqué ensuite)."""
+    kind: str                       # ignored | junk | heard
+    text: str = ""
+    note: str = ""
+    stats: dict[str, int] = field(default_factory=dict)
+    seconds: float = 0.0            # temps de calcul (éveil + transcription)
 
 
 _JUNK = ("sous-titres", "amara", "merci d'avoir regardé", "abonnez-vous",
@@ -124,7 +137,15 @@ class Gate:
         self._silence = 0
         self._speech = 0
         self.engaged_until = 0.0
-        self.stats = {"segments": 0, "woken": 0, "transcribed": 0, "ignored": 0, "junk": 0}
+        self.stats = {"segments": 0, "woken": 0, "transcribed": 0, "ignored": 0, "junk": 0,
+                      "anticipated": 0}
+        # Transcription anticipée : dès que le silence commence (early_ms), on transcrit déjà
+        # la phrase ; si la personne ne reprend pas, le texte est prêt à la fin de la phrase
+        # au lieu de commencer à ce moment-là. Un seul fil fait tout (whisper n'est jamais
+        # appelé deux fois en même temps).
+        self._worker = concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="valdar-stt")
+        self._spec: tuple[int, int, concurrent.futures.Future] | None = None
+        self._silence_at: float | None = None
 
     # ------------------------------------------------------------------ flux
     def feed(self, audio: np.ndarray) -> None:
@@ -169,13 +190,18 @@ class Gate:
             if p >= self.cfg.vad_threshold:
                 self._silence = 0
                 self._speech += 1
+                self._silence_at = None
             else:
+                if self._silence == 0:
+                    self._silence_at = time.perf_counter()     # la parole vient de s'arrêter
                 self._silence += 1
+                self._maybe_anticipate()
             long = len(self._segment) * self.cfg.frame_ms / 1000 >= self.cfg.max_segment_seconds
             if self._silence * self.cfg.frame_ms >= self.cfg.end_silence_ms or long:
                 seg = np.concatenate(self._segment)
-                self._segment, self._silence, self._speech = [], 0, 0
-                self._close(seg)
+                spec, said = self._spec, self._speech
+                self._segment, self._silence, self._speech, self._spec = [], 0, 0, None
+                self._close(seg, spec if spec is not None and spec[0] == said else None)
         elif p >= self.cfg.vad_threshold:
             self._segment = list(self.preroll) + [f]
             self._speech, self._silence = 1, 0
@@ -189,38 +215,79 @@ class Gate:
     def engaged(self) -> bool:
         return self.clock() < self.engaged_until
 
-    def _close(self, seg: np.ndarray) -> None:
-        dur = len(seg) / SR
-        if dur < self.cfg.min_segment_seconds:
+    def _ignorable(self, seg: np.ndarray) -> bool:
+        return (len(seg) / SR < self.cfg.min_segment_seconds
+                or (self._seg_during_speech and not self._barged))
+
+    def _maybe_anticipate(self) -> None:
+        early = self.cfg.early_ms
+        if (early <= 0 or self._spec is not None or self.tap is not None
+                or self._silence * self.cfg.frame_ms < early):
             return
-        if self._seg_during_speech and not self._barged:
-            self._note(f"parole {dur:.1f} s pendant que je parlais : ma propre voix, ignorée")
+        snap = np.concatenate(self._segment)
+        if self._ignorable(snap):
+            return
+        self._spec = (self._speech, len(snap),
+                      self._worker.submit(self._decide, snap, self.engaged()))
+
+    def _decide(self, seg: np.ndarray, engaged: bool) -> _Decision:
+        """Éveil puis transcription d'un segment. Ne touche à rien d'autre : le résultat est
+        appliqué par `_close` (et jeté si la personne a repris la parole entre-temps)."""
+        t0 = time.perf_counter()
+        dur = len(seg) / SR
+        st = {"segments": 1}
+        if not engaged:
+            if not self.wake.heard(seg):
+                seen = getattr(self.wake, "last_text", None)
+                return _Decision("ignored", note=(
+                    f"parole {dur:.1f} s : pas de « {self.cfg.names[0]} » entendu"
+                    + (f" (compris : « {seen.strip()} »)" if seen is not None else "")),
+                    stats={**st, "ignored": 1}, seconds=time.perf_counter() - t0)
+            st["woken"] = 1
+        tr = self.stt.transcribe(seg)
+        st["transcribed"] = 1
+        if is_junk(tr.text) or tr.logprob < self.cfg.min_logprob or \
+                tr.no_speech > self.cfg.max_no_speech:
+            err = getattr(self.stt, "last_error", None)
+            return _Decision("junk", note=(
+                f"parole {dur:.1f} s adressée, mais transcription rejetée"
+                + (f" (erreur : {err})" if err else " (vide)" if not tr.text.strip() else "")),
+                stats={**st, "junk": 1}, seconds=time.perf_counter() - t0)
+        used = getattr(self.stt, "used", "")
+        return _Decision("heard", tr.text.strip(),
+                         f"parole {dur:.1f} s comprise" + (f" (par {used})" if used else ""),
+                         st, time.perf_counter() - t0)
+
+    def _close(self, seg: np.ndarray, spec: tuple[int, int, Any] | None = None) -> None:
+        dur = len(seg) / SR
+        if self._ignorable(seg):
+            if dur >= self.cfg.min_segment_seconds:
+                self._note(f"parole {dur:.1f} s pendant que je parlais : ma propre voix, "
+                           "ignorée")
             return
         if self.tap is not None and self.tap(seg):
             return            # enrôlement de voix en cours : la phrase sert d'échantillon
-        self.stats["segments"] += 1
-        if not self.engaged():
-            if not self.wake.heard(seg):
-                self.stats["ignored"] += 1      # parole qui ne s'adresse pas à Valdar : oubliée
-                seen = getattr(self.wake, "last_text", None)
-                self._note(f"parole {dur:.1f} s : pas de « {self.cfg.names[0]} » entendu"
-                           + (f" (compris : « {seen.strip()} »)" if seen is not None else ""))
-                return
-            self.stats["woken"] += 1
-        tr = self.stt.transcribe(seg)
-        self.stats["transcribed"] += 1
-        if is_junk(tr.text) or tr.logprob < self.cfg.min_logprob or \
-                tr.no_speech > self.cfg.max_no_speech:
-            self.stats["junk"] += 1
-            err = getattr(self.stt, "last_error", None)
-            self._note(f"parole {dur:.1f} s adressée, mais transcription rejetée"
-                       + (f" (erreur : {err})" if err else
-                          " (vide)" if not tr.text.strip() else ""))
+        silence_at = self._silence_at
+        t_close = time.perf_counter()
+        anticipated = spec is not None
+        if anticipated:
+            d = spec[2].result()       # souvent déjà prêt : calculé pendant le silence
+            self.stats["anticipated"] += 1
+        else:
+            d = self._worker.submit(self._decide, seg, self.engaged()).result()
+        for k, v in d.stats.items():
+            self.stats[k] = self.stats.get(k, 0) + v
+        if d.note:
+            self._note(d.note + (" (anticipée)" if anticipated else ""))
+        if d.kind != "heard":
             return
         self.engaged_until = self.clock() + self.cfg.engaged_seconds
-        used = getattr(self.stt, "used", "")
-        self._note(f"parole {dur:.1f} s comprise" + (f" (par {used})" if used else ""))
-        self.on_heard(Heard(tr.text.strip(), self.clock(), dur, tone(seg), seg))
+        now = time.perf_counter()
+        timing = {"transcription_s": round(d.seconds, 3), "anticipee": anticipated,
+                  "attente_apres_silence_s": round(now - t_close, 3),
+                  "fin_de_parole_au_texte_s": round(now - silence_at, 3)
+                  if silence_at is not None else None}
+        self.on_heard(Heard(d.text, self.clock(), dur, tone(seg), seg, timing))
 
     def keep_engaged(self) -> None:
         """Valdar vient de parler : on lui répond sans redire son nom."""

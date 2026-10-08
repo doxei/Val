@@ -26,7 +26,7 @@ from valdar.expression.compose import (
     with_context,
 )
 from valdar.heart import Heart
-from valdar.llm.backend import ChatResult, LLMBackend, LLMError
+from valdar.llm.backend import ChatResult, GenParams, LLMBackend, LLMError
 from valdar.memory import Episodic, Facts
 from valdar.tools.registry import Registry, decide
 
@@ -299,6 +299,25 @@ class Agent:
         impulses = r.positive if p > 0 else r.negative
         with self.lock:
             self.heart.apply(impulses, amp=abs(p) * r.gain)
+
+    def warm(self, who: Identity | None = None) -> bool:
+        """Réchauffe le cache d'Ollama : fait relire au modèle la partie stable (personnalité,
+        outils, conversation en cours) quand personne ne parle, pour que le prochain message
+        ne paie que ses propres jetons. Utile après une pensée de fond ou au démarrage, qui
+        ont remplacé ce cache. Ne touche pas à l'historique."""
+        if self.busy.is_set() or not self._llm_lock.acquire(blocking=False):
+            return False
+        try:
+            who = who or self.cfg.agent.console_identity
+            system, context, params = self._compose(who, "")
+            msgs = with_context(self._window() + [{"role": "user", "content": "…"}], context)
+            self.llm.chat(msgs, system=system, tools=self._tool_schemas(who),
+                          params=GenParams(temperature=0.0, max_tokens=1))
+            return True
+        except Exception:
+            return False
+        finally:
+            self._llm_lock.release()
 
     def _tool_schemas(self, who: Identity) -> list[dict[str, Any]]:
         perms = self.cfg.permissions

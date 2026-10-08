@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -160,6 +160,30 @@ class XttsBackend:
         peak = peak or 1.0
         return (wav * (32767.0 / peak)).astype(np.int16)
 
+    def stream(self, text: str, chunk_size: int = 20) -> Iterator[np.ndarray]:
+        """La phrase morceau par morceau (float32 dans [-1, 1]), dès qu'XTTS les produit.
+
+        Repli : si le flux n'existe pas (version de coqui-tts, latents absents), la phrase
+        entière en un seul morceau."""
+        self.load()
+        if self._voice is None or not hasattr(self.model, "inference_stream"):
+            yield self.synthesize(text).astype(np.float32) / 32768.0
+            return
+        try:
+            import torch
+
+            ctx: Any = torch.inference_mode()
+        except ImportError:
+            ctx = _Null()
+        with ctx:
+            gen = self.model.inference_stream(
+                text, self.language, self._voice[0], self._voice[1],
+                stream_chunk_size=chunk_size, enable_text_splitting=False,
+                **self._settings)
+            for chunk in gen:
+                arr = chunk.detach().cpu().numpy() if hasattr(chunk, "detach") else chunk
+                yield np.asarray(arr, dtype=np.float32).reshape(-1)
+
     def _infer(self, fn: Callable[[], Any]) -> Any:
         try:
             import torch
@@ -174,6 +198,14 @@ def _get(conf: Any, key: str) -> Any:
         return conf[key]
     except (KeyError, TypeError, IndexError):
         return getattr(conf, key)
+
+
+class _Null:
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *a: Any) -> None:
+        return None
 
 
 class FakeTTS:
@@ -194,3 +226,9 @@ class FakeTTS:
         n = max(240, 60 * len(text))
         t = np.arange(n) / self.sample_rate
         return (8000 * np.sin(2 * np.pi * 180 * t)).astype(np.int16)
+
+    def stream(self, text: str, chunk_size: int = 20) -> Iterator[np.ndarray]:
+        wav = self.synthesize(text).astype(np.float32) / 32768.0
+        step = max(1, len(wav) // 3)
+        for i in range(0, len(wav), step):
+            yield wav[i:i + step]
