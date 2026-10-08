@@ -301,8 +301,8 @@ Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main 
 
 - **Tests** : 159 verts sous Windows (`.venv`, Python 3.11).
 - **Nocicepteurs** (`read_pc(Path("data"))`) : `gpu_temp` 39 °C, `gpu_mem` 15 %, `disk` 64 %.
-  `nvidia-smi` est dans le PATH (`C:\WINDOWS\system32`). **`ram` absent** : `psutil` n'est pas
-  installé dans le `.venv` (extra `[system]`), à installer avec `pip install -e .[system]`.
+  `nvidia-smi` est dans le PATH (`C:\WINDOWS\system32`). `ram` absent au départ : `psutil` n'était
+  pas installé (extra `[system]`) ; après `pip install -e .[system]`, `ram` remonte (31 %).
   `cpu_temp` absent attendu : `psutil.sensors_temperatures` n'existe pas sous Windows.
 - **Ollama** : modèles présents `gemma4:12b` (8,0 Go), `gemma4:e4b`, `qwen3:8b`,
   `qwen2.5:7b-instruct`, `qwen2.5vl:3b`. Le serveur ne tourne pas au démarrage.
@@ -370,3 +370,42 @@ Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main 
 - Tests : 174 verts ; critères de la phase 1 verts.
 - Reste : amorcer les relations depuis `raub_affect.json` (format à relever sur la machine) ;
   reconnaissance de la personne (phase 4).
+
+---
+
+## 2026-10-08 — Phase 3 : budget de la carte graphique (Gemma 4 12B + XTTS)
+
+Mesures sur la machine (RTX 2060 12 Go, 12 288 MiB). Bureau seul : 1,1 Go dédiés. Voix lue
+directement dans les fichiers de RAUB pour la mesure (rien copié dans `data/`). Environnement voix
+installé dans le `.venv` : torch 2.6.0+cu126, coqui-tts 0.27.5. XTTS sur GPU : chargé en ~27 s,
+≈ 2 Go de VRAM.
+
+| Option | Pic VRAM | 1re phrase dite | Gemma pendant la voix | Phrase de 15 mots |
+|---|---|---|---|---|
+| Gemma seul, 8192 (référence) | 9,8 Go | — | 44–47 tok/s | — |
+| a. XTTS GPU + `num_ctx` 4096 | 11,7 Go | 4,9 s | 22 tok/s | 3,8 s pour 6,3 s d'audio |
+| a. XTTS GPU + `num_ctx` 6144 | 11,9 Go | 4,9 s | 21 tok/s | 3,3 s pour 5,6 s |
+| a. XTTS GPU + `num_ctx` 8192 | 11,9 Go | 4,4–5,4 s | 20–24 tok/s | 3,2–3,4 s pour ~6 s |
+| b. XTTS CPU + 8192 | 9,8 Go | 9,5 s | 37 tok/s | **11,7 s pour 7,1 s** |
+| c. Gemma déchargé pendant la voix | 11,9 Go | 8,5 s | 39 tok/s | 3,5 s |
+
+- « 1re phrase dite » = de l'envoi du message à la fin de la synthèse de la 1re phrase (texte
+  en ~0,9 s, puis synthèse ; Gemma continue d'écrire pendant ce temps).
+- **Mémoire GPU partagée** (compteur Windows `GPU Adapter Memory\Shared Usage`) : 41 Mo à vide,
+  ~1,3 Go dès que Gemma est chargé (Ollama, même sans XTTS et à 45 tok/s), 1,33–1,40 Go avec
+  XTTS. XTTS n'ajoute que ≤ 80 Mo : **pas de débordement** « sysmem fallback ». La baisse à
+  ~22 tok/s vient du partage du calcul pendant la synthèse ; XTTS chargé mais muet ne coûte
+  que 47 → 38–40 tok/s.
+- Option b : XTTS sur CPU est plus lent que la parole (facteur 1,65) : la voix hacherait.
+- Option c : chaque tour paie déchargement (2,2 s) + rechargement (6,8 s, 1er token à 7,4 s),
+  et la voix attend la réponse entière. Trop lent en conversation.
+- Réduire `num_ctx` ne libère presque rien (≈ 250 Mo entre 8192 et 4096).
+
+**Décision : option a avec `num_ctx` 8192 inchangé**, aucun réglage à modifier. XTTS
+synthétise ~2× plus vite que la parole et Gemma, même à 20 tok/s, écrit bien plus vite qu'on ne
+parle (~4 tok/s). Marge de VRAM étroite (~350 Mo) : si un « out of memory » apparaît (navigateur,
+OrcaSlicer…), passer `llm.num_ctx` à 4096. RAUB et Valdar ne peuvent toujours pas tourner en même
+temps.
+
+Reste à faire : copier la voix dans `data/` (`valdar import-raub`, étape voix ; la copie a été
+bloquée par une permission pendant la session de mesure), puis essayer `valdar chat --voix`.
