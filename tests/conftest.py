@@ -47,7 +47,8 @@ def runtime_factory(p2cfg):
     from valdar.runtime import Runtime
 
     def _make(script=None, printer=None, anchor: float = DAY):
-        rt = Runtime(p2cfg, llm=FakeBackend(script), persist=False, printer=printer)
+        rt = Runtime(p2cfg, llm=FakeBackend(script), persist=False, printer=printer,
+                     sensors=dict)   # aucun capteur réel : les tests restent déterministes
         rt.heart.now = anchor
         rt.heart.last_interaction = anchor
         rt.heart.need_last = {k: anchor for k in rt.heart.need_last}

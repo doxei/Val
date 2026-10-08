@@ -286,6 +286,7 @@ heart:
     rest:        {energy: 0.25, cortisol: -0.06, noradrenaline: -0.10}
     ignored:     {dopamine: -0.06, panic: 0.06}
     concern:     {care: 0.30, oxytocin: 0.05, noradrenaline: 0.06, dopamine: -0.05}
+    pain:        {noradrenaline: 0.20, cortisol: 0.08, dopamine: -0.08, fear: 0.10}
 
 # Tempérament : Big Five dans [-1, 1] (O ouverture, C conscience, E extraversion,
 # A agréabilité, S stabilité émotionnelle = inverse du névrosisme).
@@ -564,3 +565,24 @@ thoughts:
   curiosity: true
 
 knowledge_db: connaissances.db
+
+# Nocicepteurs du PC (avenant 4 §4). Signal 0 sous `warn`, 1 à `danger`. La douleur est
+# construite : signal × (1 + amplification × anxiété) × (1 − distraction × engagement).
+# Au seuil de danger : pas d'habituation, et réflexe (la pensée de fond se suspend).
+nociception:
+  enabled: true
+  interval_seconds: 15
+  stimulus: pain
+  sensors:
+    gpu_temp: {warn: 80, danger: 90}      # °C (RTX 2060 : ralentit vers 87-93)
+    gpu_mem: {warn: 0.92, danger: 0.98}   # fraction de la mémoire de la carte
+    ram: {warn: 0.90, danger: 0.97}
+    disk: {warn: 0.92, danger: 0.98}
+    cpu_temp: {warn: 85, danger: 98}      # rarement lisible sous Windows
+  anxiety: {fear_exc: 1.0, cortisol_dev: 2.0}
+  engagement: {seeking_exc: 0.6, play_exc: 0.6}
+  amplification: 1.0
+  distraction: 0.5
+  min_pain: 0.05
+  worsen_step: 0.2
+  repeat_seconds: 300

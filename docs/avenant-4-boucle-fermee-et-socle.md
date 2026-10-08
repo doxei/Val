@@ -225,8 +225,8 @@ font partie. C'est la version matérielle du §1, avec la même interface.
 | 2b | voix de RAUB | fait, à essayer |
 | 2-bis | boucle corps ↔ cœur, socle de valeurs | **fait (cet avenant)** |
 | **0** | mesures sur la machine : Gemma, XTTS, whisper, VRAM | attend les essais d'Olivier |
-| **2c** | mémoire de contexte temporel, mémoire de travail, journal épisodique, reprise du fil, réactivation des souvenirs | fait, sauf la réactivation affective des souvenirs |
-| **2d** | espace de travail global : pensée de fond (recul, réévaluation), veille ; nocicepteurs du PC | pensée de fond faite ; veille et nocicepteurs à faire |
+| **2c** | mémoire de contexte temporel, mémoire de travail, journal épisodique, reprise du fil, réactivation des souvenirs | fait |
+| **2d** | espace de travail global : pensée de fond (recul, réévaluation), veille ; nocicepteurs du PC | fait |
 | 3 | portier, transcription après éveil, fin de tour, parler en continu | |
 | 4 | vision, identité, registre des personnes, consentement | |
 | 5 | imprimante complète, événements Klipper | vigie d'impression faite (niveau 0) |

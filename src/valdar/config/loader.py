@@ -277,6 +277,32 @@ class ThoughtsConfig(_Strict):
     curiosity: bool = True                                   # creuse ses connaissances
 
 
+class NociceptorSpec(_Strict):
+    warn: float          # en dessous : aucun signal
+    danger: float        # au-dessus : signal 1, pas d'habituation, réflexe
+
+    @model_validator(mode="after")
+    def _order(self) -> NociceptorSpec:
+        if self.danger <= self.warn:
+            raise ValueError("nociception : danger doit être au-dessus de warn")
+        return self
+
+
+class NociceptionConfig(_Strict):
+    """Nocicepteurs du PC et douleur construite (avenant 4 §4)."""
+    enabled: bool = True
+    interval_seconds: float = Field(default=15.0, ge=1.0)
+    stimulus: str = "pain"
+    sensors: dict[str, NociceptorSpec] = {}
+    anxiety: dict[str, float] = {}       # source du cœur → poids (porte qui amplifie)
+    engagement: dict[str, float] = {}    # source du cœur → poids (porte qui distrait)
+    amplification: float = Field(default=1.0, ge=0.0, le=3.0)
+    distraction: float = Field(default=0.5, ge=0.0, le=0.9)
+    min_pain: float = Field(default=0.05, ge=0.0, le=1.0)
+    worsen_step: float = Field(default=0.2, gt=0.0, le=1.0)
+    repeat_seconds: float = Field(default=300.0, ge=0.0)
+
+
 # ------------------------------------------------------------------------- divers
 class MemoryConfig(_Strict):
     recall_weights: dict[str, float] = {}
@@ -557,6 +583,7 @@ class ValdarConfig(_Strict):
     printwatch: PrintWatchConfig = PrintWatchConfig()
     thoughts: ThoughtsConfig = ThoughtsConfig()
     knowledge_db: str = "connaissances.db"
+    nociception: NociceptionConfig = NociceptionConfig()
 
     _root: Path = PrivateAttr(default_factory=Path.cwd)
 
@@ -578,6 +605,8 @@ class ValdarConfig(_Strict):
         for tgt in list(r.positive) + list(r.negative):
             if tgt not in self.heart.variables:
                 raise ValueError(f"episodic.reinstate : variable inconnue '{tgt}'")
+        if self.nociception.stimulus not in self.heart.stimuli:
+            raise ValueError(f"nociception : stimulus inconnu '{self.nociception.stimulus}'")
         for tgt in list(self.thoughts.calm) + list(self.thoughts.stir):
             if tgt not in self.heart.variables:
                 raise ValueError(f"thoughts : variable inconnue '{tgt}'")

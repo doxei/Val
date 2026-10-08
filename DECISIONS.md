@@ -217,7 +217,8 @@ Détails : `docs/avenant-4-boucle-fermee-et-socle.md` (vision d'Olivier point pa
 ### Phase 2c — Mémoire épisodique (`memory/episodes.py`) : faite
 - Journal de toutes les conversations (tours datés, affect PAD de chaque tour), contexte temporel
   multi-échelles (Howard et Kahana), mémoire de travail, reprise du fil au démarrage.
-- **Reste** : la réactivation affective d'un souvenir rappelé (avenant 4 §2).
+- Réactivation affective : un souvenir chargé rappelé fait revivre une fraction de son affect
+  (`episodic.reinstate`, `agent.py`).
 
 ### Vécu hérité (`valdar import-vecu`)
 - L'export claude.ai d'Olivier (dossier « training ia ») devient des souvenirs datés, source
@@ -243,7 +244,7 @@ Détails : `docs/avenant-4-boucle-fermee-et-socle.md` (vision d'Olivier point pa
   pensée n'agit plus sur le cœur au-delà de 2 fois par heure), idées en double écartées
   (similarité ≥ 0,8). La meilleure idée (intérêt ≥ 0,6) est proposée par l'initiative, une
   seule fois ; Olivier la marque adoptée, rejetée ou plus tard (outil `idee_statut`).
-- **Reste** : la veille, les nocicepteurs du PC.
+- La veille (imprimante, rappels, horloge, corps) tourne dans la boucle du runtime, sans modèle.
 
 ### Vigie d'impression (`printwatch/`)
 - Audit de PrintOS : `docs/audit-printos.md`. Repris d'Obico (constantes vérifiées dans leur
@@ -268,3 +269,26 @@ Détails : `docs/avenant-4-boucle-fermee-et-socle.md` (vision d'Olivier point pa
 - `keep_days` était configuré mais jamais appliqué : purge à la fin de chaque impression.
 - Lint propre ; tests ajoutés pour la vigie, le prédicteur, la porte, les connaissances, la
   pensée de fond et l'import du vécu : **152 verts** (Python 3.11 et 3.13).
+
+---
+
+## 2026-10-08 — Phase 2d terminée : nocicepteurs du PC, douleur construite (avenant 4 §4)
+
+- `heart/nociception.py`. Capteurs : température et mémoire de la carte graphique
+  (`nvidia-smi`), mémoire vive (`psutil`, extra `[system]`), disque (`shutil`), température du
+  processeur si lisible. Aucun n'est obligatoire : un capteur absent est ignoré.
+- **Signal** : 0 sous `warn`, 1 à `danger` (seuils dans `config/valdar.yaml`, carte à 80/90 °C).
+  Un nocicepteur réagit quand il change d'état (apparition, aggravation de 0,2), puis se
+  rappelle toutes les 5 min tant que le signal persiste. Lecture toutes les 15 s, hors verrou.
+- **Douleur construite** (portillon de Melzack et Wall) :
+  `signal × (1 + anxiété) × (1 − 0,5 × engagement)` ; anxiété = peur et cortisol, engagement =
+  exploration et jeu. Stimulus `pain` (noradrénaline, cortisol, peur, dopamine en baisse) : elle
+  passe ensuite par les organes (ventre, cœur) et la boucle fermée.
+- Gêne sans danger : par `fire`, donc habituation. Signal au seuil de danger : impulsions
+  appliquées directement, **pas d'habituation**.
+- **Réflexe** : au seuil de danger, la pensée de fond (qui charge la carte graphique) est
+  suspendue, sans passer par l'humeur ; événement `reflexe` distinct de `douleur`.
+- Valdar sent son corps-PC dans l'état du monde (« gêne : le disque est presque plein (94 %) »).
+- Tests : 159 verts ; les tests du runtime n'utilisent aucun capteur réel (déterministes).
+- **Non fait** : faire passer la douleur par un organe dédié (elle passe par ventre et cœur via
+  les neuromodulateurs) ; nocicepteurs du robot (phase 8).
