@@ -92,13 +92,15 @@ class Gate:
                  on_heard: Callable[[Heard], None],
                  on_barge_in: Callable[[], None] | None = None,
                  speaking: Callable[[], bool] | None = None,
-                 clock: Callable[[], float] = time.time):
+                 clock: Callable[[], float] = time.time,
+                 on_frame: Callable[[np.ndarray], None] | None = None):
         self.cfg = cfg
         self.vad, self.wake, self.stt = vad, wake, stt
         self.on_heard = on_heard
         self.on_barge_in = on_barge_in
         self.speaking = speaking or (lambda: False)
         self.clock = clock
+        self.on_frame = on_frame      # voie basse : niveau du son vers le cœur (ambient.py)
         frame = int(SR * cfg.frame_ms / 1000)
         self.frame = frame
         self.preroll: collections.deque = collections.deque(
@@ -117,6 +119,8 @@ class Gate:
             self._frame(buf[i:i + self.frame])
 
     def _frame(self, f: np.ndarray) -> None:
+        if self.on_frame is not None:
+            self.on_frame(f)
         p = self.vad.is_speech(f)
         if self._segment:
             self._segment.append(f)

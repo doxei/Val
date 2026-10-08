@@ -305,6 +305,42 @@ class EarsConfig(_Strict):
     microphones: list[str] = ["K66", "USB Audio", "Microphone"]
 
 
+class AmbientConfig(_Strict):
+    """Double audition : le niveau du son va au cœur sans passer par le langage (avenant 5 §1)."""
+    enabled: bool = True
+    base_tau_seconds: float = Field(default=30.0, gt=0.0)    # fond sonore
+    fast_tau_seconds: float = Field(default=0.3, gt=0.0)     # niveau du moment
+    startle_floor_db: float = -22.0      # en dessous, rien ne fait sursauter (dB pleine échelle)
+    startle_rise_db: float = Field(default=20.0, gt=0.0)     # attaque au-dessus du fond
+    startle_span_db: float = Field(default=15.0, gt=0.0)
+    refractory_seconds: float = Field(default=3.0, ge=0.0)
+    startle_stimulus: str = "startle"
+    loud_db: float = -32.0               # fond au-dessus : pièce bruyante
+    quiet_db: float = -55.0              # fond en dessous : pièce calme
+    loud_seconds: float = Field(default=120.0, ge=0.0)
+    noise_repeat_seconds: float = Field(default=600.0, ge=0.0)
+    noise_stimulus: str = "noise"
+
+
+class InteroceptionConfig(_Strict):
+    """Charge cognitive (avenant 5 §3)."""
+    enabled: bool = True
+    max_streams: int = Field(default=3, ge=1)
+    latency_window: int = Field(default=50, ge=5)
+    slow_ratio: float = Field(default=3.0, gt=1.0)
+    gpu_mem_from: float = Field(default=0.85, ge=0.0, lt=1.0)
+    weights: dict[str, float] = {"flux": 0.4, "lenteur": 0.4, "carte": 0.2}
+    busy_at: float = Field(default=0.6, gt=0.0, lt=1.0)
+    saturated_at: float = Field(default=0.8, gt=0.0, le=1.0)
+    hysteresis: float = Field(default=0.1, ge=0.0, le=0.3)
+
+    @model_validator(mode="after")
+    def _order(self) -> InteroceptionConfig:
+        if self.saturated_at <= self.busy_at:
+            raise ValueError("interoception : saturated_at doit être au-dessus de busy_at")
+        return self
+
+
 class ThoughtsConfig(_Strict):
     """Pensée de fond (avenant 4 §6)."""
     enabled: bool = True
@@ -653,6 +689,8 @@ class ValdarConfig(_Strict):
     printwatch: PrintWatchConfig = PrintWatchConfig()
     thoughts: ThoughtsConfig = ThoughtsConfig()
     ears: EarsConfig = EarsConfig()
+    ambient: AmbientConfig = AmbientConfig()
+    interoception: InteroceptionConfig = InteroceptionConfig()
     knowledge_db: str = "connaissances.db"
     nociception: NociceptionConfig = NociceptionConfig()
     relations: RelationsConfig = RelationsConfig()
@@ -680,6 +718,9 @@ class ValdarConfig(_Strict):
         for spec in (self.relations.greet, self.relations.wary):
             if spec.stimulus not in self.heart.stimuli:
                 raise ValueError(f"relations : stimulus inconnu '{spec.stimulus}'")
+        for name in (self.ambient.startle_stimulus, self.ambient.noise_stimulus):
+            if self.ambient.enabled and name not in self.heart.stimuli:
+                raise ValueError(f"ambient : stimulus inconnu '{name}'")
         if self.nociception.stimulus not in self.heart.stimuli:
             raise ValueError(f"nociception : stimulus inconnu '{self.nociception.stimulus}'")
         for tgt in list(self.thoughts.calm) + list(self.thoughts.stir):

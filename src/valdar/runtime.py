@@ -21,6 +21,7 @@ from valdar.devices.moonraker import Moonraker
 from valdar.expression import load_self_model
 from valdar.expression.compose import feeling_block, memories_block
 from valdar.heart import Heart
+from valdar.heart.interoception import Load, TimedLLM
 from valdar.heart.nociception import Nociception, read_pc
 from valdar.knowledge import Knowledge
 from valdar.llm import LLMBackend, make_backend
@@ -73,7 +74,13 @@ class Runtime:
         else:
             self.printer = printer or None
         self.self_model = load_self_model(self.cfg.root / "config" / "self_model.yaml")
-        self.llm = llm if llm is not None else make_backend(self.cfg)
+        raw_llm = llm if llm is not None else make_backend(self.cfg)
+        self.load = Load(self.cfg.interoception)
+        self.llm: LLMBackend = (TimedLLM(raw_llm, self.load)   # type: ignore[assignment]
+                                if self.cfg.interoception.enabled else raw_llm)
+        self.ambient: Any = None          # double audition, branchée avec le micro
+        self._triaging = 0
+        self._triage_lock = threading.Lock()
 
         disk = self.cfg.storage_path("x").parent
         self.nociception = Nociception(self.cfg.nociception,
@@ -123,6 +130,9 @@ class Runtime:
             due = time.strftime("%d/%m %H:%M", time.localtime(nxt[0]["due"]))
             lines.append(f"prochain rappel : {nxt[0]['texte']} ({due})")
         lines += ["ton corps (le PC) : " + p for p in self.nociception.lines()]
+        for extra in (self.load.line(), self.ambient.line() if self.ambient else ""):
+            if extra:
+                lines.append(extra)
         if self.checklist.current.active():
             lines.append("checklist affichée : " + self.checklist.render().replace("\n", " | "))
         return lines
@@ -158,6 +168,15 @@ class Runtime:
         from valdar.printwatch.triage import Triage
 
         def run() -> None:
+            with self._triage_lock:
+                self._triaging += 1
+            try:
+                body()
+            finally:
+                with self._triage_lock:
+                    self._triaging -= 1
+
+        def body() -> None:
             res = Triage(self.llm, self.knowledge).assess(ev.image or b"", ev.text)
             if res is not None and self.printwatch is not None:
                 self.printwatch.record_triage(ev.job, res.to_dict())
@@ -237,8 +256,40 @@ class Runtime:
                                   "pensée de fond pour soulager la machine",
                                   {"source": "reflexe"}))
 
+    def streams(self) -> int:
+        """Nombre de flux de pensée actifs en ce moment."""
+        return (int(self.agent.busy.is_set()) + int(self._thinking.locked())
+                + int(self._speaking.locked()) + self._triaging)
+
+    def _feel_load(self) -> None:
+        """Intéroception : recalcule la charge et prévient quand Valdar sature."""
+        if not self.cfg.interoception.enabled:
+            return
+        before = self.load.level
+        level = self.load.update(self.streams(), self.nociception.values.get("gpu_mem"))
+        if level != before:
+            self.events.put(Event("interoception", f"charge mentale : {self.load.label}",
+                                  {"level": level, "value": round(self.load.value, 2),
+                                   "parts": dict(self.load.parts)}))
+
+    def make_ambient(self, frame_seconds: float, speaking: Any = None) -> Any:
+        """Crée la voie basse de l'audition (appelée quand le micro démarre)."""
+        from valdar.ears.ambient import Ambient
+
+        def fire(name: str, scale: float, source: str) -> None:
+            with self.lock:
+                self.heart.fire(name, scale=scale, source=source)
+            if name == self.cfg.ambient.startle_stimulus:
+                self.events.put(Event("sursaut", "un bruit soudain m'a fait sursauter",
+                                      {"scale": round(scale, 2), "source": source}))
+
+        self.ambient = Ambient(self.cfg.ambient, frame_seconds, fire, speaking)
+        return self.ambient
+
     def _maybe_think(self, now: float) -> None:
         if self.nociception.danger:   # réflexe : ne pas charger une machine en souffrance
+            return
+        if self.load.level >= 1:      # tête pleine : la pensée de fond attend
             return
         idle = now - max(self.agent.last_activity, self.thoughts.last_at)
         with self.lock:
@@ -286,6 +337,7 @@ class Runtime:
                 done = lambda iid=idea.id: self.thoughts.mark(iid, "proposee")  # noqa: E731
             self._speak_async(_initiative_reason(event, idea), {"initiative": event}, done)
         self._feel_body(now)
+        self._feel_load()
         self._maybe_think(now)
         if self.printwatch is not None and self._thread is None:
             pass   # en mode manuel (tests), la vigie est avancée par l'appelant

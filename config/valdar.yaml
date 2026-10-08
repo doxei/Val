@@ -287,6 +287,10 @@ heart:
     ignored:     {dopamine: -0.06, panic: 0.06}
     concern:     {care: 0.30, oxytocin: 0.05, noradrenaline: 0.06, dopamine: -0.05}
     pain:        {noradrenaline: 0.20, cortisol: 0.08, dopamine: -0.08, fear: 0.10}
+    startle:                     # sursaut : bruit fort et soudain (voie basse, avenant 5)
+      impulses: {noradrenaline: 0.30, fear: 0.20, cortisol: 0.03}
+      rebound: {noradrenaline: -0.08}
+    noise:       {noradrenaline: 0.08, cortisol: 0.04, serotonin: -0.02}   # vacarme qui dure
 
 # Tempérament : Big Five dans [-1, 1] (O ouverture, C conscience, E extraversion,
 # A agréabilité, S stabilité émotionnelle = inverse du névrosisme).
@@ -634,3 +638,19 @@ ears:
   transcript_wake: true
   wake_stt_model: tiny
   microphones: [K66, USB Audio, Microphone]
+
+# Double audition (avenant 5 §1) : le niveau du son va au cœur, sans langage, sans rien garder.
+ambient:
+  enabled: true
+  startle_floor_db: -22          # un bruit doit au moins atteindre ce niveau pour faire sursauter
+  startle_rise_db: 20            # … et monter d'autant au-dessus du fond et de l'instant d'avant
+  loud_db: -32                   # fond sonore au-dessus : pièce bruyante
+  quiet_db: -55                  # fond sonore en dessous : pièce calme
+  loud_seconds: 120
+  noise_repeat_seconds: 600
+
+# Intéroception (avenant 5 §3) : charge cognitive mesurée.
+interoception:
+  enabled: true
+  busy_at: 0.6                   # chargé : la pensée de fond s'arrête
+  saturated_at: 0.8              # saturé : réponses courtes

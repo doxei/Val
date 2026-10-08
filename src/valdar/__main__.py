@@ -268,9 +268,12 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
         print(f"(écoute impossible : {exc})")
         return None
     heard_q: queue.Queue = queue.Queue()
+    speaking = speaker.speaking if speaker is not None else None
+    ambient = rt.make_ambient(cfg.ears.frame_ms / 1000, speaking) if cfg.ambient.enabled \
+        else None
     gate = Gate(cfg.ears, vad, wake, stt, heard_q.put,
                 on_barge_in=(speaker.interrupt if speaker is not None else None),
-                speaking=(speaker.speaking if speaker is not None else None))
+                speaking=speaking, on_frame=(ambient.feed if ambient is not None else None))
 
     def answer() -> None:
         while True:
