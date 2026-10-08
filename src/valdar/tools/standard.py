@@ -37,6 +37,7 @@ class ToolContext:
     thoughts: Any = None      # valdar.workspace.thoughts.Thoughts
     memory: Any = None        # valdar.memory.Episodic
     relations: Any = None     # valdar.relations.Relations
+    on_recall: Any = None     # souvenirs rappelés → le cœur les revit un peu (agent._reinstate)
 
 
 def build_registry(ctx: ToolContext) -> Registry:
@@ -104,6 +105,34 @@ def build_registry(ctx: ToolContext) -> Registry:
                                                 "deduit : ta propre déduction (hypothèse)"},
                         refutation={**s, "description": "ce qui prouverait que c'est faux"}),
                  t_memoire, SAFE, "mémoire"))
+
+    def t_fouiller(sujet: str) -> str:
+        """Mémoire à la demande : faits durables + conversations vécues sur le sujet."""
+        lines = [f"- {h['text']}" for h in ctx.facts.recall(sujet, person=ctx.person)[:5]]
+        if ctx.memory is not None:
+            import time as _t
+
+            from valdar.expression.compose import memories_block
+
+            now = _t.time()
+            pad = None
+            if ctx.heart is not None:
+                p = ctx.heart.pad
+                pad = (p["P"], p["A"], p["D"])
+            rec = ctx.memory.recall(sujet, now=now, pad=pad, person=ctx.person or None)
+            if rec:
+                if ctx.on_recall is not None:
+                    ctx.on_recall(rec)
+                lines.append(memories_block(rec, now, "souvenirs vécus (reconstruits : "
+                                            "prudence si c'est important) :"))
+        return "\n".join(lines) if lines else "rien ne me revient là-dessus."
+
+    reg.add(Tool("fouiller_memoire",
+                 "Cherche dans ta mémoire (ce qu'on t'a dit, ce que vous avez vécu ensemble) "
+                 "sur un sujet, avant d'en parler. Pas pour un simple bonjour.",
+                 params(["sujet"], sujet={**s, "description": "de quoi il s'agit, en quelques "
+                                                             "mots"}),
+                 t_fouiller, SAFE, "mémoire"))
 
     # --------------------------------------- le Surmoi critique (avenant 5 §4)
     def t_douter(action: str, quoi: str, note: str = "") -> str:
@@ -249,8 +278,8 @@ def build_registry(ctx: ToolContext) -> Registry:
             return "\n".join("- " + h.line(700) for h in hits)
 
         reg.add(Tool("connaissance_impression",
-                     "Cherche dans mes connaissances sur l'impression 3D (défauts, signes "
-                     "avant-coureurs, corrections, Klipper, CR-10S, détection).",
+                     "Cherche dans mes connaissances : impression 3D (défauts, corrections, "
+                     "Klipper, CR-10S), et tous les documents qu'Olivier m'a donnés.",
                      params(sujet=s), t_connaissance, SAFE, "connaissances"))
 
     # ------------------------------------------------------------------ vigie

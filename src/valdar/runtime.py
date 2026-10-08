@@ -116,6 +116,7 @@ class Runtime:
         self.agent = Agent(self.cfg, self.llm, self.registry, self.heart, self.lock,
                            self.facts, self.self_model, self.world_lines, self.urges,
                            memory=self.memory, extras=self.extra_blocks)
+        self.tool_ctx.on_recall = self.agent._reinstate
         self.block_providers: list[Any] = [self._relation_block, self._knowledge_block,
                                            self._thoughts_block]
         self.night = Night(self.cfg.night, self.llm, self.facts, self.memory,
@@ -265,6 +266,8 @@ class Runtime:
         threading.Thread(target=run, name="valdar-tri", daemon=True).start()
 
     def _knowledge_block(self, query: str) -> list[str]:
+        if not self.cfg.context.auto_knowledge:
+            return []          # à la demande (outil connaissance_impression)
         hits = self.knowledge.search(query, k=3)
         if not hits:
             return []
