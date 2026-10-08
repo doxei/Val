@@ -26,6 +26,7 @@ from valdar.knowledge import Knowledge
 from valdar.llm import LLMBackend, make_backend
 from valdar.memory import Episodic, Facts
 from valdar.printwatch import PrintWatch, WatchEvent
+from valdar.relations import Relations
 from valdar.tools.standard import ToolContext, build_registry, printer_line
 from valdar.workspace import Initiative
 from valdar.workspace.thoughts import Thoughts
@@ -83,6 +84,7 @@ class Runtime:
             self.printwatch = PrintWatch(pw, self.printer, path(pw.db), path(pw.frames_dir),
                                          self._on_watch, detector_factory or self._detector,
                                          cameras=cameras)
+        self.relations = Relations(self.cfg, path(self.cfg.relations.db))
         self.thoughts = Thoughts(self.cfg.thoughts, self.llm, path(self.cfg.thoughts.db),
                                  self._thought_context, self._heart_apply, self._spend,
                                  nom=str(self.self_model.get("nom", "Valdar")),
@@ -93,12 +95,15 @@ class Runtime:
                           pinouts=self.pinouts, printer=self.printer,
                           person=who.person or "", lock=self.lock, knowledge=self.knowledge,
                           printwatch=self.printwatch, thoughts=self.thoughts,
-                          memory=self.memory)
+                          memory=self.memory, relations=self.relations)
+        self.tool_ctx = ctx
+        self._who: Identity = who
         self.registry = build_registry(ctx)
         self.agent = Agent(self.cfg, self.llm, self.registry, self.heart, self.lock,
                            self.facts, self.self_model, self.world_lines, self.urges,
                            memory=self.memory, extras=self.extra_blocks)
-        self.block_providers: list[Any] = [self._knowledge_block, self._thoughts_block]
+        self.block_providers: list[Any] = [self._relation_block, self._knowledge_block,
+                                           self._thoughts_block]
         self.events: queue.Queue[Event] = queue.Queue()
         self._thinking = threading.Lock()
         self._stop = threading.Event()
@@ -149,6 +154,10 @@ class Runtime:
             return []
         return ["CE QUE TU SAIS SUR LE SUJET (tes connaissances, cite-les si utile) :\n"
                 + "\n".join("- " + h.line() for h in hits)]
+
+    def _relation_block(self, query: str) -> list[str]:
+        b = self.relations.block(self._who)
+        return [b] if b else []
 
     def _thoughts_block(self, query: str) -> list[str]:
         b = self.thoughts.block()
@@ -300,9 +309,18 @@ class Runtime:
 
     # ========================================================== dialogue
     def handle(self, text: str, who: Identity | None = None) -> Reply:
+        who = who or (self.cfg.agent.console_identity if self.cfg.agent else Identity())
+        self._who = who
+        self.tool_ctx.person = who.person or ""   # les outils agissent pour celui qui parle
+        seen = self.relations.observe(who, text)
         with self.lock:
             self.initiative.on_user_message()
-        return self.agent.handle(text, who)
+            if seen["new_encounter"] and seen["person"] is not None:
+                self.relations.feel_presence(self.heart, seen["person"])
+        reply = self.agent.handle(text, who)
+        if who.person and "oublie_moi" in reply.tools_used:
+            self.relations.forget_person(who.person)   # ce dernier message compris
+        return reply
 
 
 def _initiative_reason(event: dict[str, Any], idea: Any = None) -> str:

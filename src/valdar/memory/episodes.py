@@ -385,6 +385,21 @@ class Episodic:
         return {"episode": row[0], "title": row[1], "started": row[2], "ended": row[3],
                 "turns": [{"speaker": s, "text": t, "t": tt} for s, t, tt in reversed(tail)]}
 
+    def forget_person(self, person: str) -> int:
+        """« Oublie-moi » : efface les épisodes de la personne (tours et accès compris)."""
+        with self._lock, self._conn() as con:
+            eps = [r[0] for r in con.execute("SELECT id FROM episodes WHERE person=?",
+                                             (person,)).fetchall()]
+            for ep in eps:
+                con.execute("DELETE FROM accesses WHERE turn IN "
+                            "(SELECT id FROM turns WHERE episode=?)", (ep,))
+                con.execute("DELETE FROM turns WHERE episode=?", (ep,))
+                con.execute("DELETE FROM episodes WHERE id=?", (ep,))
+        if self._current in eps:
+            self._current = None
+        self._index = None
+        return len(eps)
+
     def count(self) -> dict[str, int]:
         with self._conn() as con:
             rows = con.execute("SELECT e.source, COUNT(t.id) FROM episodes e "

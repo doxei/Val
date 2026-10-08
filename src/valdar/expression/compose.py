@@ -81,6 +81,9 @@ def feeling_block(heart: Any, cfg: ExpressionConfig, urges: dict[str, float]) ->
     else:
         lines.append(f"- émotion : {b['emotion']} ({_intensity_word(cfg, b['intensity'])})")
     lines.append(f"- humeur de fond : {b['mood']}")
+    if getattr(heart, "sliding", None) and heart.sliding():
+        lines.append("- tu sens que tu glisses un peu ces temps-ci (ton moral récupère moins "
+                     "vite) : tu peux le dire simplement si ça vient")
     lines.append("- dans ton corps : " + " ; ".join(heart.felt().values()))
     wants = [cfg.urge_words[k] for k, v in urges.items()
              if v >= cfg.urge_threshold and k in cfg.urge_words]
