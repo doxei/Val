@@ -76,6 +76,8 @@ class Agent:
         self.history: list[dict[str, Any]] = []
         self.pending: dict[str, Any] | None = None
         self._llm_lock = threading.Lock()
+        self._world_sent: tuple[str, ...] | None = None   # état du monde déjà donné
+        self._world_at = 0.0
         self._on_text: Any = None       # streaming : le texte part vers la voix au fil de l'eau
         self.memory = memory
         self.extras = extras
@@ -223,9 +225,11 @@ class Agent:
         return Reply(text=text, tools_used=used)
 
     def _compose(self, who: Identity, query: str):
-        world = self.world()      # peut interroger l'imprimante : jamais sous le verrou du cœur
-        facts = self.facts.context(query, person=who.person or "")
-        self.facts.touch([f["id"] for f in facts])
+        world = self._world_now()  # peut interroger l'imprimante : jamais sous le verrou du cœur
+        facts: list[dict[str, Any]] = []
+        if self.cfg.context.auto_facts:
+            facts = self.facts.context(query, person=who.person or "")
+            self.facts.touch([f["id"] for f in facts])
         blocks = self._memory_blocks(query, who)
         if self.extras is not None:
             with contextlib.suppress(Exception):
@@ -237,10 +241,33 @@ class Agent:
             params = gen_params(self.cfg.expression, self.heart.sources())
         return system, context, params
 
+    def _world_now(self, now: float | None = None) -> list[str]:
+        """L'heure à chaque tour ; le reste du monde au premier tour, puis une fois par
+        `world_every_seconds`, ou tout de suite s'il a changé (imprimante, rappel, corps)."""
+        lines = self.world()
+        if not lines:
+            return lines
+        now = time.time() if now is None else now
+        clock, rest = lines[0], tuple(lines[1:])
+        due = (self._world_sent is None or rest != self._world_sent
+               or now - self._world_at >= self.cfg.context.world_every_seconds)
+        if not due:
+            return [clock]
+        self._world_sent, self._world_at = rest, now
+        return lines
+
     def _memory_blocks(self, query: str, who: Identity | None = None) -> list[str]:
         if self.memory is None:
             return []
         now = time.time()
+        if not self.cfg.context.auto_memory:
+            # à la demande (outil fouiller_memoire) ; seul le fil de la dernière conversation
+            # revient de lui-même au réveil, comme quand on se réveille
+            if self.thread and len(self.history) <= 4 and who is not None and \
+                    who.person == self.cfg.agent.console_identity.person:
+                b = thread_block(self.thread, now)
+                return [b] if b else []
+            return []
         with self.lock:
             pad = self.heart.pad
             pad_t = (pad["P"], pad["A"], pad["D"])

@@ -105,6 +105,7 @@ def test_thread_and_preload_after_restart(runtime_factory):
 
 def test_reinstatement_moves_the_heart(runtime_factory):
     rt = runtime_factory([ChatResult(content="Ah oui…")])
+    rt.cfg.context.auto_memory = True        # mode automatique (le défaut est à la demande)
     mem = rt.memory
     mem.log_turn("Olivier", "le plateau en verre a explosé ce matin, je suis effondré", T0,
                  pad=(-0.8, 0.4, -0.5))

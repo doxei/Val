@@ -674,3 +674,13 @@ night:
   min_idle_seconds: 1800
   audit_size: 5
   out_dir: consolidation         # dans le dossier de données : seul matériau d'un futur LoRA
+
+# Contexte de chaque tour (latence) : le cœur est toujours là ; la mémoire et les
+# connaissances se cherchent à la demande (outils fouiller_memoire, connaissance_impression),
+# comme un humain qui ne récite pas sa vie avant chaque phrase ; l'état du monde complet au
+# premier tour, puis toutes les heures ou dès qu'il change (l'heure, elle, à chaque tour).
+context:
+  auto_memory: false
+  auto_facts: false
+  auto_knowledge: false
+  world_every_seconds: 3600

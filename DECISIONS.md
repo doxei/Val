@@ -646,3 +646,26 @@ icône sur le bureau.
 - **Oreilles** : une erreur en répondant tuait le fil d'écoute (sourd ensuite) : elle est
   maintenant affichée et l'écoute continue. Un enrôlement de voix abandonné s'arrête seul
   après 2 minutes (avant, il avalait toutes les phrases).
+
+## 2026-10-08 — Contexte à la demande : la mémoire se cherche, le cœur reste (idée d'Olivier)
+
+Constat d'Olivier : `ollama run gemma4:12b` (sans réflexion) répond en moins d'une seconde ;
+dans Valdar, plusieurs. Le cerveau n'est pas lent, c'est ce qu'on lui fait relire à chaque
+tour. Principe retenu (celui d'Olivier, et des agents à outils) : **comme un humain, Valdar ne
+récite pas sa mémoire avant chaque phrase, il va la chercher quand le sujet l'appelle.**
+
+- **Toujours** : la partie stable (personnalité, qui il est, à qui il parle, en cache chez
+  Ollama), le cœur (il colore chaque mot), la relation avec la personne, l'heure.
+- **À la demande** : souvenirs vécus et faits → nouvel outil `fouiller_memoire(sujet)` (faits
+  durables + conversations vécues ; un souvenir chargé fait toujours revivre un peu son
+  affect) ; connaissances → `connaissance_impression` (description élargie à toute la base),
+  `chercher_savoir` (Kiwix). La persona dit quand chercher, et quand ne pas chercher (bonjour,
+  vanne).
+- **État du monde** (imprimante, rappel, corps, charge, son ambiant) : complet au premier
+  tour, puis une fois par heure (`context.world_every_seconds`), ou tout de suite s'il
+  change.
+- Le fil de la dernière conversation revient encore de lui-même au réveil (court).
+- Réglable : `context.auto_memory`, `auto_facts`, `auto_knowledge` remettent l'ancien mode si
+  Valdar oublie trop de chercher. Contrepartie connue : une question sur le passé coûte un
+  aller-retour d'outil de plus ; tout le reste allège le contexte.
+- Tests : `tests/test_context.py` ; le test de réactivation affective garde le mode automatique.

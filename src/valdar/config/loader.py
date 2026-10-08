@@ -419,6 +419,16 @@ class InterfaceConfig(_Strict):
     kiosk: bool = False
 
 
+class ContextConfig(_Strict):
+    """Ce qui entre dans le contexte à chaque tour (latence). Comme un humain, Valdar ne
+    récite pas sa mémoire avant chaque phrase : il va la chercher quand le sujet l'appelle
+    (outils `fouiller_memoire`, `connaissance_impression`). Le cœur, lui, est toujours là."""
+    auto_memory: bool = False         # souvenirs vécus et « ce qui te trotte » à chaque tour
+    auto_facts: bool = False          # faits durables à chaque tour
+    auto_knowledge: bool = False      # connaissances à chaque tour
+    world_every_seconds: float = Field(default=3600.0, ge=0.0)  # état du monde complet
+
+
 class ThoughtsConfig(_Strict):
     """Pensée de fond (avenant 4 §6)."""
     enabled: bool = True
@@ -784,6 +794,7 @@ class ValdarConfig(_Strict):
     knowledge_db: str = "connaissances.db"
     nociception: NociceptionConfig = NociceptionConfig()
     relations: RelationsConfig = RelationsConfig()
+    context: ContextConfig = ContextConfig()
 
     _root: Path = PrivateAttr(default_factory=Path.cwd)
 
