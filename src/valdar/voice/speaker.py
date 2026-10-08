@@ -13,7 +13,7 @@ from typing import Protocol
 import numpy as np
 
 from valdar.config.loader import VoiceConfig
-from valdar.voice.character import CharacterStream, apply, speakable
+from valdar.voice.character import apply, chain_for, render, speakable
 from valdar.voice.tts import TTSBackend, split_sentences
 
 
@@ -195,7 +195,7 @@ class Speaker:
             gen, t_in, text = item
             first = True
             streaming = self.cfg.streaming and hasattr(self.tts, "stream")
-            chain = CharacterStream(self.tts.sample_rate, self.cfg.character) \
+            chain = chain_for(self.tts.sample_rate, self.cfg.character, self.cfg.effets) \
                 if streaming else None
             for sent in split_sentences(text, self.cfg.max_sentence_chars):
                 if gen != self._generation:
@@ -217,7 +217,8 @@ class Speaker:
                         self.stats.audio_seconds.append(n / self.tts.sample_rate)
                         continue
                     raw = self.tts.synthesize(sent)
-                    audio = apply(raw, self.tts.sample_rate, self.cfg.character)
+                    audio = render(raw, self.tts.sample_rate, self.cfg.character,
+                                   self.cfg.effets)
                 except Exception as exc:   # TTSError, CUDA, etc. : Valdar reste debout
                     self.stats.errors.append(str(exc))
                     break
