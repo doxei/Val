@@ -575,3 +575,6 @@ Premier échange vocal réussi (« Allô Valdar, est-ce que tu m'entends frérot
 - Rappel de style juste avant le message (Gemma oubliait « pas d'assistant, pas de markdown »).
 - Voix trop grave : Olivier veut en changer plus tard. Interface : visage en dessin animé
   2D, joli (accord d'Olivier).
+- Interface (demande d'Olivier) : en plus du visage, des **onglets de réglages** couvrant ce
+  qu'offre Open WebUI (modèle et paramètres, voix, micro, mémoire, connaissances,
+  personnes, outils, historique), dans le **même thème** que le visage.
