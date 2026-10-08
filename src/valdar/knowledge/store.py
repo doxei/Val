@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import math
 import re
@@ -13,6 +14,7 @@ from typing import Any
 import numpy as np
 import yaml
 
+from valdar.memory.embedder import deep_matrix, pack
 from valdar.memory.facts import _terms
 from valdar.memory.vectors import cosine_rows, embed
 
@@ -43,14 +45,18 @@ class Passage:
 
 
 class Knowledge:
-    def __init__(self, path: str | Path, dim: int = 512):
+    def __init__(self, path: str | Path, dim: int = 512, embedder: Any = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.dim = dim
+        self.embedder = embedder        # vrai modèle de sens (memory.embedder), optionnel
         self._lock = threading.RLock()
         with self._conn() as con:
             for s in _SCHEMA:
                 con.execute(s)
+            for col in ("sem BLOB", "sem_sig TEXT"):
+                with contextlib.suppress(sqlite3.OperationalError):   # colonne déjà là
+                    con.execute(f"ALTER TABLE passages ADD COLUMN {col}")
         self._index: dict[str, Any] | None = None
 
     def _conn(self) -> sqlite3.Connection:
@@ -106,7 +112,8 @@ class Knowledge:
         if self._index is not None:
             return self._index
         with self._conn() as con:
-            rows = con.execute("SELECT id, title, text, vec FROM passages").fetchall()
+            rows = con.execute("SELECT id, title, text, vec, sem, sem_sig FROM passages"
+                               ).fetchall()
         docs_terms = [_terms(r[1] + " " + r[2]) for r in rows]
         df: Counter = Counter()
         for t in docs_terms:
@@ -116,9 +123,10 @@ class Knowledge:
         for i, r in enumerate(rows):
             vec[i] = np.frombuffer(r[3], dtype=np.float16)
         avg = sum(len(t) for t in docs_terms) / n if n else 1.0
+        deep, mask = deep_matrix([(r[4], r[5]) for r in rows], self.embedder)
         self._index = {"ids": [r[0] for r in rows], "tf": [Counter(t) for t in docs_terms],
                        "len": [len(t) for t in docs_terms], "df": df, "n": n, "avg": avg,
-                       "vec": vec}
+                       "vec": vec, "deep": deep, "deep_mask": mask}
         return self._index
 
     def search(self, query: str, k: int = 4, min_score: float = 0.15) -> list[Passage]:
@@ -141,6 +149,10 @@ class Knowledge:
         if bm.max() > 0:
             bm = bm / bm.max()
         sem = cosine_rows(idx["vec"], embed(query, self.dim))
+        if idx["deep_mask"].any() and self.embedder is not None:
+            q = self.embedder.embed_one(query)       # le sens, pas seulement les mots
+            if q is not None:
+                sem = np.where(idx["deep_mask"], cosine_rows(idx["deep"], q), sem)
         score = 0.6 * bm + 0.4 * np.clip(sem, 0, 1)
         order = np.argsort(-score)[:k]
         chosen = [(int(idx["ids"][i]), float(score[i])) for i in order if score[i] >= min_score]
@@ -152,6 +164,30 @@ class Knowledge:
                 f"({','.join('?' * len(chosen))})", [c[0] for c in chosen])}
         return [Passage(i, rows[i][1], rows[i][2], rows[i][3], rows[i][4], s)
                 for i, s in chosen if i in rows]
+
+    def backfill(self, limit: int | None = None) -> int:
+        """Vectorise par le vrai modèle les passages qui ne le sont pas encore (arrière-plan)."""
+        e = self.embedder
+        if e is None or not e.available():
+            return 0
+        done = 0
+        while limit is None or done < limit:
+            with self._conn() as con:
+                rows = con.execute(
+                    "SELECT id, title, text FROM passages WHERE sem_sig IS NULL OR sem_sig != ? "
+                    "LIMIT ?", (e.signature, e.cfg.batch)).fetchall()
+            if not rows:
+                break
+            m = e.embed_many([(r[1] + " " + r[2]).strip() for r in rows])
+            if m is None:
+                break
+            with self._lock, self._conn() as con:
+                con.executemany("UPDATE passages SET sem=?, sem_sig=? WHERE id=?",
+                                [(pack(v), e.signature, r[0]) for v, r in zip(m, rows,
+                                                                              strict=True)])
+            done += len(rows)
+            self._index = None
+        return done
 
     def count(self) -> int:
         with self._conn() as con:
@@ -214,3 +250,4 @@ def _from_yaml(raw: str) -> list[dict[str, str]]:
             out.append({"title": str(it.get("topic", "")), "text": str(it["text"]),
                         "tags": " ".join(it.get("tags") or [])})
     return out
+

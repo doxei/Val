@@ -120,6 +120,10 @@ class Api:
             pass
         return {"reglages": self.settings.listing(), "modeles": models}
 
+    def n8n(self) -> dict[str, Any]:
+        c = self.s.cfg.n8n
+        return {"enabled": c.enabled, "url": c.url, "workflows": list(c.workflows)}
+
     def journal(self) -> dict[str, Any]:
         mem = self.rt.memory
         now = time.time()
@@ -218,7 +222,7 @@ class Api:
 GETS = {"/api/state": "state", "/api/historique": "history", "/api/foyer": "foyer",
         "/api/memoire": "memoire", "/api/pensees": "pensees", "/api/atelier": "atelier",
         "/api/connaissances": "connaissances", "/api/outils": "outils",
-        "/api/reglages": "reglages", "/api/journal": "journal"}
+        "/api/reglages": "reglages", "/api/journal": "journal", "/api/n8n": "n8n"}
 POSTS = {"/api/message": "message", "/api/control": "control", "/api/foyer": "foyer_action",
          "/api/memoire": "memoire_action", "/api/reglages": "reglage", "/api/idee": "idee"}
 

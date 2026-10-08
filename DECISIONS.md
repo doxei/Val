@@ -669,3 +669,31 @@ récite pas sa mémoire avant chaque phrase, il va la chercher quand le sujet l'
   Valdar oublie trop de chercher. Contrepartie connue : une question sur le passé coûte un
   aller-retour d'outil de plus ; tout le reste allège le contexte.
 - Tests : `tests/test_context.py` ; le test de réactivation affective garde le mode automatique.
+
+## 2026-10-08 — Le sens (vrai modèle de plongement) et les connecteurs n8n
+
+### Embeddings (`memory/embedder.py`)
+- Les vecteurs maison retrouvent les mots, pas le sens (« la vitre du bed » ne retrouvait pas
+  « le plateau en verre »). Ajout d'un vrai modèle de plongement par Ollama (`/api/embed`),
+  **bge-m3** par défaut (multilingue, bon en français), **sur le processeur** (`num_gpu: 0`) :
+  la carte graphique est pleine (Gemma + XTTS).
+- Additif et sans casse : colonnes `sem`/`sem_sig` ajoutées aux tours de mémoire et aux
+  passages de connaissances ; une ligne vectorisée par le vrai modèle est comparée par le
+  sens, les autres gardent les vecteurs maison. Modèle absent ou en panne → repli silencieux,
+  nouvel essai après `retry_seconds`. Changer de modèle refait les vecteurs (signature).
+- Vectorisation en arrière-plan (`valdar-sens`), par lots, jamais pendant un échange.
+  Le contexte temporel de la mémoire garde les vecteurs maison (sa dynamique n'est pas
+  touchée).
+- **À faire sur la machine** : `ollama pull bge-m3`, puis calibrer
+  `embeddings.min_similarity` (0,45 par défaut, non mesuré) et le temps d'une requête
+  sur le processeur.
+
+### Connecteurs n8n (`tools/n8n.py`)
+- n8n reste hors de la boucle de conversation. Chaque workflow déclaré dans
+  `config/valdar.yaml` (`n8n.workflows`) devient un outil `n8n_<nom>` qui appelle son webhook
+  (POST `/webhook/<nom>`), avec son niveau de permission (`tier`, `min_confidence`,
+  `confirm`). Une erreur ou n8n absent → message clair, jamais d'exception.
+- Interface : onglet « Automatisations » (n8n dans un cadre, et un lien « ouvrir dans une
+  fenêtre » si n8n refuse d'être encadré), visible seulement si `n8n.enabled`.
+- **À faire sur la machine** : installer et lancer n8n (`npx n8n` ou Docker), créer un premier
+  workflow, le déclarer, passer `n8n.enabled: true`.

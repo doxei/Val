@@ -37,6 +37,7 @@ def p2cfg(quiet_cfg, tmp_path):
     """Configuration sans bruit dont toutes les données vont dans un dossier temporaire."""
     c = quiet_cfg.model_copy(deep=True)
     c.storage.dir = str(tmp_path / "data")
+    c.embeddings.backend = "hash"        # aucun appel réseau dans les tests
     c._root = quiet_cfg.root
     return c
 
