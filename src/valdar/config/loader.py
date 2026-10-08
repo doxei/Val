@@ -288,6 +288,7 @@ class EarsConfig(_Strict):
     vad_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     preroll_seconds: float = Field(default=0.5, ge=0.0, le=3.0)
     end_silence_ms: int = Field(default=700, ge=200)
+    early_ms: int = Field(default=250, ge=0)   # transcription anticipée dès ce silence (0 = non)
     min_segment_seconds: float = Field(default=0.4, ge=0.1)
     max_segment_seconds: float = Field(default=20.0, gt=1.0)
     engaged_seconds: float = Field(default=14.0, ge=0.0)      # comme avant
@@ -458,6 +459,13 @@ class EmbeddingsConfig(_Strict):
     batch: int = Field(default=16, ge=1, le=256)
     backfill_every_seconds: float = Field(default=60.0, gt=0.0)
     min_similarity: float = Field(default=0.45, ge=0.0, le=1.0)  # à calibrer sur la machine
+    # Serveur des plongements. Vide = un Ollama à part, processeur seul, lancé par Valdar
+    # (port `sidecar_port`) : le cerveau ne quitte jamais la carte graphique. Le même
+    # serveur que Gemma n'est utilisé que si `same_server_ok` (sinon, avec
+    # OLLAMA_MAX_LOADED_MODELS=1, chaque recherche éjecte Gemma : +6 s et cache perdu).
+    url: str = ""
+    sidecar_port: int = Field(default=11435, ge=1024, le=65535)
+    same_server_ok: bool = False
 
     @model_validator(mode="after")
     def _check(self) -> EmbeddingsConfig:
@@ -634,6 +642,9 @@ class LLMConfig(_Strict):
     num_ctx: int = Field(default=8192, gt=0)
     think: bool = False
     timeout_seconds: float = Field(default=300.0, gt=0.0)
+    # Après une pensée de fond (et au démarrage), refaire lire à Gemma la partie stable du
+    # prompt : le message suivant ne paie que ses propres jetons (cache d'Ollama).
+    warm_cache: bool = True
     max_tool_rounds: int = Field(default=6, ge=1)
     history_messages: int = Field(default=16, ge=2)
 
@@ -808,6 +819,10 @@ class VoiceConfig(_Strict):
     xtts: XttsConfig = XttsConfig()
     character: VoiceCharacter = VoiceCharacter()
     max_sentence_chars: int = Field(default=230, ge=40, le=270)   # XTTS : 273 car. max en français
+    # En flux : XTTS rend la phrase morceau par morceau (inference_stream), le premier part
+    # aux haut-parleurs avant que la phrase soit finie. Faux = phrase entière, comme avant.
+    streaming: bool = True
+    stream_chunk_size: int = Field(default=20, ge=5, le=100)   # jetons XTTS par morceau
 
 
 class ValdarConfig(_Strict):

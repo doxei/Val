@@ -91,7 +91,9 @@ class OllamaBackend:
                 except ValueError:
                     args = {}
             calls.append(ToolCall(name=name, arguments=args, call_id=tc.get("id") or f"call_{i}"))
-        usage = {k: data.get(k) for k in ("prompt_eval_count", "eval_count", "total_duration")
+        usage = {k: data.get(k) for k in ("prompt_eval_count", "eval_count", "total_duration",
+                                          "load_duration", "prompt_eval_duration",
+                                          "eval_duration")
                  if k in data}
         return ChatResult(content=(msg.get("content") or "").strip(), tool_calls=calls,
                           usage=usage)

@@ -64,7 +64,14 @@ class Runtime:
         self.facts = Facts(path(a.memory_db))
         from valdar.memory.embedder import Embedder
 
-        self.embedder = Embedder(self.cfg.embeddings, self.cfg.llm.url)
+        ec = self.cfg.embeddings
+        self._sidecar: Any = None
+        emb_url = ec.url or f"http://127.0.0.1:{ec.sidecar_port}"
+        same = emb_url.rstrip("/") == self.cfg.llm.url.rstrip("/")
+        self.embedder = Embedder(ec, emb_url)
+        if same and not ec.same_server_ok:
+            # même serveur que Gemma : chaque plongement l'éjecterait (voir sidecar.py)
+            self.embedder.disable("serveur partagé avec Gemma (embeddings.same_server_ok)")
         self.memory = Episodic(path(self.cfg.episodic.db), self.cfg.episodic, self.embedder)
         self.knowledge = Knowledge(path(self.cfg.knowledge_db), embedder=self.embedder)
         self.knowledge.ingest_dir(self.cfg.root / "docs" / "connaissances")
@@ -394,6 +401,8 @@ class Runtime:
                                           {"idees": [i.text for i in th.ideas]}))
             finally:
                 self._thinking.release()
+            if self.cfg.llm.warm_cache:   # la pensée a pris le cache : on le refait
+                self.agent.warm()
 
         threading.Thread(target=run, name="valdar-pensee", daemon=True).start()
 
@@ -416,6 +425,8 @@ class Runtime:
                 self.events.put(Event("erreur", f"nuit : {exc}"))
             finally:
                 self._thinking.release()
+            if self.cfg.llm.warm_cache:
+                self.agent.warm()
 
         threading.Thread(target=run, name="valdar-nuit", daemon=True).start()
 
@@ -498,10 +509,26 @@ class Runtime:
 
         self._thread = threading.Thread(target=loop, name="valdar-coeur", daemon=True)
         self._thread.start()
+        if self.cfg.llm.warm_cache:      # Gemma chargé et la partie stable lue d'avance
+            threading.Thread(target=self.agent.warm, name="valdar-cache", daemon=True).start()
         if self.cfg.embeddings.backend == "ollama":
-            threading.Thread(target=self._backfill_loop, name="valdar-sens", daemon=True).start()
+            threading.Thread(target=self._start_sense, name="valdar-sens", daemon=True).start()
         if self.printwatch is not None:
             self.printwatch.start()
+
+    def _start_sense(self) -> None:
+        """Lance l'Ollama des plongements (processeur seul) puis vectorise en arrière-plan."""
+        ec = self.cfg.embeddings
+        if not ec.url and self.persist:
+            from valdar.memory.sidecar import Sidecar
+
+            self._sidecar = Sidecar(ec.sidecar_port)
+            if not self._sidecar.start():
+                self.embedder.disable(f"serveur des plongements : {self._sidecar.error}")
+                self.events.put(Event("erreur", "sens : " + self._sidecar.error
+                                      + " (je garde mes vecteurs maison)"))
+                return
+        self._backfill_loop()
 
     def _backfill_loop(self) -> None:
         """Vectorise peu à peu (vrai modèle de sens) connaissances et souvenirs, sur le
@@ -520,6 +547,8 @@ class Runtime:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._sidecar is not None:
+            self._sidecar.stop()
         if self._kiwix_serve is not None:
             self._kiwix_serve.stop()
         if self.printwatch is not None:

@@ -546,6 +546,13 @@ def _cmd_kiwix(args: argparse.Namespace) -> int:
     return interactive(cfg.repo_path(cfg.kiwix.dir))
 
 
+def _cmd_chrono(args: argparse.Namespace) -> int:
+    from valdar.chrono import main as chrono
+
+    return chrono(load(), voice=not args.sans_voix, ears=not args.sans_oreilles,
+                  sense=not args.sans_sens)
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -591,6 +598,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--minutes", type=float, default=None,
                    help="avec --ratee : minutes avant la fin où c'était déjà fichu")
     p.set_defaults(func=_cmd_vigie)
+
+    p = sub.add_parser("chrono", help="chronomètre un tour complet (clavier, voix, oreilles)")
+    p.add_argument("--sans-voix", action="store_true")
+    p.add_argument("--sans-oreilles", action="store_true")
+    p.add_argument("--sans-sens", action="store_true")
+    p.set_defaults(func=_cmd_chrono)
 
     p = sub.add_parser("kiwix", help="installer les bibliothèques hors ligne (Wikipédia…)")
     p.set_defaults(func=_cmd_kiwix)

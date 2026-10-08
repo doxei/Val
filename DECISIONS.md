@@ -697,3 +697,46 @@ récite pas sa mémoire avant chaque phrase, il va la chercher quand le sujet l'
   fenêtre » si n8n refuse d'être encadré), visible seulement si `n8n.enabled`.
 - **À faire sur la machine** : installer et lancer n8n (`npx n8n` ou Docker), créer un premier
   workflow, le déclarer, passer `n8n.enabled: true`.
+
+## 2026-10-08 (soir) — Conversation quasi instantanée : la cause, et le chronomètre
+
+### 1. « Mon cerveau est injoignable » : la vraie cause (journaux d'Ollama)
+- **Avant 16 h 10** : `/api/chat` bloqués 5 min puis erreur 500 (15:37, 15:45, 15:50, 15:52,
+  15:55, 16:00, 16:03, 16:08), aux mêmes minutes que les échecs du journal du cœur. Ollama
+  ne sert qu'une requête à la fois (`OLLAMA_NUM_PARALLEL=1`) : derrière une génération lente
+  (5 min 51 s à 15:32), tout attend ; Valdar abandonne à 300 s → « injoignable ».
+- **Depuis bge-m3 (17 h 19)** : `OLLAMA_MAX_LOADED_MODELS=1` chez Olivier. Chaque plongement
+  demandé au même Ollama **éjecte Gemma** ; le message suivant le recharge (~6 s) et repart
+  sans cache : 22 rechargements entre 17:26 et 18:04, chaque `/api/chat` à ~15 s.
+- Mesures relevées (journal) : prompt ~4 300 jetons ; évaluation à froid 6,3 s
+  (1,46 ms/jeton) ; génération 17–20 jetons/s ; chargement de Gemma 6 s ; requête bge-m3
+  2,8–3,3 s (rechargement compris).
+- **Correctif** : les plongements vont à un **petit Ollama à part, processeur seul**
+  (`memory/sidecar.py`, port 11435, `CUDA_VISIBLE_DEVICES=-1`, mêmes modèles sur disque),
+  lancé par Valdar. Jamais de plongement sur le serveur de Gemma
+  (`embeddings.same_server_ok: false`) : Gemma ne quitte plus la carte. Aucun réglage
+  d'Olivier n'est touché.
+- **Cache réchauffé** (`llm.warm_cache`) : au démarrage, après une pensée de fond et après la
+  nuit, Gemma relit la partie stable (personnalité, outils, conversation), 1 jeton en
+  sortie, sans toucher à l'historique : le message suivant ne paie que ses jetons.
+- À savoir : `OLLAMA_CONTEXT_LENGTH=262144` est réglé dans l'appli Ollama. Valdar envoie
+  `num_ctx: 8192` ; une conversation dans l'appli Ollama (contexte 256k) recharge Gemma.
+
+### 2–5. Ce qui a changé pour la vitesse
+- **Voix en flux** : `XttsBackend.stream` (`inference_stream`, latents en cache, réglages
+  d'origine), `voice.streaming: true`, `voice.stream_chunk_size: 20`. Chaîne « megatron » à
+  état (`CharacterStream` : `sosfilt`/`lfilter` avec `zi`, phase de la modulation, queue de
+  l'écho ; le passe-bas fs/4 d'origine en filtre à état ; gain qui ne fait que baisser).
+  Comparée à la chaîne d'origine : spectre corrélé à 0,99, niveau à 0,4 dB, aucun saut aux
+  raccords. Sortie son en **flux continu** (un seul `OutputStream`, plus de trous).
+- **Oreilles** : transcription **anticipée** (`ears.early_ms: 250`) : dès 250 ms de silence,
+  whisper transcrit déjà ; si la personne ne reprend pas, le texte est prêt à la fin de la
+  phrase (700 ms) au lieu de commencer à ce moment-là. Un seul fil pour whisper.
+- **Chronomètre** : `valdar chrono` (tools\valdar_chrono.bat) mesure sur la machine, sans
+  toucher à la vraie mémoire : prompt (jetons, chargement, évaluation), 1er jeton, 1re phrase,
+  au clavier ; voix entière contre flux (1er son) ; whisper et fin de parole → texte, avec et
+  sans anticipation ; bge-m3 (temps, calibrage du seuil) ; `fouiller_memoire` appelé pour le
+  passé et pas pour un bonjour. Résultat dans `data/chrono.json`.
+- Chiffres après correctifs : **à mesurer sur la machine** (section suivante, après le
+  premier `valdar chrono`). On ne garde que ce qui ne dégrade pas la voix : `voice.streaming`
+  et `ears.early_ms` se coupent dans les réglages.

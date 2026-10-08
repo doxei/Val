@@ -13,7 +13,7 @@ from typing import Protocol
 import numpy as np
 
 from valdar.config.loader import VoiceConfig
-from valdar.voice.character import apply, speakable
+from valdar.voice.character import CharacterStream, apply, speakable
 from valdar.voice.tts import TTSBackend, split_sentences
 
 
@@ -23,18 +23,38 @@ class Sink(Protocol):
 
 
 class SoundDeviceSink:
-    """Sortie audio par défaut de Windows (comme avant)."""
+    """Sortie audio par défaut de Windows, en **flux continu** : un seul flux ouvert, les
+    morceaux s'y écrivent à la suite (sans trou ni clic entre deux morceaux d'XTTS)."""
+
+    def __init__(self) -> None:
+        self._stream = None
+        self._sr = 0
+        self._lock = threading.Lock()
 
     def play(self, audio: np.ndarray, sr: int) -> None:
         import sounddevice as sd
 
-        sd.play(audio.astype(np.float32), sr)
-        sd.wait()
+        with self._lock:
+            if self._stream is None or self._sr != sr:
+                self._close()
+                self._stream = sd.OutputStream(samplerate=sr, channels=1, dtype="float32",
+                                               latency="low")
+                self._stream.start()
+                self._sr = sr
+            stream = self._stream
+        # écriture bloquante : rend la main quand le morceau est dans le tampon de sortie
+        stream.write(np.ascontiguousarray(audio, dtype=np.float32).reshape(-1, 1))
+
+    def _close(self) -> None:
+        if self._stream is not None:
+            with contextlib.suppress(Exception):
+                self._stream.abort()
+                self._stream.close()
+            self._stream = None
 
     def stop(self) -> None:
-        import sounddevice as sd
-
-        sd.stop()
+        with self._lock:
+            self._close()
 
 
 class NullSink:
@@ -51,6 +71,7 @@ class NullSink:
 @dataclass
 class SpeechStats:
     first_audio_seconds: float | None = None      # du texte reçu au premier son
+    first_chunk_seconds: float | None = None      # du texte reçu au premier morceau calculé
     synth_seconds: list[float] = field(default_factory=list)
     audio_seconds: list[float] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -68,7 +89,7 @@ class Speaker:
         self._in_play = False
         self._play_until = 0.0
         self._env: tuple[float, float, np.ndarray] | None = None
-        self._audio: queue.Queue = queue.Queue(maxsize=4)
+        self._audio: queue.Queue = queue.Queue(maxsize=64)
         self._generation = 0
         self._pending = 0
         self._count = threading.Lock()
@@ -173,11 +194,28 @@ class Speaker:
                 return
             gen, t_in, text = item
             first = True
+            streaming = self.cfg.streaming and hasattr(self.tts, "stream")
+            chain = CharacterStream(self.tts.sample_rate, self.cfg.character) \
+                if streaming else None
             for sent in split_sentences(text, self.cfg.max_sentence_chars):
                 if gen != self._generation:
                     break
                 t0 = time.time()
                 try:
+                    if chain is not None:
+                        n = 0
+                        for piece in self.tts.stream(sent, self.cfg.stream_chunk_size):
+                            if gen != self._generation:
+                                break
+                            audio = chain.process(piece)
+                            if first:
+                                self.stats.first_chunk_seconds = time.time() - t_in
+                            n += len(audio)
+                            self._audio.put((gen, t_in if first else None, audio))
+                            first = False
+                        self.stats.synth_seconds.append(time.time() - t0)
+                        self.stats.audio_seconds.append(n / self.tts.sample_rate)
+                        continue
                     raw = self.tts.synthesize(sent)
                     audio = apply(raw, self.tts.sample_rate, self.cfg.character)
                 except Exception as exc:   # TTSError, CUDA, etc. : Valdar reste debout
