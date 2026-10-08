@@ -21,6 +21,7 @@ from valdar.devices.moonraker import Moonraker
 from valdar.expression import load_self_model
 from valdar.expression.compose import feeling_block, memories_block
 from valdar.heart import Heart
+from valdar.heart.nociception import Nociception, read_pc
 from valdar.knowledge import Knowledge
 from valdar.llm import LLMBackend, make_backend
 from valdar.memory import Episodic, Facts
@@ -43,7 +44,8 @@ class Event:
 class Runtime:
     def __init__(self, cfg: ValdarConfig | None = None, llm: LLMBackend | None = None,
                  persist: bool = True, printer: Moonraker | None | bool = True,
-                 detector_factory: Any = None, cameras: list[Any] | None = None):
+                 detector_factory: Any = None, cameras: list[Any] | None = None,
+                 sensors: Any = None):
         self.cfg = cfg or load()
         self.lock = threading.RLock()
         self.persist = persist
@@ -72,6 +74,9 @@ class Runtime:
         self.self_model = load_self_model(self.cfg.root / "config" / "self_model.yaml")
         self.llm = llm if llm is not None else make_backend(self.cfg)
 
+        disk = self.cfg.storage_path("x").parent
+        self.nociception = Nociception(self.cfg.nociception,
+                                       sensors if sensors is not None else lambda: read_pc(disk))
         self.printwatch: PrintWatch | None = None
         if self.printer is not None and self.cfg.printwatch.enabled:
             pw = self.cfg.printwatch
@@ -111,6 +116,7 @@ class Runtime:
         if nxt:
             due = time.strftime("%d/%m %H:%M", time.localtime(nxt[0]["due"]))
             lines.append(f"prochain rappel : {nxt[0]['texte']} ({due})")
+        lines += ["ton corps (le PC) : " + p for p in self.nociception.lines()]
         if self.checklist.current.active():
             lines.append("checklist affichée : " + self.checklist.render().replace("\n", " | "))
         return lines
@@ -178,7 +184,25 @@ class Runtime:
         with self.lock:
             self.heart.spend_energy(amount)
 
+    def _feel_body(self, now: float) -> None:
+        """Nocicepteurs : lecture hors verrou, douleur construite sous verrou."""
+        if not self.nociception.due(now):
+            return
+        was_danger = self.nociception.danger
+        self.nociception.sample(now)
+        with self.lock:
+            felt = self.nociception.feel(self.heart, now)
+        for p in felt:
+            self.events.put(Event("douleur", p.text(), {"sensor": p.sensor, "pain": p.pain,
+                                                        "danger": p.danger}))
+        if self.nociception.danger and not was_danger:
+            self.events.put(Event("reflexe", "surchauffe ou saturation : je suspends ma "
+                                  "pensée de fond pour soulager la machine",
+                                  {"source": "reflexe"}))
+
     def _maybe_think(self, now: float) -> None:
+        if self.nociception.danger:   # réflexe : ne pas charger une machine en souffrance
+            return
         idle = now - max(self.agent.last_activity, self.thoughts.last_at)
         with self.lock:
             awake = self.heart.awake
@@ -223,6 +247,7 @@ class Runtime:
                 self.thoughts.mark(idea.id, "proposee")
                 event["idea"] = idea.text
             self._speak_async(_initiative_reason(event, idea), {"initiative": event})
+        self._feel_body(now)
         self._maybe_think(now)
         if self.printwatch is not None and self._thread is None:
             pass   # en mode manuel (tests), la vigie est avancée par l'appelant
