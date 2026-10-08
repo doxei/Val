@@ -206,7 +206,12 @@ class Agent:
             for call in result.tool_calls:
                 out = self._run_tool(call.name, call.arguments, who)
                 if out is None:   # confirmation demandée : on s'arrête là
-                    ask = (f"Tu confirmes « {call.name} » ? Dis « oui » pour lancer, n'importe "
+                    tool = self.registry.get(call.name)
+                    what = f"« {call.name} »"
+                    if tool is not None and tool.describe is not None:
+                        with contextlib.suppress(Exception):
+                            what = tool.describe(call.arguments)
+                    ask = (f"Tu confirmes : {what} ? Dis « oui » pour lancer, n'importe "
                            "quoi d'autre pour annuler.")
                     self.history.append({"role": "assistant", "content": ask})
                     return Reply(text=ask, tools_used=used)

@@ -28,6 +28,8 @@ class Tool:
     tier: str = SAFE
     family: str = "divers"
     confirm: bool = False     # demande un « oui » de la même personne (ex. « oublie-moi »)
+    min_confidence: float | None = None   # seuil propre (sinon celui du niveau)
+    describe: Callable[[dict[str, Any]], str] | None = None   # l'action, dite en clair
 
     def schema(self) -> dict[str, Any]:
         return {"type": "function",
@@ -76,8 +78,10 @@ def decide(tool: Tool, who: Identity, cfg: PermissionsConfig) -> Decision:
     if not is_owner:
         return Decision(False, reason=f"« {tool.name} » est réservé au propriétaire.")
     if tool.tier == ELEVATED:
-        if who.confidence >= cfg.elevated_min_confidence:
-            return Decision(True)
+        need = tool.min_confidence if tool.min_confidence is not None \
+            else cfg.elevated_min_confidence
+        if who.confidence >= need:
+            return Decision(True, needs_confirmation=tool.confirm)
         return Decision(False, reason="je ne suis pas assez sûr de qui me parle pour faire ça.")
     if who.confidence >= cfg.dangerous_min_confidence:
         return Decision(True, needs_confirmation=True)
