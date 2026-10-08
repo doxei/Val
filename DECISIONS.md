@@ -292,3 +292,32 @@ Détails : `docs/avenant-4-boucle-fermee-et-socle.md` (vision d'Olivier point pa
 - Tests : 159 verts ; les tests du runtime n'utilisent aucun capteur réel (déterministes).
 - **Non fait** : faire passer la douleur par un organe dédié (elle passe par ventre et cœur via
   les neuromodulateurs) ; nocicepteurs du robot (phase 8).
+
+---
+
+## 2026-10-08 — Phase 0 : mesures sur la machine (i5-11400F, 64 Go, RTX 2060 12 Go)
+
+Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main (`ollama serve`).
+
+- **Tests** : 159 verts sous Windows (`.venv`, Python 3.11).
+- **Nocicepteurs** (`read_pc(Path("data"))`) : `gpu_temp` 39 °C, `gpu_mem` 15 %, `disk` 64 %.
+  `nvidia-smi` est dans le PATH (`C:\WINDOWS\system32`). **`ram` absent** : `psutil` n'est pas
+  installé dans le `.venv` (extra `[system]`), à installer avec `pip install -e .[system]`.
+  `cpu_temp` absent attendu : `psutil.sensors_temperatures` n'existe pas sous Windows.
+- **Ollama** : modèles présents `gemma4:12b` (8,0 Go), `gemma4:e4b`, `qwen3:8b`,
+  `qwen2.5:7b-instruct`, `qwen2.5vl:3b`. Le serveur ne tourne pas au démarrage.
+- **gemma4:12b** (config du projet : `num_ctx` 8192, `think` false), 100 % GPU :
+
+  | Cas | 1er token | Lecture du prompt | Génération |
+  |---|---|---|---|
+  | Froid (chargement) | 57,7 s (dont 57,1 s de chargement) | — | 43,6 tok/s |
+  | Chaud, prompt court | 0,37 s | 274 tok/s | 44,9 tok/s |
+  | Chaud, prompt de 4 821 tok | 6,7 s | 746 tok/s | 47,8 tok/s |
+
+  Pic de VRAM pendant la génération : **10,55 / 12 Go** (≈ 1,8 Go avant chargement, donc
+  ≈ 8,8 Go pour le modèle et 8k de contexte). Pic de température : 58 °C.
+- **Appel d'outil** via `OllamaBackend.chat` : OK en 0,6 s
+  (`lire_heure(fuseau="Europe/Paris")`, contenu vide comme attendu).
+- **À retenir** : il reste ≈ 1,5 Go de VRAM, pas de place pour RAUB (whisper + vision) en même
+  temps. Le chargement à froid (~1 min) justifie `keep_alive` long et un préchargement au
+  démarrage. llama-server + LoRA d'affect pas encore mesurés.
