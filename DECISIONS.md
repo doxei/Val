@@ -534,3 +534,22 @@ chacun a son test de non-régression (`tests/test_audit_fixes.py`).
   consolider dans `consolidation/AAAA-MM-JJ.jsonl` : seul matériau d'un futur LoRA.
 - Socle : 8e point ajouté à la demande d'Olivier (doute méthodique).
 - 220 tests (3.11 et 3.13), ruff propre, `valdar check` : phase 1 validée.
+
+## 2026-10-08 (après-midi) — Premiers essais au micro : corrections
+
+Essai d'Olivier : sursauts sur sa voix, nom jamais reconnu, Gemma qui rend une transcription
+vide, Valdar coupé quand il parle longtemps, réponses lentes.
+- Micro : file d'attente + fil de traitement (le rappel du micro ne bloque plus), plus aucun
+  échantillon perdu entre blocs, rééchantillonnage continu (plus de clic toutes les 100 ms).
+- Éveil : whisper « base » avec le nom soufflé ; reconnaissance du nom par le son (Baldar,
+  Val d'arc). `--debug` montre à l'écran ce que l'éveil a compris (jamais sur disque).
+- Transcription : Gemma d'abord, **repli whisper « small »** sur le processeur ; après deux
+  vides de suite, Gemma n'est plus sollicité pour la session.
+- Écho : sans annulation d'écho, le K66 entendait Valdar dans les haut-parleurs et le coupait.
+  Les oreilles suivent le son réellement joué ; le niveau de l'écho est appris (0,5 s sans
+  coupure possible au début de chaque phrase) ; seule une voix 10 dB au-dessus le coupe ; ce
+  qu'il dit lui-même n'est jamais transcrit.
+- Sursaut confirmé après ~130 ms (une voix qui commence ne fait plus sursauter, un cri si).
+- **Streaming** : Ollama en flux, chaque phrase complète part vers la voix sans attendre la
+  fin de la réponse.
+- Nocicepteur mémoire de la carte : alerte à 97,5 % (97 % est le régime normal mesuré).

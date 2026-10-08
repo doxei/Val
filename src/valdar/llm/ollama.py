@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -11,6 +12,8 @@ from valdar.llm.backend import ChatResult, GenParams, LLMError, ToolCall
 
 
 class OllamaBackend:
+    supports_stream = True
+
     def __init__(self, cfg: LLMConfig, transport: httpx.BaseTransport | None = None):
         self.cfg = cfg
         self.client = httpx.Client(
@@ -42,13 +45,16 @@ class OllamaBackend:
         system: str = "",
         tools: list[dict[str, Any]] | None = None,
         params: GenParams | None = None,
+        on_token: Callable[[str], None] | None = None,
     ) -> ChatResult:
+        """`on_token` : reçoit le texte au fil de l'eau (streaming), pour que Valdar commence
+        à parler avant d'avoir fini de penser."""
         p = params or GenParams()
         msgs = ([{"role": "system", "content": system}] if system else []) + messages
         body: dict[str, Any] = {
             "model": self.cfg.model,
             "messages": msgs,
-            "stream": False,
+            "stream": on_token is not None,
             "think": self.cfg.think,
             "keep_alive": self.cfg.keep_alive,
             "options": {
@@ -61,14 +67,17 @@ class OllamaBackend:
         }
         if tools:
             body["tools"] = tools
-        try:
-            r = self.client.post("/api/chat", json=body)
-        except httpx.HTTPError as exc:
-            raise LLMError(f"Ollama injoignable ({self.cfg.url}) : {exc}") from exc
-        if r.status_code >= 400:
-            raise LLMError(f"Ollama {r.status_code} : {r.text[:300]}")
-        data = r.json()
-        msg = data.get("message") or {}
+        if on_token is not None:
+            data, msg = self._stream(body, on_token)
+        else:
+            try:
+                r = self.client.post("/api/chat", json=body)
+            except httpx.HTTPError as exc:
+                raise LLMError(f"Ollama injoignable ({self.cfg.url}) : {exc}") from exc
+            if r.status_code >= 400:
+                raise LLMError(f"Ollama {r.status_code} : {r.text[:300]}")
+            data = r.json()
+            msg = data.get("message") or {}
         calls: list[ToolCall] = []
         for i, tc in enumerate(msg.get("tool_calls") or []):
             fn = tc.get("function") or {}
@@ -86,6 +95,37 @@ class OllamaBackend:
                  if k in data}
         return ChatResult(content=(msg.get("content") or "").strip(), tool_calls=calls,
                           usage=usage)
+
+    def _stream(self, body: dict[str, Any], on_token: Callable[[str], None]
+                ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Lit la réponse morceau par morceau ; renvoie (dernier bloc, message reconstitué)."""
+        parts: list[str] = []
+        calls: list[dict[str, Any]] = []
+        last: dict[str, Any] = {}
+        try:
+            with self.client.stream("POST", "/api/chat", json=body) as r:
+                if r.status_code >= 400:
+                    r.read()
+                    raise LLMError(f"Ollama {r.status_code} : {r.text[:300]}")
+                for line in r.iter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except ValueError:
+                        continue
+                    if chunk.get("error"):
+                        raise LLMError(f"Ollama : {chunk['error']}")
+                    m = chunk.get("message") or {}
+                    piece = m.get("content") or ""
+                    if piece:
+                        parts.append(piece)
+                        on_token(piece)
+                    calls += m.get("tool_calls") or []
+                    last = chunk
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Ollama injoignable ({self.cfg.url}) : {exc}") from exc
+        return last, {"content": "".join(parts), "tool_calls": calls}
 
     def close(self) -> None:
         self.client.close()

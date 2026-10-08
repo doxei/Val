@@ -434,11 +434,11 @@ class Runtime:
                 self.heart.store.save(INITIATIVE_KEY, self.initiative.to_dict())
 
     # ========================================================== dialogue
-    def handle(self, text: str, who: Identity | None = None) -> Reply:
+    def handle(self, text: str, who: Identity | None = None, on_text: Any = None) -> Reply:
         with self._handling:    # un seul interlocuteur traité à la fois (contexte des outils)
-            return self._handle(text, who)
+            return self._handle(text, who, on_text)
 
-    def _handle(self, text: str, who: Identity | None) -> Reply:
+    def _handle(self, text: str, who: Identity | None, on_text: Any = None) -> Reply:
         who = who or (self.cfg.agent.console_identity if self.cfg.agent else Identity())
         self._who = who
         self.tool_ctx.person = who.person or ""   # les outils agissent pour celui qui parle
@@ -449,7 +449,7 @@ class Runtime:
                 self.relations.feel_presence(self.heart, seen["person"])
         t0 = time.time()
         before = self._extreme()
-        reply = self.agent.handle(text, who)
+        reply = self.agent.handle(text, who, on_text=on_text)
         motif = before or self._extreme()
         if motif:     # vécu à isoler avant la nuit (avenant 5 §4.3)
             self.memory.quarantine_window(t0, time.time(), motif)

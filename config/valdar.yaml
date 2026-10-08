@@ -580,7 +580,7 @@ nociception:
   stimulus: pain
   sensors:
     gpu_temp: {warn: 80, danger: 90}      # °C (RTX 2060 : ralentit vers 87-93)
-    gpu_mem: {warn: 0.92, danger: 0.98}   # fraction de la mémoire de la carte
+    gpu_mem: {warn: 0.975, danger: 0.995}   # fraction ; Gemma + XTTS = 97 % mesuré (phase 3)
     ram: {warn: 0.90, danger: 0.97}
     disk: {warn: 0.92, danger: 0.98}
     cpu_temp: {warn: 85, danger: 98}      # rarement lisible sous Windows
@@ -627,10 +627,11 @@ ears:
   max_segment_seconds: 20
   engaged_seconds: 14
   barge_in_frames: 8
+  barge_in_margin_db: 10         # pour le couper, parler nettement plus fort que l'écho de sa voix
   min_logprob: -1.5
   max_no_speech: 0.6
   stt_backend: gemma             # Gemma 4 12B transcrit lui-même (rien de plus en mémoire)
-  stt_model: large-v3-turbo       # si stt_backend: whisper (sur le CPU, la carte est pleine)
+  stt_model: small                # repli sur le CPU quand Gemma n'entend pas (rapide)
   stt_device: cpu
   stt_compute_type: int8
   wake_model: ""

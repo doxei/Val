@@ -105,6 +105,14 @@ class Gate:
         self.on_note = on_note        # diagnostic : ce que le portier décide (jamais le texte
         self.notes: collections.deque = collections.deque(maxlen=12)   # non adressé)
         self._rest = np.zeros(0, np.float32)
+        # Écho : sans annulation d'écho, le micro entend Valdar dans les haut-parleurs. Pendant
+        # qu'il parle, on apprend le niveau de cet écho ; seule une voix nettement plus forte
+        # (quelqu'un près du micro) le coupe, et ce qu'il dit lui-même n'est jamais transcrit.
+        self._echo: float | None = None
+        self._loud = 0
+        self._spoken = 0
+        self._seg_during_speech = False
+        self._barged = False
         frame = int(SR * cfg.frame_ms / 1000)
         self.frame = frame
         self.preroll: collections.deque = collections.deque(
@@ -133,6 +141,26 @@ class Gate:
         p = self.vad.is_speech(f)
         if self.on_frame is not None:
             self.on_frame(f, p)
+        speaking = self.speaking()
+        level = 20.0 * float(np.log10(np.sqrt(np.mean(f.astype(np.float32) ** 2)) + 1e-6))
+        if speaking:
+            # Les premières 0,5 s, on apprend vite le niveau de l'écho et personne ne peut
+            # le couper (sinon le début de sa propre phrase le ferait taire).
+            self._spoken += 1
+            learning = self._spoken * self.cfg.frame_ms < 500
+            tau = 0.1 if learning else self.cfg.echo_tau_seconds
+            a = 1.0 - np.exp(-self.cfg.frame_ms / 1000 / tau)
+            self._echo = level if self._echo is None else self._echo + a * (level - self._echo)
+            loud = (not learning and p >= self.cfg.vad_threshold
+                    and level >= self._echo + self.cfg.barge_in_margin_db)
+            self._loud = self._loud + 1 if loud else max(0, self._loud - 1)
+            if self._loud == self.cfg.barge_in_frames and not self._barged:
+                self._barged = True
+                self._note("on me coupe la parole : je me tais")
+                if self.on_barge_in is not None:
+                    self.on_barge_in()
+        else:
+            self._echo, self._loud, self._spoken = None, 0, 0
         if self._segment:
             self._segment.append(f)
             if p >= self.cfg.vad_threshold:
@@ -140,9 +168,6 @@ class Gate:
                 self._speech += 1
             else:
                 self._silence += 1
-            if self._speech == self.cfg.barge_in_frames and self.speaking() and \
-                    self.on_barge_in is not None:
-                self.on_barge_in()
             long = len(self._segment) * self.cfg.frame_ms / 1000 >= self.cfg.max_segment_seconds
             if self._silence * self.cfg.frame_ms >= self.cfg.end_silence_ms or long:
                 seg = np.concatenate(self._segment)
@@ -151,6 +176,8 @@ class Gate:
         elif p >= self.cfg.vad_threshold:
             self._segment = list(self.preroll) + [f]
             self._speech, self._silence = 1, 0
+            self._seg_during_speech = speaking
+            self._barged = False
             self.preroll.clear()
         else:
             self.preroll.append(f)
@@ -162,6 +189,9 @@ class Gate:
     def _close(self, seg: np.ndarray) -> None:
         dur = len(seg) / SR
         if dur < self.cfg.min_segment_seconds:
+            return
+        if self._seg_during_speech and not self._barged:
+            self._note(f"parole {dur:.1f} s pendant que je parlais : ma propre voix, ignorée")
             return
         self.stats["segments"] += 1
         if not self.engaged():
@@ -183,6 +213,8 @@ class Gate:
                           " (vide)" if not tr.text.strip() else ""))
             return
         self.engaged_until = self.clock() + self.cfg.engaged_seconds
+        used = getattr(self.stt, "used", "")
+        self._note(f"parole {dur:.1f} s comprise" + (f" (par {used})" if used else ""))
         self.on_heard(Heard(tr.text.strip(), self.clock(), dur, tone(seg)))
 
     def keep_engaged(self) -> None:

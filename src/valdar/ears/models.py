@@ -92,7 +92,7 @@ class WhisperSTT:
     def transcribe(self, segment: np.ndarray) -> Transcript:
         extra: dict[str, Any] = {}
         if self.hint:
-            extra = {"initial_prompt": f"{self.hint}, tu m'entends ?", "hotwords": self.hint}
+            extra = {"initial_prompt": f"{self.hint}.", "hotwords": self.hint}
         try:
             segs, _ = self.model.transcribe(segment.astype(np.float32),
                                             language=self.language, beam_size=self.beam_size,
@@ -112,6 +112,35 @@ class WhisperSTT:
             nospeech.append(float(getattr(s, "no_speech_prob", 0.0)))
         return Transcript(" ".join(texts), sum(probs) / len(probs) if probs else -99.0,
                           max(nospeech) if nospeech else 1.0)
+
+
+class FallbackSTT:
+    """Gemma d'abord (ses oreilles natives) ; si Gemma rend du vide ou une erreur sur une
+    phrase **adressée** à Valdar, whisper prend le relais. Après deux ratés de suite, Gemma
+    est laissé de côté pour la session (il n'entend pas sur cette installation)."""
+
+    def __init__(self, first: Any, second: Any, misses: int = 2):
+        self.first, self.second = first, second
+        self.max_misses = misses
+        self.misses = 0
+        self.demoted = False
+        self.last_error: str | None = None
+        self.used = ""
+
+    def transcribe(self, segment: np.ndarray) -> Transcript:
+        if not self.demoted:
+            tr = self.first.transcribe(segment)
+            if tr.text.strip():
+                self.misses, self.used, self.last_error = 0, "gemma", None
+                return tr
+            self.misses += 1
+            if self.misses >= self.max_misses:
+                self.demoted = True
+        tr = self.second.transcribe(segment)
+        self.used = "whisper"
+        err = getattr(self.first, "last_error", None)
+        self.last_error = None if tr.text.strip() else err
+        return tr
 
 
 class TranscriptWake:
@@ -165,9 +194,12 @@ def build(cfg: EarsConfig, model_path: Any, llm: Any = None) -> tuple[Any, Any, 
             raise RuntimeError("Gemma n'entend pas (Ollama trop ancien pour l'audio de Gemma 4 ?"
                                f" il faut la 0.33.3 ou plus) : {problem}. Repli possible : "
                                "ears.stt_backend: whisper")
-        stt: Any = GemmaSTT(llm)
+        stt: Any = FallbackSTT(GemmaSTT(llm),
+                               WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type,
+                                          beam_size=3, hint=cfg.names[0]))
     else:
-        stt = WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type)
+        stt = WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type, beam_size=3,
+                         hint=cfg.names[0])
     wake_file = model_path(cfg.wake_model) if cfg.wake_model else None
     if wake_file is not None and wake_file.is_file():
         wake: Any = OpenWakeWordWake(str(wake_file), cfg.wake_threshold)

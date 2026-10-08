@@ -70,6 +70,7 @@ class Agent:
         self.history: list[dict[str, Any]] = []
         self.pending: dict[str, Any] | None = None
         self._llm_lock = threading.Lock()
+        self._on_text: Any = None       # streaming : le texte part vers la voix au fil de l'eau
         self.memory = memory
         self.extras = extras
         self.thread: dict[str, Any] | None = None
@@ -93,11 +94,13 @@ class Agent:
             self.history.pop(0)
 
     # ================================================================ entrée
-    def handle(self, text: str, who: Identity | None = None) -> Reply:
+    def handle(self, text: str, who: Identity | None = None, on_text: Any = None) -> Reply:
+        """`on_text(morceau)` : reçoit la réponse au fil de l'eau (streaming)."""
         who = who or self.cfg.agent.console_identity
         text = text.strip()
         self.busy.set()
         self._turn.acquire()
+        self._on_text = on_text
         try:
             with self.lock:
                 self.heart.interact()
@@ -125,6 +128,7 @@ class Agent:
                 self._remember("Valdar", reply.text, who)
             return reply
         finally:
+            self._on_text = None
             self._turn.release()
             self.last_activity = time.time()
             self.busy.clear()
@@ -168,9 +172,12 @@ class Agent:
             system, params = self._compose(who, query)
             tools = self._tool_schemas(who) if allow_tools else None
             try:
+                stream = ({"on_token": self._on_text}
+                          if self._on_text is not None and getattr(self.llm, "supports_stream",
+                                                                   False) else {})
                 with self._llm_lock:
                     result = self.llm.chat(self._window(), system=system, tools=tools,
-                                           params=params)
+                                           params=params, **stream)
             except LLMError as exc:
                 self._feel("tool_failure")
                 if self.history and self.history[-1]["role"] == "user":

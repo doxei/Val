@@ -234,11 +234,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
                 rt.initiative.silence(False)
                 print("(initiatives réactivées)")
                 continue
-            reply = rt.handle(text)
-            tools = f"  [outils : {', '.join(reply.tools_used)}]" if reply.tools_used and \
-                args.debug else ""
-            print(f"Valdar > {reply.text}{tools}")
-            say(reply.text)
+            _answer(rt, text, say, args.debug)
     except KeyboardInterrupt:
         pass
     finally:
@@ -250,6 +246,27 @@ def _cmd_chat(args: argparse.Namespace) -> int:
         rt.stop()
         print("\nÀ plus. (état sauvegardé)")
     return 0
+
+
+def _answer(rt, text: str, say, debug: bool) -> None:
+    """Répond en streaming : le texte s'affiche et chaque phrase part vers la voix dès
+    qu'elle est complète (Valdar commence à parler pendant qu'il pense encore)."""
+    from valdar.voice.stream import SentenceStream
+
+    print("Valdar > ", end="", flush=True)
+    stream = SentenceStream(say, lambda piece: print(piece, end="", flush=True))
+    reply = rt.handle(text, on_text=stream.feed)
+    if stream.started:
+        stream.close()
+        print()
+        if reply.text.strip() and reply.text.strip() not in stream.text:
+            print(reply.text)          # ex. une confirmation demandée après un outil
+            say(reply.text)
+    else:                       # pas de streaming (erreur, confirmation) : d'un bloc
+        print(reply.text)
+        say(reply.text)
+    if reply.tools_used and debug:
+        print(f"  [outils : {', '.join(reply.tools_used)}]")
 
 
 def _ears_text(rt) -> str:
@@ -287,7 +304,9 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
         print(f"(écoute impossible : {exc})")
         return None
     heard_q: queue.Queue = queue.Queue()
-    speaking = speaker.speaking if speaker is not None else None
+    # Ce qui compte pour les oreilles : le son qui sort vraiment des haut-parleurs.
+    speaking = (getattr(speaker, "playing", speaker.speaking) if speaker is not None
+                else None)
     ambient = rt.make_ambient(cfg.ears.frame_ms / 1000, speaking) if cfg.ambient.enabled \
         else None
     def note(text: str) -> None:
@@ -308,11 +327,8 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
             if h is None:
                 return
             print(f"\n(entendu) {h.text}", flush=True)
-            reply = rt.handle(h.text)
-            tools = f"  [outils : {', '.join(reply.tools_used)}]" if reply.tools_used and \
-                debug else ""
-            print(f"Valdar > {reply.text}{tools}\nToi > ", end="", flush=True)
-            say(reply.text)
+            _answer(rt, h.text, say, debug)
+            print("Toi > ", end="", flush=True)
             gate.keep_engaged()
 
     threading.Thread(target=answer, name="valdar-oreilles", daemon=True).start()

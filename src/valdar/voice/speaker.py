@@ -65,6 +65,8 @@ class Speaker:
         self.tts = tts
         self.sink = sink or SoundDeviceSink()
         self._texts: queue.Queue = queue.Queue()
+        self._in_play = False
+        self._play_until = 0.0
         self._audio: queue.Queue = queue.Queue(maxsize=4)
         self._generation = 0
         self._pending = 0
@@ -124,6 +126,11 @@ class Speaker:
                 pass
         self.sink.stop()
 
+    def playing(self) -> bool:
+        """Du son sort réellement des haut-parleurs (ou vient d'en sortir : la pièce résonne
+        encore 0,3 s). Les oreilles s'en servent pour reconnaître l'écho de sa voix."""
+        return self._in_play or time.time() < self._play_until
+
     def speaking(self) -> bool:
         with self._count:
             return self._pending > 0
@@ -175,7 +182,11 @@ class Speaker:
                 continue
             if t_in is not None:
                 self.stats.first_audio_seconds = time.time() - t_in
+            self._in_play = True
             try:
                 self.sink.play(audio, self.tts.sample_rate)
             except Exception as exc:
                 self.stats.errors.append(f"lecture : {exc}")
+            finally:
+                self._in_play = False
+                self._play_until = time.time() + 0.3

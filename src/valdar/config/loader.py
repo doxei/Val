@@ -292,10 +292,12 @@ class EarsConfig(_Strict):
     max_segment_seconds: float = Field(default=20.0, gt=1.0)
     engaged_seconds: float = Field(default=14.0, ge=0.0)      # comme RAUB
     barge_in_frames: int = Field(default=8, ge=1)             # ~250 ms de parole : il se tait
+    barge_in_margin_db: float = Field(default=10.0, ge=0.0)   # au-dessus de l'écho de sa voix
+    echo_tau_seconds: float = Field(default=1.0, gt=0.0)
     min_logprob: float = -1.5
     max_no_speech: float = Field(default=0.6, ge=0.0, le=1.0)
     stt_backend: Literal["gemma", "whisper"] = "gemma"   # oreilles natives de Gemma 4
-    stt_model: str = "large-v3-turbo"
+    stt_model: str = "small"            # repli sur le processeur si Gemma n'entend pas
     stt_device: str = "cpu"
     stt_compute_type: str = "int8"
     wake_model: str = ""                                      # modèle « Valdar » entraîné

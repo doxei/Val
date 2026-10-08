@@ -96,7 +96,9 @@ def test_whisper_hallucinations_are_dropped():
 def test_barge_in_when_valdar_speaks():
     g, _, barge, _ = make(FakeWake([False]), FakeSTT([]))
     g.speaking = lambda: True
-    g.feed(speech(1.0))
+    g.feed(speech(1.0, amp=0.02))     # d'abord l'écho de sa propre voix dans le micro
+    assert barge == []
+    g.feed(speech(1.0))               # puis quelqu'un lui parle, plus fort que l'écho
     assert barge == [1], "on lui parle pendant qu'il parle : il se tait"
 
 

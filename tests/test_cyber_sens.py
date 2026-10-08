@@ -220,3 +220,131 @@ def test_resampler_is_continuous_across_blocks():
     assert len(out) == 16000
     step = 2 * np.pi * 440 / 16000
     assert np.abs(np.diff(out[2000:])).max() < step * 1.05    # pas de clic entre les blocs
+
+
+# ------------------------------------------------- écho, repli, streaming
+class _Speaking:
+    def __init__(self):
+        self.on = False
+
+    def __call__(self):
+        return self.on
+
+
+def _gate(stt=None, speaking=None, barge=None, heard=None):
+    class Wake:
+        def heard(self, seg):
+            return True
+
+    class STT:
+        def transcribe(self, seg):
+            return Transcript("bonjour Valdar")
+
+    cfg = load().ears
+    return Gate(cfg, EnergyVAD(0.005), Wake(), stt or STT(),
+                (heard.append if heard is not None else (lambda h: None)),
+                on_barge_in=barge, speaking=speaking)
+
+
+def test_own_voice_through_speakers_is_ignored_and_does_not_cut_him():
+    sp, cut, heard = _Speaking(), [], []
+    g = _gate(speaking=sp, barge=lambda: cut.append(1), heard=heard)
+    sp.on = True
+    for _ in range(60):                          # sa voix dans les haut-parleurs (≈ −31 dB)
+        g.feed(tone(0.04, g.frame))
+    for _ in range(40):
+        g.feed(np.zeros(g.frame, np.float32))
+    assert cut == [] and heard == []
+    assert any("ma propre voix" in n for n in g.notes)
+
+
+def test_someone_louder_than_the_echo_cuts_him():
+    sp, cut, heard = _Speaking(), [], []
+    g = _gate(speaking=sp, barge=lambda: cut.append(1), heard=heard)
+    sp.on = True
+    for _ in range(40):
+        g.feed(tone(0.02, g.frame))              # écho de sa voix (≈ −37 dB)
+    for _ in range(20):
+        g.feed(tone(0.3, g.frame))               # Olivier parle près du micro (≈ −13 dB)
+    sp.on = False
+    for _ in range(40):
+        g.feed(np.zeros(g.frame, np.float32))
+    assert cut == [1]
+    assert heard and heard[0].text == "bonjour Valdar"
+
+
+def test_fallback_stt_switches_to_whisper_when_gemma_is_deaf():
+    from valdar.ears.models import FallbackSTT
+
+    class Deaf:
+        last_error = None
+
+        def __init__(self):
+            self.calls = 0
+
+        def transcribe(self, seg):
+            self.calls += 1
+            return Transcript("", -99.0, 1.0)
+
+    class Whisper:
+        def transcribe(self, seg):
+            return Transcript("Valdar, tu m'entends ?", -0.2, 0.01)
+
+    deaf = Deaf()
+    stt = FallbackSTT(deaf, Whisper())
+    seg = np.zeros(SR, np.float32)
+    assert stt.transcribe(seg).text.startswith("Valdar") and stt.used == "whisper"
+    stt.transcribe(seg)
+    assert stt.demoted
+    stt.transcribe(seg)
+    assert deaf.calls == 2                       # Gemma n'est plus sollicité
+
+
+def test_sentence_stream_speaks_each_sentence_as_soon_as_it_is_complete():
+    from valdar.voice.stream import SentenceStream
+
+    said: list[str] = []
+    s = SentenceStream(said.append)
+    for piece in ["Oui", ", je t'en", "tends. Je suis là pour", " t'aider avec la buse 0.",
+                  "4 de ta CR-10S. Comment"]:
+        s.feed(piece)
+    assert said == ["Oui, je t'entends.", "Je suis là pour t'aider avec la buse 0.4 de ta "
+                    "CR-10S."]
+    s.feed(" ça va ?")
+    s.close()
+    assert said[-1] == "Comment ça va ?"
+
+
+def test_ollama_streams_tokens():
+    import json as _json
+
+    import httpx
+
+    from valdar.config.loader import LLMConfig
+    from valdar.llm.backend import GenParams
+    from valdar.llm.ollama import OllamaBackend
+
+    def handler(request):
+        body = _json.loads(request.content)
+        assert body["stream"] is True
+        lines = [{"message": {"content": "Bon"}}, {"message": {"content": "jour."}},
+                 {"message": {"content": ""}, "done": True, "eval_count": 2}]
+        return httpx.Response(200, content="\n".join(_json.dumps(x) for x in lines))
+
+    llm = OllamaBackend(LLMConfig(), transport=httpx.MockTransport(handler))
+    got: list[str] = []
+    res = llm.chat([{"role": "user", "content": "salut"}], params=GenParams(),
+                   on_token=got.append)
+    assert got == ["Bon", "jour."] and res.content == "Bonjour."
+    assert res.usage.get("eval_count") == 2
+
+
+def test_his_own_voice_ramping_up_does_not_cut_him():
+    sp, cut = _Speaking(), []
+    g = _gate(speaking=sp, barge=lambda: cut.append(1))
+    sp.on = True
+    for _ in range(5):
+        g.feed(np.zeros(g.frame, np.float32))      # un blanc avant la première syllabe
+    for _ in range(60):
+        g.feed(tone(0.06, g.frame))                # puis sa voix dans les haut-parleurs
+    assert cut == []
