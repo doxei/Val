@@ -6,7 +6,7 @@ ne passe jamais silencieusement.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
@@ -294,6 +294,7 @@ class EarsConfig(_Strict):
     barge_in_frames: int = Field(default=8, ge=1)             # ~250 ms de parole : il se tait
     min_logprob: float = -1.5
     max_no_speech: float = Field(default=0.6, ge=0.0, le=1.0)
+    stt_backend: Literal["gemma", "whisper"] = "gemma"   # oreilles natives de Gemma 4
     stt_model: str = "large-v3-turbo"
     stt_device: str = "cpu"
     stt_compute_type: str = "int8"

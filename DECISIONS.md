@@ -481,3 +481,22 @@ chacun a son test de non-régression (`tests/test_audit_fixes.py`).
 - Reste : entraîner le mot d'éveil « Valdar », fin de tour sémantique (aujourd'hui : 0,8 s de
   silence), tonalité → voie basse, mesurer la latence réelle de whisper sur l'i5.
 - Tests : 198 verts (Python 3.11 et 3.13), ruff propre.
+
+---
+
+## 2026-10-08 — Oreilles natives : Gemma 4 transcrit lui-même (choix d'Olivier)
+
+- Veille des modèles récents faite (Voxtral, Qwen3-TTS, OmniVoice, MiniCPM-o, Nemotron Omni,
+  Qwen 3.5, Granite 4.2). Voxtral écarté : ce sont deux modèles séparés (compréhension :
+  Mini 3B au cerveau plus faible que Gemma ; voix : TTS 4B qui demande ≥ 16 Go, vLLM-Omni,
+  clonage non confirmé en local). Le cerveau reste Gemma 4 12B.
+- **Gemma 4 12B entend** (reconnaissance de la parole, clips de 30 s). `ears.stt_backend:
+  gemma` (défaut) : le portier envoie la phrase à Gemma (WAV 16 kHz mono dans le champ
+  `images` d'Ollama, comme pour Gemma 4 en GGUF). **Aucun modèle de plus en mémoire.**
+  Au-delà de 30 s, découpage. « [silence] » = rien entendu.
+- Au démarrage de l'écoute, une vérification envoie 1 s de son : si Ollama refuse l'audio
+  (version < 0.33.3 ou modèle sans oreilles), message clair et repli possible
+  `ears.stt_backend: whisper`.
+- Le mot d'éveil reste le petit whisper sur le CPU (sinon chaque phrase de la pièce
+  occuperait la carte graphique), en attendant le modèle « Valdar ».
+- À mesurer sur la machine : qualité du français et délai de transcription par Gemma.

@@ -263,7 +263,7 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
         return None
     print("(je charge mes oreilles : détection de parole et transcription…)", flush=True)
     try:
-        vad, wake, stt = build(cfg.ears, cfg.repo_path)
+        vad, wake, stt = build(cfg.ears, cfg.repo_path, rt.llm)
     except Exception as exc:
         print(f"(écoute impossible : {exc})")
         return None

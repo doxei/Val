@@ -116,10 +116,25 @@ class OpenWakeWordWake:
         return best >= self.threshold
 
 
-def build(cfg: EarsConfig, model_path: Any) -> tuple[Any, Any, Any]:
-    """(vad, wake, stt) réels. Lève une exception claire si un morceau manque."""
+def build(cfg: EarsConfig, model_path: Any, llm: Any = None) -> tuple[Any, Any, Any]:
+    """(vad, wake, stt) réels. Lève une exception claire si un morceau manque.
+
+    `stt_backend` : « gemma » (oreilles natives du cerveau, rien de plus en mémoire) ou
+    « whisper » (faster-whisper sur le CPU)."""
     vad = SileroVAD()
-    stt = WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type)
+    if cfg.stt_backend == "gemma":
+        from valdar.ears.gemma import GemmaSTT, check
+
+        if llm is None:
+            raise RuntimeError("oreilles Gemma : pas de modèle de langage")
+        problem = check(llm)
+        if problem:
+            raise RuntimeError("Gemma n'entend pas (Ollama trop ancien pour l'audio de Gemma 4 ?"
+                               f" il faut la 0.33.3 ou plus) : {problem}. Repli possible : "
+                               "ears.stt_backend: whisper")
+        stt: Any = GemmaSTT(llm)
+    else:
+        stt = WhisperSTT(cfg.stt_model, cfg.stt_device, cfg.stt_compute_type)
     wake_file = model_path(cfg.wake_model) if cfg.wake_model else None
     if wake_file is not None and wake_file.is_file():
         wake: Any = OpenWakeWordWake(str(wake_file), cfg.wake_threshold)
