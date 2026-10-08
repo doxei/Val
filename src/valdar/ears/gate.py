@@ -16,7 +16,7 @@ from __future__ import annotations
 import collections
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import numpy as np
@@ -52,6 +52,8 @@ class Heard:
     t: float
     seconds: float
     tone: dict[str, float]
+    # La phrase elle-même, en mémoire vive seulement, pour reconnaître la voix de qui parle.
+    audio: np.ndarray | None = field(default=None, repr=False)
 
 
 _JUNK = ("sous-titres", "amara", "merci d'avoir regardé", "abonnez-vous",
@@ -105,6 +107,7 @@ class Gate:
         self.on_note = on_note        # diagnostic : ce que le portier décide (jamais le texte
         self.notes: collections.deque = collections.deque(maxlen=12)   # non adressé)
         self._rest = np.zeros(0, np.float32)
+        self.tap: Callable[[np.ndarray], bool] | None = None
         # Écho : sans annulation d'écho, le micro entend Valdar dans les haut-parleurs. Pendant
         # qu'il parle, on apprend le niveau de cet écho ; seule une voix nettement plus forte
         # (quelqu'un près du micro) le coupe, et ce qu'il dit lui-même n'est jamais transcrit.
@@ -193,6 +196,8 @@ class Gate:
         if self._seg_during_speech and not self._barged:
             self._note(f"parole {dur:.1f} s pendant que je parlais : ma propre voix, ignorée")
             return
+        if self.tap is not None and self.tap(seg):
+            return            # enrôlement de voix en cours : la phrase sert d'échantillon
         self.stats["segments"] += 1
         if not self.engaged():
             if not self.wake.heard(seg):
@@ -215,7 +220,7 @@ class Gate:
         self.engaged_until = self.clock() + self.cfg.engaged_seconds
         used = getattr(self.stt, "used", "")
         self._note(f"parole {dur:.1f} s comprise" + (f" (par {used})" if used else ""))
-        self.on_heard(Heard(tr.text.strip(), self.clock(), dur, tone(seg)))
+        self.on_heard(Heard(tr.text.strip(), self.clock(), dur, tone(seg), seg))
 
     def keep_engaged(self) -> None:
         """Valdar vient de parler : on lui répond sans redire son nom."""

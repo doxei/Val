@@ -1,7 +1,8 @@
 """Ligne de commande Valdar.
 
-  valdar chat         parler à Valdar au clavier (cœur, mémoire, outils, Gemma 4 via Ollama)
-                      --voix : il répond aussi à voix haute, avec la voix de RAUB
+  valdar chat         parler à Valdar (cœur, mémoire, outils, Gemma 4 via Ollama)
+                      --voix : il répond à voix haute ; --ecoute : il écoute au micro
+                      --camera : il regarde la pièce ; --interface : visage et onglets
   valdar voix         faire dire une phrase à Valdar (test de la voix, mesures)
   valdar import-raub  reprendre les données de RAUB, voix comprise (lecture seule côté RAUB)
   valdar heart        cœur seul, en temps réel (Ctrl+C pour sauvegarder et quitter)
@@ -136,8 +137,7 @@ def _start_voice(cfg):
 
 
 def _cmd_chat(args: argparse.Namespace) -> int:
-    import threading
-
+    from valdar.interface.session import Session
     from valdar.runtime import Runtime
 
     cfg = load()
@@ -145,7 +145,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
     llm = rt.llm
     if hasattr(llm, "available") and not llm.available():
         print(f"Ollama ne répond pas sur {cfg.llm.url}. Lance l'application Ollama puis "
-              "relance-moi (tools\\valdar_chat.bat le fait tout seul).")
+              "relance-moi (tools\\valdar.bat le fait tout seul).")
         rt.stop()
         return 1
     if hasattr(llm, "has_model") and not llm.has_model():
@@ -153,43 +153,18 @@ def _cmd_chat(args: argparse.Namespace) -> int:
               f"{cfg.llm.model}")
         rt.stop()
         return 1
-    rt.start()
-    stop = threading.Event()
-    rt_say = [lambda _text: None]
-
-    def show_events() -> None:
-        while not stop.is_set():
-            try:
-                ev = rt.events.get(timeout=0.5)
-            except Exception:
-                continue
-            if ev.kind == "rappel":
-                print(f"\n[rappel] {ev.text}\nToi > ", end="", flush=True)
-                rt_say[0](f"Rappel : {ev.text}")
-            elif ev.kind == "initiative":
-                print(f"\nValdar (de lui-même) > {ev.text}\nToi > ", end="", flush=True)
-                rt_say[0](ev.text)
-            else:
-                print(f"\n[{ev.kind}] {ev.text}\nToi > ", end="", flush=True)
-
     speaker = _start_voice(cfg) if args.voix and cfg.voice.enabled else None
-    muted = False
-
-    def say(text: str) -> None:
-        if speaker is None or muted:
-            return
-        if speaker.ready.is_set() and speaker.load_error:
-            return
-        speaker.say(text)
-
-    def voice_problem() -> str | None:
-        if speaker is not None and speaker.ready.is_set() and speaker.load_error:
-            return speaker.load_error
-        return None
-
-    rt_say[0] = say
-    threading.Thread(target=show_events, name="valdar-affichage", daemon=True).start()
-    ears = _start_ears(cfg, rt, speaker, say, args.debug) if args.ecoute else None
+    if cfg.kiwix.enabled:
+        print(f"({rt.start_kiwix()})")
+    session = Session(cfg, rt, speaker)
+    _console(session, args.debug)
+    session.start()
+    if args.ecoute:
+        _start_ident(session)
+        _start_ears(session, args.debug)
+    if args.camera and cfg.vision.enabled:
+        _start_vision(session)
+    server = _start_interface(session) if args.interface and cfg.interface.enabled else None
     with rt.lock:
         b = rt.heart.brief()
     print(f"Valdar est là ({b['emotion']}, humeur {b['mood']}). {CHAT_HELP}")
@@ -199,10 +174,13 @@ def _cmd_chat(args: argparse.Namespace) -> int:
             try:
                 text = input("Toi > ").strip()
             except EOFError:
+                if server is None:
+                    break
+                session._stop.wait()       # lancé sans console : l'interface suffit
                 break
             if speaker is not None:
                 speaker.interrupt()          # on me parle : je me tais
-                problem = voice_problem()
+                problem = speaker.load_error if speaker.ready.is_set() else None
                 if problem and not warned:
                     print(f"(ma voix n'a pas pu démarrer : {problem})")
                     warned = True
@@ -212,11 +190,11 @@ def _cmd_chat(args: argparse.Namespace) -> int:
             if low in ("/quitter", "/quit", "/exit"):
                 break
             if low == "/muet":
-                muted = True
+                session.muted = True
                 print("(voix coupée)")
                 continue
             if low == "/voix":
-                muted = False
+                session.muted = False
                 print("(voix rétablie)" if speaker else "(lance « valdar chat --voix »)")
                 continue
             if low == "/oreilles":
@@ -234,39 +212,115 @@ def _cmd_chat(args: argparse.Namespace) -> int:
                 rt.initiative.silence(False)
                 print("(initiatives réactivées)")
                 continue
-            _answer(rt, text, say, args.debug)
+            print("Valdar > ", end="", flush=True)
+            reply = session.answer(text, show=lambda p: print(p, end="", flush=True))
+            print()
+            if reply.tools_used and args.debug:
+                print(f"  [outils : {', '.join(reply.tools_used)}]")
     except KeyboardInterrupt:
         pass
     finally:
-        stop.set()
-        if ears is not None:
-            ears.stop()
-        if speaker is not None:
-            speaker.close()
-        rt.stop()
+        if server is not None:
+            server.stop()
+        session.stop()
         print("\nÀ plus. (état sauvegardé)")
     return 0
 
 
-def _answer(rt, text: str, say, debug: bool) -> None:
-    """Répond en streaming : le texte s'affiche et chaque phrase part vers la voix dès
-    qu'elle est complète (Valdar commence à parler pendant qu'il pense encore)."""
-    from valdar.voice.stream import SentenceStream
+def _console(session, debug: bool) -> None:
+    """La console affiche ce qui se passe (ce que l'interface affiche aussi)."""
+    def on(kind: str, d: dict) -> None:
+        if kind == "spontaneous":
+            print(f"\nValdar (de lui-même) > {d['text']}\nToi > ", end="", flush=True)
+        elif kind == "event" and (d.get("kind") != "pensee" or debug):
+            print(f"\n[{d.get('kind')}] {d.get('text')}\nToi > ", end="", flush=True)
+        elif kind == "heard":
+            sure = f", {round(d['confidence'] * 100)} %" if d.get("confidence") else ""
+            print(f"\n(entendu, {d.get('who')}{sure}) {d['text']}", flush=True)
+        elif kind == "enroll" and d.get("done"):
+            print(f"\n({d['kind']} de {d['person']} apprise : {d['prints']} empreintes)\n"
+                  "Toi > ", end="", flush=True)
 
-    print("Valdar > ", end="", flush=True)
-    stream = SentenceStream(say, lambda piece: print(piece, end="", flush=True))
-    reply = rt.handle(text, on_text=stream.feed)
-    if stream.started:
-        stream.close()
-        print()
-        if reply.text.strip() and reply.text.strip() not in stream.text:
-            print(reply.text)          # ex. une confirmation demandée après un outil
-            say(reply.text)
-    else:                       # pas de streaming (erreur, confirmation) : d'un bloc
-        print(reply.text)
-        say(reply.text)
-    if reply.tools_used and debug:
-        print(f"  [outils : {', '.join(reply.tools_used)}]")
+    session.bus.subscribe(on)
+
+
+def _start_ident(session) -> None:
+    """Reconnaissance de la voix (sherpa-onnx). Sans elle, il croit parler à Olivier."""
+    cfg = session.cfg
+    if not cfg.ident.enabled:
+        return
+    try:
+        from valdar.ident.download import fetch
+        from valdar.ident.store import Prints
+        from valdar.ident.voices import SherpaEmbedder, VoiceID
+
+        session.prints = Prints(cfg.storage_path(cfg.ident.db))
+        model = fetch(cfg.repo_path(cfg.ident.voice_model), cfg.ident.voice_urls)
+        session.voice_id = VoiceID(cfg.ident, session.prints,
+                                   SherpaEmbedder(str(model), threads=2))
+        n = len(session.prints.counts("voix"))
+        print(f"(je reconnais les voix : {n} personne(s) apprise(s) ; onglet Foyer pour en "
+              "ajouter)")
+    except ImportError:
+        print("(reconnaissance des voix absente : installe l'extra [identite])")
+    except Exception as exc:
+        print(f"(reconnaissance des voix impossible : {exc})")
+
+
+def _start_vision(session) -> None:
+    cfg = session.cfg
+    try:
+        from valdar.ident.download import fetch
+        from valdar.ident.faces import FaceEngine, FaceID
+        from valdar.ident.store import Prints
+        from valdar.vision.watch import Camera, Watch, YoloDetector
+
+        cam = Camera(cfg.vision.camera)
+    except ImportError:
+        print("(caméra : installe l'extra [vision])")
+        return
+    except Exception as exc:
+        print(f"(caméra impossible : {exc})")
+        return
+    if session.prints is None:
+        session.prints = Prints(cfg.storage_path(cfg.ident.db))
+    faces = detector = None
+    try:
+        det = fetch(cfg.repo_path(cfg.ident.face_detector), [cfg.ident.face_detector_url],
+                    min_bytes=50_000)
+        rec = fetch(cfg.repo_path(cfg.ident.face_model), [cfg.ident.face_model_url])
+        faces = FaceID(cfg.ident, session.prints, FaceEngine(str(det), str(rec)))
+        session.face_id = faces
+    except Exception as exc:
+        print(f"(visages impossibles : {exc})")
+    try:
+        detector = YoloDetector(cfg.vision.detector, cfg.vision.min_confidence)
+    except Exception as exc:
+        print(f"(détection du chien impossible : {exc} — installe l'extra [vision])")
+    w = Watch(cfg.vision, cam.frame, detector, faces, on_scene=session.on_scene,
+              on_dog_table=session.on_dog_table)
+    session.watch = w
+    w.start()
+    print("(je regarde la pièce : visages" + (", chien et table" if detector else "") + ")")
+
+
+def _start_interface(session):
+    from valdar.interface.server import Server
+    from valdar.interface.window import open_window
+
+    ic = session.cfg.interface
+    try:
+        server = Server(session, ic.host, ic.port)
+    except OSError as exc:
+        print(f"(interface impossible : {exc} — Valdar tourne déjà ?)")
+        return None
+    url = server.start()
+    print(f"(interface : {url})")
+    try:
+        open_window(url, ic.screen, ic.kiosk)
+    except Exception as exc:
+        print(f"(fenêtre impossible à ouvrir : {exc} — ouvre {url} dans Edge)")
+    return server
 
 
 def _ears_text(rt) -> str:
@@ -285,11 +339,12 @@ def _ears_text(rt) -> str:
     return "\n".join(lines)
 
 
-def _start_ears(cfg, rt, speaker, say, debug: bool):
+def _start_ears(session, debug: bool):
     """Écoute au micro (phase 3). Retourne le micro, ou None si l'écoute est impossible."""
     import queue
     import threading
 
+    cfg, rt, speaker = session.cfg, session.rt, session.speaker
     try:
         from valdar.ears import Gate
         from valdar.ears.mic import Mic
@@ -309,6 +364,7 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
                 else None)
     ambient = rt.make_ambient(cfg.ears.frame_ms / 1000, speaking) if cfg.ambient.enabled \
         else None
+
     def note(text: str) -> None:
         if debug or "adressée" in text:
             print(f"\n(oreilles) {text}\nToi > ", end="", flush=True)
@@ -326,9 +382,9 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
             h = heard_q.get()
             if h is None:
                 return
-            print(f"\n(entendu) {h.text}", flush=True)
-            _answer(rt, h.text, say, debug)
-            print("Toi > ", end="", flush=True)
+            print("Valdar > ", end="", flush=True)
+            session.on_heard(h, show=lambda p: print(p, end="", flush=True))
+            print("\nToi > ", end="", flush=True)
             gate.keep_engaged()
 
     threading.Thread(target=answer, name="valdar-oreilles", daemon=True).start()
@@ -339,9 +395,9 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
         print(f"(micro introuvable : {exc})")
         heard_q.put(None)
         return None
+    session.attach_ears(gate, mic)
     names = " / ".join(cfg.ears.names[:1])
-    mode = "modèle d'éveil" if cfg.ears.wake_model else "éveil par petit whisper en mémoire"
-    print(f"(j'écoute sur « {name} ». Appelle-moi « {names} » ; {mode}, rien n'est enregistré)")
+    print(f"(j'écoute sur « {name} ». Appelle-moi « {names} » ; rien n'est enregistré)")
     return mic
 
 
@@ -473,6 +529,13 @@ def _cmd_vigie(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_kiwix(args: argparse.Namespace) -> int:
+    from valdar.knowledge.kiwix_get import interactive
+
+    cfg = load()
+    return interactive(cfg.repo_path(cfg.kiwix.dir))
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -485,6 +548,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--voix", action="store_true", help="répond aussi à voix haute")
     p.add_argument("--ecoute", action="store_true",
                    help="écoute au micro (dis « Valdar » pour lui parler)")
+    p.add_argument("--camera", action="store_true",
+                   help="regarde la pièce : visages, le chien sur la table")
+    p.add_argument("--interface", action="store_true",
+                   help="ouvre l'interface (visage et onglets) sur le projecteur")
     p.set_defaults(func=_cmd_chat)
 
     p = sub.add_parser("voix", help="faire parler Valdar (test de la voix)")
@@ -512,6 +579,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--minutes", type=float, default=None,
                    help="avec --ratee : minutes avant la fin où c'était déjà fichu")
     p.set_defaults(func=_cmd_vigie)
+
+    p = sub.add_parser("kiwix", help="installer les bibliothèques hors ligne (Wikipédia…)")
+    p.set_defaults(func=_cmd_kiwix)
 
     p = sub.add_parser("heart", help="cœur en continu, temps réel")
     p.add_argument("--profile", default=None)

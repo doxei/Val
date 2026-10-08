@@ -217,6 +217,12 @@ class Facts:
 
         return sorted(items, key=urgency, reverse=True)[:n]
 
+    def archive(self, fid: int) -> bool:
+        """Oublie une croyance précise (depuis l'interface)."""
+        with self._lock, self._conn() as con:
+            return con.execute("UPDATE facts SET archived=1 WHERE id=? AND archived=0",
+                               (fid,)).rowcount > 0
+
     def mark_checked(self, fid: int, when: float | None = None) -> None:
         with self._lock, self._conn() as con:
             con.execute("UPDATE facts SET verifie=? WHERE id=?",

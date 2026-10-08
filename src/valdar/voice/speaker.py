@@ -67,6 +67,7 @@ class Speaker:
         self._texts: queue.Queue = queue.Queue()
         self._in_play = False
         self._play_until = 0.0
+        self._env: tuple[float, float, np.ndarray] | None = None
         self._audio: queue.Queue = queue.Queue(maxsize=4)
         self._generation = 0
         self._pending = 0
@@ -126,6 +127,27 @@ class Speaker:
                 pass
         self.sink.stop()
 
+    def _set_envelope(self, audio: np.ndarray, sr: int) -> None:
+        """Enveloppe du son joué (toutes les ~40 ms), pour que la bouche du visage suive la
+        vraie voix et pas une animation au hasard."""
+        hop = max(1, int(sr * 0.04))
+        x = np.asarray(audio, dtype=np.float32).reshape(-1)
+        n = len(x) // hop
+        if n == 0:
+            self._env = (time.time(), 0.04, np.zeros(1, np.float32))
+            return
+        env = np.sqrt(np.mean(x[: n * hop].reshape(n, hop) ** 2, axis=1))
+        peak = float(env.max()) or 1.0
+        self._env = (time.time(), hop / sr, (env / peak).astype(np.float32))
+
+    def level(self) -> float:
+        """Ouverture de la bouche, 0 à 1, à l'instant présent."""
+        if not self._in_play or self._env is None:
+            return 0.0
+        t0, hop, env = self._env
+        i = int((time.time() - t0) / hop)
+        return float(env[i]) if 0 <= i < len(env) else 0.0
+
     def playing(self) -> bool:
         """Du son sort réellement des haut-parleurs (ou vient d'en sortir : la pièce résonne
         encore 0,3 s). Les oreilles s'en servent pour reconnaître l'écho de sa voix."""
@@ -182,6 +204,7 @@ class Speaker:
                 continue
             if t_in is not None:
                 self.stats.first_audio_seconds = time.time() - t_in
+            self._set_envelope(audio, self.tts.sample_rate)
             self._in_play = True
             try:
                 self.sink.play(audio, self.tts.sample_rate)

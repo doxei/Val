@@ -362,6 +362,63 @@ class NightConfig(_Strict):
     out_dir: str = "consolidation"
 
 
+class IdentConfig(_Strict):
+    """Qui parle, qui est là (phase 4) : empreintes de voix et de visage, en local seulement."""
+    enabled: bool = True
+    db: str = "empreintes.db"                    # dans le dossier de données, jamais sur git
+    voice_model: str = "data/models/identite/voix_campplus.onnx"
+    voice_urls: list[str] = [
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"
+        "wespeaker_en_voxceleb_CAM++.onnx",
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"
+        "wespeaker_en_voxceleb_resnet34.onnx",
+    ]
+    voice_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)    # cosinus
+    voice_margin: float = Field(default=0.06, ge=0.0, lt=1.0)      # écart avec le 2e
+    voice_min_seconds: float = Field(default=1.0, gt=0.0)
+    voice_enroll_seconds: float = Field(default=15.0, gt=3.0)
+    adapt_above: float = Field(default=0.15, ge=0.0)   # au-dessus du seuil + ça : il apprend
+    max_prints: int = Field(default=40, ge=5)
+    face_detector: str = "data/models/identite/visage_yunet.onnx"
+    face_detector_url: str = ("https://github.com/opencv/opencv_zoo/raw/main/models/"
+                              "face_detection_yunet/face_detection_yunet_2023mar.onnx")
+    face_model: str = "data/models/identite/visage_sface.onnx"
+    face_model_url: str = ("https://github.com/opencv/opencv_zoo/raw/main/models/"
+                           "face_recognition_sface/face_recognition_sface_2021dec.onnx")
+    face_threshold: float = Field(default=0.4, gt=0.0, lt=1.0)     # cosinus SFace (0,363)
+    face_enroll_shots: int = Field(default=12, ge=3)
+
+
+class VisionConfig(_Strict):
+    """La caméra de la pièce (phase 4) : visages, et le chien."""
+    enabled: bool = True
+    camera: int | str = 0              # numéro de webcam, ou adresse d'un flux
+    interval_seconds: float = Field(default=1.0, gt=0.1)
+    detector: str = "yolo11n.pt"       # téléchargé par ultralytics au premier lancement
+    min_confidence: float = Field(default=0.45, gt=0.0, lt=1.0)
+    seen_memory_seconds: float = Field(default=180.0, gt=0.0)
+    table_rule: bool = True            # le chien sur la table, personne dans la pièce
+    table_cooldown_seconds: float = Field(default=60.0, ge=5.0)
+    table_frames: int = Field(default=2, ge=1)       # vu sur la table N fois de suite
+
+
+class KiwixConfig(_Strict):
+    """Bibliothèques hors ligne (Wikipédia, Stack Overflow, médecine…) servies par Kiwix."""
+    enabled: bool = True
+    dir: str = "data/kiwix"            # .zim et kiwix-serve, hors git
+    port: int = Field(default=8888, ge=1024, le=65535)
+    max_chars: int = Field(default=3500, ge=500)
+
+
+class InterfaceConfig(_Strict):
+    """L'interface (phase 6) : le visage et les onglets, servis en local, ouverts dans Edge."""
+    enabled: bool = True
+    host: str = "127.0.0.1"
+    port: int = Field(default=8765, ge=1024, le=65535)
+    screen: int = Field(default=2, ge=1)           # 2 = le projecteur
+    kiosk: bool = False
+
+
 class ThoughtsConfig(_Strict):
     """Pensée de fond (avenant 4 §6)."""
     enabled: bool = True
@@ -714,6 +771,10 @@ class ValdarConfig(_Strict):
     interoception: InteroceptionConfig = InteroceptionConfig()
     critique: CritiqueConfig = CritiqueConfig()
     night: NightConfig = NightConfig()
+    ident: IdentConfig = IdentConfig()
+    vision: VisionConfig = VisionConfig()
+    interface: InterfaceConfig = InterfaceConfig()
+    kiwix: KiwixConfig = KiwixConfig()
     knowledge_db: str = "connaissances.db"
     nociception: NociceptionConfig = NociceptionConfig()
     relations: RelationsConfig = RelationsConfig()
@@ -772,9 +833,36 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "valdar.yaml"
 
 
+def _merge(base: dict, extra: dict) -> dict:
+    out = dict(base)
+    for k, v in extra.items():
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) \
+            else v
+    return out
+
+
+def overrides_path(root: Path) -> Path:
+    """Réglages faits dans l'interface : un petit fichier dans les données, par-dessus le
+    fichier de configuration (qui, lui, reste tel qu'il est sur git)."""
+    return root / "data" / "reglages.json"
+
+
 def load(path: str | Path | None = None) -> ValdarConfig:
     p = Path(path) if path else DEFAULT_CONFIG_PATH
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    cfg = ValdarConfig.model_validate(raw)
-    cfg._root = p.resolve().parent.parent
+    root = p.resolve().parent.parent
+    cfg = None
+    if path is None:
+        ov = overrides_path(root)
+        if ov.is_file():
+            import json
+
+            try:
+                cfg = ValdarConfig.model_validate(
+                    _merge(raw, json.loads(ov.read_text(encoding="utf-8"))))
+            except ValueError:
+                cfg = None      # réglage abîmé ou devenu invalide : configuration de base
+    if cfg is None:
+        cfg = ValdarConfig.model_validate(raw)
+    cfg._root = root
     return cfg

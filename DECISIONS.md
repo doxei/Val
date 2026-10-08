@@ -578,3 +578,38 @@ Premier échange vocal réussi (« Allô Valdar, est-ce que tu m'entends frérot
 - Interface (demande d'Olivier) : en plus du visage, des **onglets de réglages** couvrant ce
   qu'offre Open WebUI (modèle et paramètres, voix, micro, mémoire, connaissances,
   personnes, outils, historique), dans le **même thème** que le visage.
+
+## 2026-10-08 — L'interface, qui parle, qui est là, le chien, et Kiwix
+
+Demandes d'Olivier : l'interface pour travailler et lire ; reconnaître qui parle (voix, et
+visage quand la caméra voit) parmi les 5 personnes de la maison ; le chien (« Sony, descends »
+s'il monte sur la table quand personne n'est là) ; Kiwix et beaucoup de documentation ; une
+icône sur le bureau.
+
+- **Interface** (`interface/`) : serveur local (bibliothèque standard, 127.0.0.1), direct en
+  SSE, ouvert dans Edge en mode application sur l'écran 2, gardé au premier plan (jamais sur
+  l'écran principal). Visage en dessin animé (SVG) piloté par le cœur : plaisir → sourire et
+  yeux rieurs, activation → yeux ouverts, émotion → couleur, halo au rythme du cœur, bouche
+  sur l'enveloppe réelle du son joué, oreilles dorées quand il écoute, yeux fermés quand il
+  dort. Onglets : Discussion (streaming), Cœur, Foyer, Mémoire, Pensées, Atelier, Savoir,
+  Journal, Réglages (comme Open WebUI : modèle, contexte, température, voix, oreilles,
+  reconnaissance, vie intérieure ; gardés dans `data/reglages.json`). Touche F : visage seul.
+- **Session** (`interface/session.py`) : une seule façon de répondre (clavier, interface,
+  voix), un bus d'événements pour la console et l'interface.
+- **Foyer** (`data/foyer.json`, jamais sur git) : membres, lien, enfant ou non ; animaux.
+- **Voix** : CAM++ (sherpa-onnx, CPU) ; enrôlement 15 s depuis l'onglet Foyer ; seuil ET
+  écart avec le 2e (enfants aux voix proches) ; apprend quand il est très sûr. La voix seule
+  plafonne à 0,85 de confiance : jamais d'outil élevé sans voix ET visage d'accord (0,95).
+- **Visage** : YuNet + SFace (OpenCV, CPU). **Objets** : YOLO11n (ultralytics, CPU).
+  Seulement des vecteurs, ni audio ni image (`data/empreintes.db`).
+- **Chien** : sur la table = il la recouvre et ses pattes sont dans le haut du plateau ;
+  seulement si personne n'est dans l'image, 2 images de suite, 60 s entre deux rappels ;
+  phrase dite directement (réflexe, sans Gemma).
+- **Kiwix** : `valdar kiwix` (tools\valdar_kiwix.bat) propose une sélection (~32 Go :
+  Wikipédia FR sans images, Vikidia pour les enfants, Wiktionnaire, Wikilivres, Wikiversité,
+  WikiMed, iFixit, Q/R bricolage, électronique, impression 3D, jardinage, parents, santé,
+  Arduino ; Stack Overflow en option, 75 Go), la version la plus récente de chacune,
+  téléchargement reprenable. kiwix-serve lancé par Valdar ; outils `chercher_savoir` et
+  `lire_article`.
+- **Lanceur** `tools\valdar.bat` : installe ce qui manque, pose l'icône sur le bureau au
+  premier lancement, démarre tout (voix, oreilles, caméra, interface).

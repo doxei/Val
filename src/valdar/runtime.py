@@ -109,6 +109,10 @@ class Runtime:
         self._who: Identity = who
         self._handling = threading.RLock()
         self.registry = build_registry(ctx)
+        self.kiwix: Any = None
+        self._kiwix_serve: Any = None
+        if self.cfg.kiwix.enabled:
+            self._add_kiwix_tools()
         self.agent = Agent(self.cfg, self.llm, self.registry, self.heart, self.lock,
                            self.facts, self.self_model, self.world_lines, self.urges,
                            memory=self.memory, extras=self.extra_blocks)
@@ -122,6 +126,72 @@ class Runtime:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._speaking = threading.Lock()
+
+    # ============================================================ Kiwix
+    def _add_kiwix_tools(self) -> None:
+        from valdar.knowledge.kiwix import Kiwix
+        from valdar.tools.registry import SAFE, Tool, params
+
+        kc = self.cfg.kiwix
+        self.kiwix = Kiwix(f"http://127.0.0.1:{kc.port}")
+        s = {"type": "string"}
+
+        def chercher(question: str, bibliotheque: str = "") -> str:
+            try:
+                hits = self.kiwix.search(question, bibliotheque or None, k=5)
+            except Exception as exc:
+                return f"bibliothèque hors ligne injoignable : {exc}"
+            if not hits:
+                return "rien trouvé dans les bibliothèques hors ligne."
+            return "\n".join(f"- [{h['book']}] {h['title']} (chemin : {h['path']}) : "
+                             f"{h['extrait']}" for h in hits)
+
+        def lire(chemin: str) -> str:
+            try:
+                return self.kiwix.read(chemin, kc.max_chars)
+            except Exception as exc:
+                return f"lecture impossible : {exc}"
+
+        self.registry.add(Tool(
+            "chercher_savoir",
+            "Cherche dans tes bibliothèques hors ligne (Wikipédia, Vikidia pour les enfants, "
+            "médecine, bricolage, électronique, impression 3D, jardinage, parents, Stack "
+            "Overflow…). À utiliser pour vérifier un fait à la source au lieu de deviner.",
+            params(["question"], question={**s, "description": "mots-clés"},
+                   bibliotheque={**s, "description": "nom d'une bibliothèque (optionnel)"}),
+            chercher, SAFE, "savoir"))
+        self.registry.add(Tool(
+            "lire_article", "Lit un article trouvé par chercher_savoir (son chemin).",
+            params(["chemin"], chemin={**s, "description": "le chemin donné par la recherche"}),
+            lire, SAFE, "savoir"))
+
+    def start_kiwix(self) -> str:
+        """Lance kiwix-serve sur les bibliothèques téléchargées (s'il y en a)."""
+        from pathlib import Path
+
+        from valdar.knowledge.kiwix import KiwixServe
+
+        kc = self.cfg.kiwix
+        base = self.cfg.repo_path(kc.dir)
+        exe = next(iter(sorted(Path(base, "bin").glob("**/kiwix-serve*"))), None)
+        if self.kiwix is not None and self.kiwix.available():
+            return "bibliothèques hors ligne déjà servies"
+        if exe is None:
+            return "Kiwix pas installé (tools\\valdar_kiwix.bat)"
+        self._kiwix_serve = KiwixServe(exe, Path(base), kc.port)
+        n = len(self._kiwix_serve.zims())
+        if not self._kiwix_serve.start():
+            return "aucune bibliothèque téléchargée (tools\\valdar_kiwix.bat)"
+        return f"{n} bibliothèque(s) hors ligne"
+
+    def kiwix_status(self) -> str:
+        if self.kiwix is None:
+            return "bibliothèques hors ligne désactivées"
+        try:
+            books = self.kiwix.books()
+        except Exception:
+            return "bibliothèques hors ligne : aucune servie (tools\\valdar_kiwix.bat)"
+        return "bibliothèques hors ligne : " + ", ".join(b["title"] for b in books)
 
     # ============================================================ cœur
     def world_lines(self) -> list[str]:
@@ -423,6 +493,8 @@ class Runtime:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._kiwix_serve is not None:
+            self._kiwix_serve.stop()
         if self.printwatch is not None:
             self.printwatch.stop()
         if self._thread is not None:

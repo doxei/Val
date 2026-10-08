@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valdar</title>
+<link rel="icon" href="icone.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Exo+2:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="tab-discussion">
+<div id="app">
+
+  <!-- ============================== LE VISAGE ============================== -->
+  <section id="face-pane" aria-label="Visage de Valdar">
+    <header class="brand">
+      <span class="brand-name">VALDAR</span>
+      <span id="clock" class="brand-clock">--:--</span>
+    </header>
+
+    <div id="face-wrap">
+      <svg id="face" viewBox="0 0 400 440" role="img" aria-label="Visage de Valdar">
+        <defs>
+          <radialGradient id="g-head" cx="50%" cy="38%" r="70%">
+            <stop offset="0" stop-color="#3b5578"/>
+            <stop offset=".55" stop-color="#1b2c47"/>
+            <stop offset="1" stop-color="#0c1628"/>
+          </radialGradient>
+          <linearGradient id="g-plate" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#d9e6f5"/>
+            <stop offset=".5" stop-color="#9fb3cc"/>
+            <stop offset="1" stop-color="#6d819c"/>
+          </linearGradient>
+          <linearGradient id="g-visor" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#06101f"/>
+            <stop offset="1" stop-color="#0b1d36"/>
+          </linearGradient>
+          <radialGradient id="g-eye" cx="50%" cy="45%" r="60%">
+            <stop offset="0" stop-color="#ffffff"/>
+            <stop offset=".25" stop-color="var(--eye)"/>
+            <stop offset="1" stop-color="var(--eye-deep)"/>
+          </radialGradient>
+          <radialGradient id="g-cheek" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="var(--cheek)" stop-opacity=".55"/>
+            <stop offset="1" stop-color="var(--cheek)" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="5" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <clipPath id="clip-eye"><ellipse rx="34" ry="30"/></clipPath>
+          <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="1.2"/>
+          </filter>
+        </defs>
+
+        <!-- halo qui respire au rythme du cœur -->
+        <circle id="halo" cx="200" cy="215" r="178" fill="none" stroke="var(--accent)"
+                stroke-width="2" opacity=".35"/>
+        <circle id="halo2" cx="200" cy="215" r="192" fill="none" stroke="var(--accent)"
+                stroke-width="1" stroke-dasharray="4 10" opacity=".25"/>
+
+        <!-- antennes / oreilles -->
+        <g id="ears">
+          <rect x="38" y="178" width="34" height="86" rx="14" fill="url(#g-plate)"/>
+          <rect x="328" y="178" width="34" height="86" rx="14" fill="url(#g-plate)"/>
+          <circle id="ear-l" cx="55" cy="221" r="9" fill="var(--ear)" filter="url(#glow)"/>
+          <circle id="ear-r" cx="345" cy="221" r="9" fill="var(--ear)" filter="url(#glow)"/>
+          <line x1="200" y1="58" x2="200" y2="26" stroke="#9fb3cc" stroke-width="5"
+                stroke-linecap="round"/>
+          <circle id="antenna" cx="200" cy="22" r="9" fill="var(--accent)" filter="url(#glow)"/>
+        </g>
+
+        <!-- tête : un casque clair, un écran sombre dedans -->
+        <path id="head" d="M200 56 C292 56 336 112 340 196 C344 286 312 360 254 388
+                 C224 402 176 402 146 388 C88 360 56 286 60 196 C64 112 108 56 200 56Z"
+              fill="url(#g-plate)"/>
+        <path d="M200 56 C292 56 336 112 340 196 C344 286 312 360 254 388
+                 C224 402 176 402 146 388 C88 360 56 286 60 196 C64 112 108 56 200 56Z"
+              transform="translate(200 228) scale(.94) translate(-200 -228)"
+              fill="url(#g-head)"/>
+        <path d="M118 92 C150 72 250 72 282 92" fill="none" stroke="#ffffff" stroke-opacity=".18"
+              stroke-width="10" stroke-linecap="round"/>
+        <!-- liseré doré -->
+        <path d="M120 96 Q200 74 280 96" fill="none" stroke="var(--gold)" stroke-width="3"
+              stroke-linecap="round" opacity=".85"/>
+        <circle cx="200" cy="90" r="5" fill="var(--gold)" filter="url(#glow)"/>
+
+        <!-- joues -->
+        <ellipse id="cheek-l" cx="122" cy="276" rx="34" ry="20" fill="url(#g-cheek)"/>
+        <ellipse id="cheek-r" cx="278" cy="276" rx="34" ry="20" fill="url(#g-cheek)"/>
+
+        <!-- visière -->
+        <rect x="96" y="156" width="208" height="94" rx="47" fill="#0a1a31"
+              stroke="var(--accent)" stroke-opacity=".30" stroke-width="2"/>
+
+        <!-- yeux -->
+        <g id="eyes">
+          <g id="eye-l" transform="translate(150 202)">
+            <ellipse rx="36" ry="32" fill="var(--eye)" opacity=".18" filter="url(#glow)"/>
+            <g clip-path="url(#clip-eye)">
+              <ellipse class="eye-white" rx="34" ry="30" fill="url(#g-eye)"/>
+              <circle class="pupil" r="11" fill="#04101f"/>
+              <circle class="spark" cx="-7" cy="-9" r="5" fill="#fff" opacity=".9"/>
+              <rect class="lid-top" x="-40" y="-100" width="80" height="70" fill="#0a1a31"/>
+              <rect class="lid-bot" x="-40" y="30" width="80" height="40" fill="#0a1a31"/>
+            </g>
+            <ellipse rx="34" ry="30" fill="none" stroke="var(--eye)" stroke-opacity=".5"
+                     stroke-width="1.5"/>
+          </g>
+          <g id="eye-r" transform="translate(250 202)">
+            <ellipse rx="36" ry="32" fill="var(--eye)" opacity=".18" filter="url(#glow)"/>
+            <g clip-path="url(#clip-eye)">
+              <ellipse class="eye-white" rx="34" ry="30" fill="url(#g-eye)"/>
+              <circle class="pupil" r="11" fill="#04101f"/>
+              <circle class="spark" cx="-7" cy="-9" r="5" fill="#fff" opacity=".9"/>
+              <rect class="lid-top" x="-40" y="-100" width="80" height="70" fill="#0a1a31"/>
+              <rect class="lid-bot" x="-40" y="30" width="80" height="40" fill="#0a1a31"/>
+            </g>
+            <ellipse rx="34" ry="30" fill="none" stroke="var(--eye)" stroke-opacity=".5"
+                     stroke-width="1.5"/>
+          </g>
+        </g>
+
+        <!-- sourcils -->
+        <path id="brow-l" d="M116 140 Q150 128 184 140" fill="none" stroke="var(--brow)"
+              stroke-width="8" stroke-linecap="round"/>
+        <path id="brow-r" d="M216 140 Q250 128 284 140" fill="none" stroke="var(--brow)"
+              stroke-width="8" stroke-linecap="round"/>
+
+        <!-- bouche -->
+        <g id="mouth-g">
+          <path id="mouth" d="M156 304 Q200 324 244 304 Q200 330 156 304Z" fill="#04101f"
+                stroke="var(--accent)" stroke-width="3" stroke-linejoin="round"/>
+          <path id="mouth-glow" d="M164 308 Q200 318 236 308" fill="none"
+                stroke="var(--accent)" stroke-width="2" opacity=".0" filter="url(#glow)"/>
+        </g>
+
+        <!-- sommeil -->
+        <g id="zzz" opacity="0">
+          <text x="300" y="120" class="z">z</text>
+          <text x="318" y="96" class="z z2">z</text>
+          <text x="338" y="70" class="z z3">Z</text>
+        </g>
+      </svg>
+    </div>
+
+    <div id="subtitle" aria-live="polite"></div>
+
+    <div class="chips">
+      <span class="chip" id="chip-emotion" title="Son émotion">…</span>
+      <span class="chip" id="chip-mood" title="Son humeur">…</span>
+      <span class="chip" id="chip-ears" title="Ses oreilles">oreilles</span>
+      <span class="chip" id="chip-who" title="À qui il pense parler">…</span>
+      <span class="chip warn hidden" id="chip-pain"></span>
+      <span class="chip hidden" id="chip-load"></span>
+    </div>
+
+    <div class="face-actions">
+      <button id="btn-hush" title="Il se tait tout de suite">Tais-toi</button>
+      <button id="btn-mute" title="Couper sa voix">Muet</button>
+      <button id="btn-silence" title="Plus d'initiatives">Pas d'initiative</button>
+      <button id="btn-focus" title="Le visage en grand (touche F)">Visage seul</button>
+    </div>
+  </section>
+
+  <!-- ============================== LES ONGLETS ============================== -->
+  <section id="panel">
+    <nav id="tabs" role="tablist">
+      <button data-tab="discussion" class="active">Discussion</button>
+      <button data-tab="coeur">Cœur</button>
+      <button data-tab="foyer">Foyer</button>
+      <button data-tab="memoire">Mémoire</button>
+      <button data-tab="pensees">Pensées</button>
+      <button data-tab="atelier">Atelier</button>
+      <button data-tab="savoir">Savoir</button>
+      <button data-tab="journal">Journal</button>
+      <button data-tab="reglages">Réglages</button>
+    </nav>
+
+    <!-- Discussion -->
+    <div class="view" id="view-discussion">
+      <div id="chat" aria-live="polite"></div>
+      <form id="composer" autocomplete="off">
+        <textarea id="input" rows="1" placeholder="Écris à Valdar…  (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"></textarea>
+        <button type="submit" class="primary">Envoyer</button>
+      </form>
+    </div>
+
+    <!-- Cœur -->
+    <div class="view" id="view-coeur">
+      <div class="grid2">
+        <div class="card">
+          <h3>Ce qu'il ressent</h3>
+          <p id="heart-summary" class="big"></p>
+          <ul id="felt" class="felt"></ul>
+        </div>
+        <div class="card">
+          <h3>Plaisir · Activation · Dominance</h3>
+          <div id="pad"></div>
+          <h3>Charge et sens</h3>
+          <div id="senses"></div>
+        </div>
+        <div class="card">
+          <h3>Chimie</h3>
+          <div id="vars"></div>
+        </div>
+        <div class="card">
+          <h3>Organes</h3>
+          <div id="organs"></div>
+          <h3>Besoins</h3>
+          <div id="needs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Foyer -->
+    <div class="view" id="view-foyer">
+      <div class="card">
+        <h3>Les gens de la maison</h3>
+        <p class="hint">Pour qu'il reconnaisse quelqu'un : ajoute la personne, puis « Apprendre sa voix » (elle parle 15 secondes, sans dire « Valdar ») et « Apprendre son visage » (elle regarde la caméra). Tout reste sur ce PC : seulement des empreintes, ni audio ni photo.</p>
+        <div id="enroll-bar" class="enroll hidden"><span id="enroll-text"></span><div class="bar"><i id="enroll-fill"></i></div><button id="enroll-cancel">Annuler</button></div>
+        <div id="members" class="members"></div>
+        <form id="add-member" class="row">
+          <input name="nom" placeholder="Prénom" required>
+          <input name="lien" placeholder="Lien (ex. ma femme, ma fille…)">
+          <label class="check"><input type="checkbox" name="mineur"> enfant</label>
+          <button class="primary">Ajouter</button>
+        </form>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <h3>Les animaux</h3>
+          <div id="animals"></div>
+          <form id="add-animal" class="row">
+            <input name="nom" placeholder="Nom" required>
+            <select name="espece"><option>chien</option><option>chat</option><option>autre</option></select>
+            <button class="primary">Ajouter</button>
+          </form>
+        </div>
+        <div class="card">
+          <h3>Ce que voit la caméra</h3>
+          <div id="camera"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mémoire -->
+    <div class="view" id="view-memoire">
+      <div class="card">
+        <div class="row">
+          <input id="mem-q" placeholder="Chercher dans ce qu'il croit savoir…">
+          <select id="mem-statut">
+            <option value="">tout</option><option value="valide">valides</option>
+            <option value="hypothese">hypothèses</option><option value="quarantaine">quarantaine</option>
+          </select>
+        </div>
+        <form id="mem-add" class="row">
+          <input name="texte" placeholder="Lui apprendre un fait (ex. « Sony a peur de l'aspirateur »)">
+          <button class="primary">Retenir</button>
+        </form>
+        <div id="mem-list" class="list"></div>
+      </div>
+    </div>
+
+    <!-- Pensées -->
+    <div class="view" id="view-pensees">
+      <div class="grid2">
+        <div class="card"><h3>Ses idées</h3><div id="ideas" class="list"></div></div>
+        <div class="card"><h3>Ce qu'il pense dans son coin</h3><p id="night" class="hint"></p><div id="thoughts" class="list"></div></div>
+      </div>
+    </div>
+
+    <!-- Atelier -->
+    <div class="view" id="view-atelier">
+      <div class="grid2">
+        <div class="card"><h3>Imprimante</h3><pre id="printer"></pre><pre id="vigie"></pre></div>
+        <div class="card"><h3>Checklist</h3><pre id="checklist"></pre><h3>Rappels</h3><div id="reminders"></div></div>
+        <div class="card wide"><h3>Stock</h3><div id="stock"></div></div>
+      </div>
+    </div>
+
+    <!-- Savoir -->
+    <div class="view" id="view-savoir">
+      <div class="card">
+        <div class="row"><input id="know-q" placeholder="Chercher dans ses connaissances (documents, Kiwix)…"></div>
+        <p id="kiwix" class="hint"></p>
+        <div id="know-res" class="list"></div>
+        <h3>Ses documents</h3>
+        <div id="docs"></div>
+      </div>
+      <div class="card"><h3>Ses outils</h3><div id="tools"></div></div>
+    </div>
+
+    <!-- Journal -->
+    <div class="view" id="view-journal">
+      <div class="card"><h3>Ses 7 derniers jours</h3><div id="journal" class="list"></div></div>
+    </div>
+
+    <!-- Réglages -->
+    <div class="view" id="view-reglages">
+      <p class="hint">Les changements s'appliquent tout de suite, sauf ceux marqués « au redémarrage ». Ils sont gardés dans data/reglages.json.</p>
+      <div id="settings"></div>
+    </div>
+  </section>
+</div>
+<div id="toast"></div>
+<script src="face.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
