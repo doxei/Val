@@ -62,8 +62,11 @@ class Runtime:
         a = self.cfg.atelier
         path = self.cfg.storage_path
         self.facts = Facts(path(a.memory_db))
-        self.memory = Episodic(path(self.cfg.episodic.db), self.cfg.episodic)
-        self.knowledge = Knowledge(path(self.cfg.knowledge_db))
+        from valdar.memory.embedder import Embedder
+
+        self.embedder = Embedder(self.cfg.embeddings, self.cfg.llm.url)
+        self.memory = Episodic(path(self.cfg.episodic.db), self.cfg.episodic, self.embedder)
+        self.knowledge = Knowledge(path(self.cfg.knowledge_db), embedder=self.embedder)
         self.knowledge.ingest_dir(self.cfg.root / "docs" / "connaissances")
         self.knowledge.ingest_dir(path("connaissances"))
         self.stock = Stock(path(a.stock_db))
@@ -113,6 +116,10 @@ class Runtime:
         self._kiwix_serve: Any = None
         if self.cfg.kiwix.enabled:
             self._add_kiwix_tools()
+        if self.cfg.n8n.enabled:
+            from valdar.tools.n8n import add_n8n_tools
+
+            add_n8n_tools(self.registry, self.cfg.n8n)
         self.agent = Agent(self.cfg, self.llm, self.registry, self.heart, self.lock,
                            self.facts, self.self_model, self.world_lines, self.urges,
                            memory=self.memory, extras=self.extra_blocks)
@@ -491,8 +498,25 @@ class Runtime:
 
         self._thread = threading.Thread(target=loop, name="valdar-coeur", daemon=True)
         self._thread.start()
+        if self.cfg.embeddings.backend == "ollama":
+            threading.Thread(target=self._backfill_loop, name="valdar-sens", daemon=True).start()
         if self.printwatch is not None:
             self.printwatch.start()
+
+    def _backfill_loop(self) -> None:
+        """Vectorise peu à peu (vrai modèle de sens) connaissances et souvenirs, sur le
+        processeur, sans jamais gêner la conversation : lots courts, pause entre deux."""
+        ec = self.cfg.embeddings
+        while not self._stop.is_set():
+            done, busy = 0, self.agent.busy.is_set()
+            try:
+                if not busy:
+                    done = self.knowledge.backfill(limit=ec.batch * 4)
+                    done += self.memory.backfill(limit=ec.batch * 4)
+            except Exception as exc:     # le sens est un plus : jamais une panne
+                self.events.put(Event("erreur", f"vectorisation : {exc}"))
+            # du travail en retard : on enchaîne vite ; sinon, un coup d'œil de temps en temps
+            self._stop.wait(1.0 if busy or done else ec.backfill_every_seconds)
 
     def stop(self) -> None:
         self._stop.set()

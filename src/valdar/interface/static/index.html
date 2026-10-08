@@ -175,6 +175,7 @@
       <button data-tab="pensees">Pensées</button>
       <button data-tab="atelier">Atelier</button>
       <button data-tab="savoir">Savoir</button>
+      <button data-tab="auto" id="tab-auto" hidden>Automatisations</button>
       <button data-tab="journal">Journal</button>
       <button data-tab="reglages">Réglages</button>
     </nav>
@@ -291,6 +292,13 @@
         <div id="docs"></div>
       </div>
       <div class="card"><h3>Ses outils</h3><div id="tools"></div></div>
+    </div>
+
+    <!-- Automatisations (n8n) -->
+    <div class="view" id="view-auto">
+      <div class="row"><span id="n8n-info" class="hint"></span>
+        <a id="n8n-open" target="_blank" rel="noopener">ouvrir dans une fenêtre</a></div>
+      <iframe id="n8n-frame" title="n8n"></iframe>
     </div>
 
     <!-- Journal -->

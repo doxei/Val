@@ -357,7 +357,25 @@
     return `<div class="setting"><div>${esc(s.label)}${rs}${help}</div><div class="ctl">${ctl}</div></div>`;
   }
 
-  const LOADERS = { foyer: loadFoyer, memoire: loadMem, pensees: loadThoughts, atelier: loadAtelier,
+  // ------------------------------------------------------------------ automatisations (n8n)
+  let n8n = null;
+  function loadAuto() {
+    if (!n8n || !n8n.enabled) return;
+    const f = $("#n8n-frame");
+    if (!f.src) f.src = n8n.url;          // chargé une seule fois : n8n garde son état
+  }
+  fetch("/api/n8n").then((r) => r.json()).then((d) => {
+    n8n = d;
+    if (!d.enabled) return;
+    $("#tab-auto").hidden = false;
+    $("#n8n-open").href = d.url;
+    $("#n8n-info").textContent = d.workflows.length
+      ? "Ses automatisations : " + d.workflows.join(", ")
+      : "Aucune automatisation déclarée pour l'instant (config/valdar.yaml, section n8n).";
+    if (tab === "auto") loadAuto();
+  }).catch(() => {});
+
+  const LOADERS = { auto: loadAuto, foyer: loadFoyer, memoire: loadMem, pensees: loadThoughts, atelier: loadAtelier,
     savoir: loadKnow, journal: loadJournal, reglages: loadSettings,
     coeur: () => lastState && renderHeart(lastState) };
   setInterval(() => { if (tab === "foyer") loadFoyer(); if (tab === "atelier") loadAtelier(); }, 5000);

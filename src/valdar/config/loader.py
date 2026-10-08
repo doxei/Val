@@ -402,6 +402,33 @@ class VisionConfig(_Strict):
     table_frames: int = Field(default=2, ge=1)       # vu sur la table N fois de suite
 
 
+class N8nWorkflow(_Strict):
+    description: str                     # ce que Valdar lit pour savoir quand l'utiliser
+    params: dict[str, str] = {}          # nom → description
+    required: list[str] = []
+    tier: str = "elevated"               # safe | safety | elevated | dangerous
+    min_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    confirm: bool = False                # demander « oui » avant de lancer
+
+    @model_validator(mode="after")
+    def _check(self) -> N8nWorkflow:
+        if self.tier not in ("safe", "safety", "elevated", "dangerous"):
+            raise ValueError(f"n8n : niveau inconnu « {self.tier} »")
+        missing = set(self.required) - set(self.params)
+        if missing:
+            raise ValueError(f"n8n : paramètres requis non déclarés {sorted(missing)}")
+        return self
+
+
+class N8nConfig(_Strict):
+    """Connecteurs par n8n (mails, agenda, domotique…), appelés comme des outils."""
+    enabled: bool = False                # true une fois n8n installé et lancé
+    url: str = "http://127.0.0.1:5678"
+    timeout_seconds: float = Field(default=20.0, gt=0.0)
+    max_chars: int = Field(default=2000, ge=100)
+    workflows: dict[str, N8nWorkflow] = {}
+
+
 class KiwixConfig(_Strict):
     """Bibliothèques hors ligne (Wikipédia, Stack Overflow, médecine…) servies par Kiwix."""
     enabled: bool = True
@@ -417,6 +444,26 @@ class InterfaceConfig(_Strict):
     port: int = Field(default=8765, ge=1024, le=65535)
     screen: int = Field(default=2, ge=1)           # 2 = le projecteur
     kiosk: bool = False
+
+
+class EmbeddingsConfig(_Strict):
+    """Vrai modèle de plongement (sens), par Ollama ; repli sur les vecteurs maison."""
+    backend: str = "ollama"            # ollama | hash (vecteurs maison seulement)
+    model: str = "bge-m3"              # multilingue, bon en français
+    cpu: bool = True                   # la carte graphique est pleine (Gemma + XTTS)
+    keep_alive: str = "30m"
+    timeout_seconds: float = Field(default=30.0, gt=0.0)
+    retry_seconds: float = Field(default=300.0, ge=0.0)  # après un échec, on réessaie plus tard
+    max_chars: int = Field(default=2000, ge=100)
+    batch: int = Field(default=16, ge=1, le=256)
+    backfill_every_seconds: float = Field(default=60.0, gt=0.0)
+    min_similarity: float = Field(default=0.45, ge=0.0, le=1.0)  # à calibrer sur la machine
+
+    @model_validator(mode="after")
+    def _check(self) -> EmbeddingsConfig:
+        if self.backend not in ("ollama", "hash"):
+            raise ValueError(f"embeddings : backend inconnu « {self.backend} »")
+        return self
 
 
 class ContextConfig(_Strict):
@@ -791,10 +838,12 @@ class ValdarConfig(_Strict):
     vision: VisionConfig = VisionConfig()
     interface: InterfaceConfig = InterfaceConfig()
     kiwix: KiwixConfig = KiwixConfig()
+    n8n: N8nConfig = N8nConfig()
     knowledge_db: str = "connaissances.db"
     nociception: NociceptionConfig = NociceptionConfig()
     relations: RelationsConfig = RelationsConfig()
     context: ContextConfig = ContextConfig()
+    embeddings: EmbeddingsConfig = EmbeddingsConfig()
 
     _root: Path = PrivateAttr(default_factory=Path.cwd)
 

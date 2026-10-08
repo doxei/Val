@@ -684,3 +684,19 @@ context:
   auto_facts: false
   auto_knowledge: false
   world_every_seconds: 3600
+
+# Connecteurs par n8n (mails, agenda, domotique, notifications…). n8n reste hors de la boucle
+# de conversation : chaque workflow déclaré ici devient un outil de Valdar. Dans n8n, le
+# workflow commence par un nœud Webhook (POST, chemin = son nom) et finit par « Respond to
+# Webhook ». L'interface ouvre n8n dans l'onglet « Automatisations ».
+n8n:
+  enabled: false                 # true une fois n8n installé (npx n8n, ou Docker) et lancé
+  url: http://127.0.0.1:5678
+  timeout_seconds: 20
+  workflows: {}
+  # Exemple :
+  #   notifier_telephone:
+  #     description: "Envoie une notification sur le téléphone d'Olivier."
+  #     params: {message: "le texte de la notification"}
+  #     required: [message]
+  #     tier: safe

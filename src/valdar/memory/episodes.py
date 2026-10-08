@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import math
 import sqlite3
 import threading
@@ -23,6 +24,7 @@ from typing import Any
 import numpy as np
 
 from valdar.config.loader import EpisodicConfig
+from valdar.memory.embedder import deep_matrix, pack
 from valdar.memory.vectors import cosine_rows, embed
 
 _SCHEMA = [
@@ -129,14 +131,19 @@ class TemporalContext:
 
 
 class Episodic:
-    def __init__(self, path: str | Path, cfg: EpisodicConfig | None = None):
+    def __init__(self, path: str | Path, cfg: EpisodicConfig | None = None,
+                 embedder: Any = None):
         self.cfg = cfg or EpisodicConfig()
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.embedder = embedder        # vrai modèle de sens (memory.embedder), optionnel
         self._lock = threading.RLock()
         with self._conn() as con:
             for stmt in _SCHEMA:
                 con.execute(stmt)
+            for col in ("sem BLOB", "sem_sig TEXT"):
+                with contextlib.suppress(sqlite3.OperationalError):   # colonne déjà là
+                    con.execute(f"ALTER TABLE turns ADD COLUMN {col}")
         self.context = TemporalContext(self.cfg.scales_seconds, self.cfg.dim,
                                        self.cfg.min_step_seconds)
         raw = self._state("context")
@@ -248,7 +255,7 @@ class Episodic:
         with self._conn() as con:
             rows = con.execute(
                 "SELECT t.id, t.episode, t.idx, t.t, t.p, t.a, t.d, t.vec, t.ctx, e.source, "
-                "e.person "
+                "e.person, t.sem, t.sem_sig "
                 "FROM turns t JOIN episodes e ON e.id=t.episode ORDER BY t.id").fetchall()
             acc = con.execute("SELECT turn, t FROM accesses").fetchall()
         k, dim = len(self.cfg.scales_seconds), self.cfg.dim
@@ -258,6 +265,7 @@ class Episodic:
         for i, r in enumerate(rows):
             vec[i] = np.frombuffer(r[7], dtype=np.float16)
             ctx[i] = np.frombuffer(r[8], dtype=np.float16).reshape(k, dim)
+        deep, deep_mask = deep_matrix([(r[11], r[12]) for r in rows], self.embedder)
         accesses: dict[int, list[float]] = {}
         for turn, t in acc:
             accesses.setdefault(turn, []).append(t)
@@ -268,7 +276,8 @@ class Episodic:
             "idx": np.array([r[2] for r in rows], dtype=np.int64),
             "t": np.array([r[3] for r in rows], dtype=np.float64),
             "pad": np.array([[r[4], r[5], r[6]] for r in rows], dtype=np.float32).reshape(n, 3),
-            "vec": vec, "ctx": ctx, "accesses": accesses,
+            "vec": vec, "ctx": ctx, "accesses": accesses, "deep": deep,
+            "deep_mask": deep_mask,
             "person": np.array([r[10] or "" for r in rows], dtype=object),
         }
         return self._index
@@ -315,8 +324,14 @@ class Episodic:
                 return []
             q = embed(query, self.cfg.dim)
             sem = cosine_rows(idx["vec"], q)
+            floor = np.full(n, self.cfg.min_semantic, dtype=np.float32)
+            if idx["deep_mask"].any() and self.embedder is not None:
+                qd = self.embedder.embed_one(query)     # le sens, pas seulement les mots
+                if qd is not None:
+                    sem = np.where(idx["deep_mask"], cosine_rows(idx["deep"], qd), sem)
+                    floor[idx["deep_mask"]] = self.embedder.cfg.min_similarity
             act = np.array([self._activation_level(int(t), now) for t in idx["ids"]])
-            candidates = np.where((sem >= self.cfg.min_semantic) | (act > 0.05))[0]
+            candidates = np.where((sem >= floor) | (act > 0.05))[0]
             candidates = candidates[idx["t"][candidates] < now - self.cfg.exclude_recent_seconds]
             candidates = candidates[_allowed(idx, candidates, person)]
             if len(candidates) == 0:
@@ -398,6 +413,30 @@ class Episodic:
                                "ORDER BY idx DESC LIMIT ?", (row[0], turns)).fetchall()
         return {"episode": row[0], "title": row[1], "started": row[2], "ended": row[3],
                 "turns": [{"speaker": s, "text": t, "t": tt} for s, t, tt in reversed(tail)]}
+
+    def backfill(self, limit: int | None = None) -> int:
+        """Vectorise par le vrai modèle les tours qui ne le sont pas encore (arrière-plan)."""
+        e = self.embedder
+        if e is None or not e.available():
+            return 0
+        done = 0
+        while limit is None or done < limit:
+            with self._conn() as con:
+                rows = con.execute(
+                    "SELECT id, text FROM turns WHERE sem_sig IS NULL OR sem_sig != ? "
+                    "ORDER BY id DESC LIMIT ?", (e.signature, e.cfg.batch)).fetchall()
+            if not rows:
+                break
+            m = e.embed_many([r[1] for r in rows])
+            if m is None:
+                break
+            with self._lock, self._conn() as con:
+                con.executemany("UPDATE turns SET sem=?, sem_sig=? WHERE id=?",
+                                [(pack(v), e.signature, r[0]) for v, r in zip(m, rows,
+                                                                              strict=True)])
+            done += len(rows)
+            self._index = None
+        return done
 
     def forget_person(self, person: str) -> int:
         """« Oublie-moi » : efface les épisodes de la personne (tours et accès compris)."""
