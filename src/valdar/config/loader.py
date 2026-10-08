@@ -341,6 +341,22 @@ class InteroceptionConfig(_Strict):
         return self
 
 
+class CritiqueConfig(_Strict):
+    """Le Surmoi critique (avenant 5 §4) : quand un vécu part en quarantaine."""
+    enabled: bool = True
+    extreme_intensity: float = Field(default=0.85, gt=0.0, le=1.0)   # émotion extrême
+
+
+class NightConfig(_Strict):
+    """La nuit (avenant 5 §5) : nettoyer, auditer, résumer, consolider. Pas d'entraînement."""
+    enabled: bool = True
+    min_idle_seconds: float = Field(default=1800.0, ge=0.0)
+    day_hours: float = Field(default=24.0, gt=0.0, le=72.0)
+    audit_size: int = Field(default=5, ge=0, le=20)
+    max_chars: int = Field(default=12000, ge=1000)
+    out_dir: str = "consolidation"
+
+
 class ThoughtsConfig(_Strict):
     """Pensée de fond (avenant 4 §6)."""
     enabled: bool = True
@@ -691,6 +707,8 @@ class ValdarConfig(_Strict):
     ears: EarsConfig = EarsConfig()
     ambient: AmbientConfig = AmbientConfig()
     interoception: InteroceptionConfig = InteroceptionConfig()
+    critique: CritiqueConfig = CritiqueConfig()
+    night: NightConfig = NightConfig()
     knowledge_db: str = "connaissances.db"
     nociception: NociceptionConfig = NociceptionConfig()
     relations: RelationsConfig = RelationsConfig()

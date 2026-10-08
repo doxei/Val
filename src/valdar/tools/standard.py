@@ -14,7 +14,7 @@ from typing import Any
 from valdar.atelier import Checklist, Pinouts, Reminders, Stock, parse_when
 from valdar.devices.moonraker import Moonraker, PrinterError, describe
 from valdar.memory import Facts
-from valdar.tools.registry import SAFE, SAFETY, Registry, Tool, params
+from valdar.tools.registry import ELEVATED, SAFE, SAFETY, Registry, Tool, params
 
 _JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 _MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
@@ -82,9 +82,11 @@ def build_registry(ctx: ToolContext) -> Registry:
                  params(), t_mon_etat, SAFE, "soi"))
 
     # ------------------------------------------------------------- mémoire
-    def t_memoire(action: str = "relis", quoi: str = "") -> str:
+    def t_memoire(action: str = "relis", quoi: str = "", origine: str = "dit",
+                  refutation: str = "") -> str:
         if action == "note":
-            return ctx.facts.remember(quoi, person=ctx.person)
+            return ctx.facts.remember(quoi, person=ctx.person, origine=origine,
+                                      refutation=refutation)
         if action == "oublie":
             return ctx.facts.forget(quoi)
         hits = ctx.facts.recall(quoi, person=ctx.person)
@@ -96,8 +98,53 @@ def build_registry(ctx: ToolContext) -> Registry:
                  "Mémorise un fait durable sur la personne ou le monde (action=note), relit ce "
                  "que tu sais (action=relis), ou oublie (action=oublie).",
                  params(["action"], action={"type": "string", "enum": ["note", "relis", "oublie"]},
-                        quoi={**s, "description": "le fait à retenir, ou le sujet cherché"}),
+                        quoi={**s, "description": "le fait à retenir, ou le sujet cherché"},
+                        origine={"type": "string", "enum": ["dit", "lu", "deduit"],
+                                 "description": "dit : on te l'a dit ; lu : une source ; "
+                                                "deduit : ta propre déduction (hypothèse)"},
+                        refutation={**s, "description": "ce qui prouverait que c'est faux"}),
                  t_memoire, SAFE, "mémoire"))
+
+    # --------------------------------------- le Surmoi critique (avenant 5 §4)
+    def t_douter(action: str, quoi: str, note: str = "") -> str:
+        f = ctx.facts.find(quoi, person=ctx.person)
+        if f is None:
+            return "je n'ai pas de croyance là-dessus."
+        if action == "quarantaine":
+            ctx.facts.quarantine(f["id"], note or "douteux")
+            return f"« {f['text']} » mis en quarantaine : je ne m'appuie plus dessus."
+        g = ctx.facts.evidence(f["id"], action == "pour", note)
+        if g is None:
+            return "je n'ai pas de croyance là-dessus."
+        etat = {"valide": "je le tiens pour vrai", "hypothese": "ça reste une hypothèse",
+                "quarantaine": "je le mets en quarantaine"}[g["statut"]]
+        return (f"« {g['text']} » : {g['pour']} pour, {g['contre']} contre, confiance "
+                f"{g['confidence']:.0%} ; {etat}.")
+
+    reg.add(Tool("douter",
+                 "Doute méthodique : ajoute un élément pour ou contre une de tes croyances, "
+                 "ou mets-la en quarantaine si elle te paraît douteuse. Cherche d'abord ce "
+                 "qui la contredirait.",
+                 params(["action", "quoi"],
+                        action={"type": "string", "enum": ["pour", "contre", "quarantaine"]},
+                        quoi={**s, "description": "la croyance concernée"},
+                        note={**s, "description": "l'élément, ou le motif"}),
+                 t_douter, SAFE, "mémoire"))
+
+    def t_lever(quoi: str) -> str:
+        f = next((x for x in ctx.facts.quarantined()
+                  if x["id"] == (ctx.facts.find(quoi) or {}).get("id")), None)
+        if f is None:
+            hits = [x for x in ctx.facts.quarantined() if quoi.lower() in x["text"].lower()]
+            f = hits[0] if hits else None
+        if f is None or not ctx.facts.lift(f["id"]):
+            return "rien en quarantaine là-dessus."
+        return f"quarantaine levée pour « {f['text']} »."
+
+    reg.add(Tool("lever_quarantaine",
+                 "Lève la quarantaine d'une croyance (sur preuve, ou parce qu'Olivier le dit).",
+                 params(["quoi"], quoi={**s, "description": "la croyance concernée"}),
+                 t_lever, ELEVATED, "mémoire"))
 
     # ------------------------------------------------------------- atelier
     reg.add(Tool("etat_stock", "Contenu de la réserve de l'atelier (filtre optionnel).",

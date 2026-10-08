@@ -654,3 +654,16 @@ interoception:
   enabled: true
   busy_at: 0.6                   # chargé : la pensée de fond s'arrête
   saturated_at: 0.8              # saturé : réponses courtes
+
+# Le Surmoi critique (avenant 5 §4) : un échange vécu pendant une douleur au seuil de danger
+# ou une émotion extrême part en quarantaine (consultable, mais exclu de la nuit).
+critique:
+  enabled: true
+  extreme_intensity: 0.85
+
+# La nuit (avenant 5 §5) : une fois par sommeil, seulement si personne ne parle.
+night:
+  enabled: true
+  min_idle_seconds: 1800
+  audit_size: 5
+  out_dir: consolidation         # dans le dossier de données : seul matériau d'un futur LoRA

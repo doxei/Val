@@ -108,7 +108,18 @@ def person_block(who: Identity, owner_name: str) -> str:
 def facts_block(facts: list[dict[str, Any]]) -> str:
     if not facts:
         return ""
-    return "CE QUE TU SAIS (tes souvenirs) :\n" + "\n".join(f"- {f['text']}" for f in facts)
+    return ("CE QUE TU SAIS (tes souvenirs ; une hypothèse est ta déduction, un douteux est en "
+            "quarantaine : ne t'appuie pas dessus sans le dire) :\n"
+            + "\n".join(f"- {f['text']}{_belief_tag(f)}" for f in facts))
+
+
+def _belief_tag(f: dict[str, Any]) -> str:
+    statut = f.get("statut", "valide")
+    if statut == "hypothese":
+        return " (hypothèse)"
+    if statut == "quarantaine":
+        return f" (douteux : {f.get('motif') or 'contredit'})"
+    return ""
 
 
 def world_block(lines: list[str]) -> str:

@@ -102,7 +102,8 @@ class TimedLLM:
              params: GenParams | None = None) -> ChatResult:
         t0 = self.clock()
         res = self.inner.chat(messages, system=system, tools=tools, params=params)
-        tokens = res.usage.get("eval_count") if isinstance(res.usage, dict) else None
+        usage = getattr(res, "usage", None)
+        tokens = usage.get("eval_count") if isinstance(usage, dict) else None
         self.load.record_latency(self.clock() - t0, tokens if isinstance(tokens, int) else None)
         return res
 

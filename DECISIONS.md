@@ -512,3 +512,25 @@ chacun a son test de non-régression (`tests/test_audit_fixes.py`).
   d'autonomie écrit par Olivier hors de Valdar.
 - Maintenu : pas de SNN simulé sur le processeur (avenant 3 §1.6) ; le Moi ne négocie jamais
   un réflexe. LoRA hebdomadaire et non nocturne au début, toujours suivi des tests de socle.
+
+## 2026-10-08 — Avenant 5, rangs 1 à 4 : les sens, la charge, le Surmoi critique, la nuit
+
+- **Double audition** (`ears/ambient.py`) : le portier passe chaque trame à la voie basse,
+  qui ne garde que des niveaux en dB. Sursaut (`startle`) sur une **attaque** : plus fort que
+  le fond et que l'instant d'avant, au-dessus de −22 dB ; un bruit qui dure ne fait sursauter
+  qu'une fois ; jamais pendant que Valdar parle. Vacarme qui dure : `noise`, rappelé toutes
+  les 10 min. L'ambiance (calme, normale, bruyante) va dans l'état du monde.
+- **Charge cognitive** (`heart/interoception.py`) : flux actifs, lenteur de Gemma (secondes
+  par jeton contre sa médiane, mesurée par une enveloppe du modèle), mémoire de la carte.
+  Chargé (0,6) : la pensée de fond attend. Saturé (0,8) : réponses courtes. Hystérésis 0,1.
+- **Croyances** (`memory/facts.py`) : origine (dit, lu, deduit), réfutation, pour/contre,
+  statut. Une déduction reste une hypothèse jusqu'à deux éléments pour. Contredite plus
+  qu'appuyée : quarantaine (citée « douteux », exclue de la nuit). Outils `douter` (sûr) et
+  `lever_quarantaine` (élevé : Olivier). Base existante migrée sans perte.
+- **Quarantaine du vécu** : un échange vécu pendant une douleur au seuil de danger ou une
+  émotion d'intensité ≥ 0,85 est isolé (`episodes.quarantine`).
+- **La nuit** (`workspace/night.py`) : une fois par sommeil, 30 min sans échange. Nettoyer,
+  auditer (Popper sur 5 croyances, conduite contre le socle), résumer (épisode « nuit »),
+  consolider dans `consolidation/AAAA-MM-JJ.jsonl` : seul matériau d'un futur LoRA.
+- Socle : 8e point ajouté à la demande d'Olivier (doute méthodique).
+- 220 tests (3.11 et 3.13), ruff propre, `valdar check` : phase 1 validée.

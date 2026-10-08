@@ -37,6 +37,8 @@ _SCHEMA = [
     "CREATE TABLE IF NOT EXISTS accesses(turn INTEGER NOT NULL, t REAL NOT NULL)",
     "CREATE INDEX IF NOT EXISTS acc_turn ON accesses(turn)",
     "CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY, value BLOB)",
+    # Avenant 5 §4.3 : tours vécus dans un état extrême, isolés avant la nuit.
+    "CREATE TABLE IF NOT EXISTS quarantine(turn INTEGER PRIMARY KEY, motif TEXT, t REAL)",
 ]
 _MAX_TEXT = 8000
 _MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre",
@@ -407,6 +409,8 @@ class Episodic:
                                                    (ep,))}
                 con.execute("DELETE FROM accesses WHERE turn IN "
                             "(SELECT id FROM turns WHERE episode=?)", (ep,))
+                con.execute("DELETE FROM quarantine WHERE turn IN "
+                            "(SELECT id FROM turns WHERE episode=?)", (ep,))
                 con.execute("DELETE FROM turns WHERE episode=?", (ep,))
                 con.execute("DELETE FROM episodes WHERE id=?", (ep,))
             if self._current in eps:
@@ -415,6 +419,43 @@ class Episodic:
                 self.activation.pop(tid, None)
             self._index = None
         return len(eps)
+
+    # ------------------------------------------- quarantaine (avenant 5 §4.3)
+    def quarantine_window(self, t0: float, t1: float, motif: str,
+                          when: float | None = None) -> int:
+        """Isole les tours vécus entre t0 et t1 (douleur forte, humeur extrême…)."""
+        now = time.time() if when is None else when
+        with self._lock, self._conn() as con:
+            ids = [r[0] for r in con.execute("SELECT id FROM turns WHERE t>=? AND t<=?",
+                                             (t0, t1))]
+            con.executemany("INSERT OR REPLACE INTO quarantine(turn,motif,t) VALUES(?,?,?)",
+                            [(i, motif[:200], now) for i in ids])
+        return len(ids)
+
+    def quarantined_turns(self) -> dict[int, str]:
+        with self._conn() as con:
+            return {r[0]: r[1] for r in con.execute("SELECT turn, motif FROM quarantine")}
+
+    def lift_quarantine(self, turn_ids: Iterable[int]) -> int:
+        with self._lock, self._conn() as con:
+            return con.executemany("DELETE FROM quarantine WHERE turn=?",
+                                   [(i,) for i in turn_ids]).rowcount
+
+    def day_turns(self, t0: float, t1: float, person: str | None = None,
+                  include_quarantined: bool = False) -> list[dict[str, Any]]:
+        """Les tours d'une période, pour le résumé de la nuit (sans la quarantaine)."""
+        q = ("SELECT t.id, t.t, t.speaker, t.text, e.person, e.source FROM turns t "
+             "JOIN episodes e ON e.id=t.episode WHERE t.t>=? AND t.t<? ")
+        args: list[Any] = [t0, t1]
+        if person is not None:
+            q += "AND e.person=? "
+            args.append(person)
+        if not include_quarantined:
+            q += "AND t.id NOT IN (SELECT turn FROM quarantine) "
+        with self._conn() as con:
+            rows = con.execute(q + "ORDER BY t.t", args).fetchall()
+        return [{"id": r[0], "t": r[1], "speaker": r[2], "text": r[3], "person": r[4],
+                 "source": r[5]} for r in rows]
 
     def count(self) -> dict[str, int]:
         with self._conn() as con:

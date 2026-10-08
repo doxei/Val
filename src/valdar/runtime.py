@@ -30,6 +30,7 @@ from valdar.printwatch import PrintWatch, WatchEvent
 from valdar.relations import Relations
 from valdar.tools.standard import ToolContext, build_registry, printer_line
 from valdar.workspace import Initiative
+from valdar.workspace.night import Night
 from valdar.workspace.thoughts import Thoughts
 
 INITIATIVE_KEY = "initiative:state"
@@ -112,6 +113,9 @@ class Runtime:
                            memory=self.memory, extras=self.extra_blocks)
         self.block_providers: list[Any] = [self._relation_block, self._knowledge_block,
                                            self._thoughts_block]
+        self.night = Night(self.cfg.night, self.llm, self.facts, self.memory,
+                           path(self.cfg.night.out_dir), self.self_model,
+                           self._owner() or "olivier")
         self.events: queue.Queue[Event] = queue.Queue()
         self._thinking = threading.Lock()
         self._stop = threading.Event()
@@ -310,6 +314,40 @@ class Runtime:
 
         threading.Thread(target=run, name="valdar-pensee", daemon=True).start()
 
+    def _maybe_sleep_work(self, now: float) -> None:
+        """La nuit : nettoyer, auditer, résumer, consolider (une fois par sommeil)."""
+        with self.lock:
+            awake = self.heart.awake
+        idle = now - self.agent.last_activity
+        if self.agent.busy.is_set() or not self.night.due(now, awake, idle):
+            return
+        if not self._thinking.acquire(blocking=False):   # pas en même temps que la pensée
+            return
+
+        def run() -> None:
+            try:
+                rep = self.night.run(now)
+                self.events.put(Event("nuit", rep.text(), {"cle": rep.key,
+                                                           "fichier": rep.path}))
+            except Exception as exc:    # la nuit ne doit jamais faire tomber Valdar
+                self.events.put(Event("erreur", f"nuit : {exc}"))
+            finally:
+                self._thinking.release()
+
+        threading.Thread(target=run, name="valdar-nuit", daemon=True).start()
+
+    def _extreme(self) -> str:
+        """Motif de quarantaine si Valdar vit l'échange dans un état extrême, sinon ""."""
+        if not self.cfg.critique.enabled:
+            return ""
+        if self.nociception.danger:
+            return "vécu pendant une douleur au seuil de danger"
+        with self.lock:
+            b = self.heart.brief()
+        if b["intensity"] >= self.cfg.critique.extreme_intensity:
+            return f"vécu dans une émotion extrême ({b['emotion']})"
+        return ""
+
     def extra_blocks(self, query: str) -> list[str]:
         """Blocs ajoutés au prompt par les autres flux (pensées de fond, connaissances)."""
         out: list[str] = []
@@ -339,6 +377,7 @@ class Runtime:
         self._feel_body(now)
         self._feel_load()
         self._maybe_think(now)
+        self._maybe_sleep_work(now)
         if self.printwatch is not None and self._thread is None:
             pass   # en mode manuel (tests), la vigie est avancée par l'appelant
         for r in self.reminders.pop_due(now):
@@ -405,7 +444,12 @@ class Runtime:
             self.initiative.on_user_message()
             if seen["new_encounter"] and seen["person"] is not None:
                 self.relations.feel_presence(self.heart, seen["person"])
+        t0 = time.time()
+        before = self._extreme()
         reply = self.agent.handle(text, who)
+        motif = before or self._extreme()
+        if motif:     # vécu à isoler avant la nuit (avenant 5 §4.3)
+            self.memory.quarantine_window(t0, time.time(), motif)
         if who.person and "oublie_moi" in reply.tools_used:
             self.relations.forget_person(who.person)   # ce dernier message compris
         return reply

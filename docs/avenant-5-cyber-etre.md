@@ -155,10 +155,10 @@ l'imprimante, avec le même cadre.
 
 | Rang | Quoi | Pourquoi d'abord |
 |---|---|---|
-| 1 | bruit ambiant brut → cœur (§1, double audition) | petit, utilise ce qui existe |
-| 2 | jauge de charge cognitive (§3) | petit, protège la machine |
-| 3 | fiches de croyance + quarantaine (§4) | le Surmoi critique, avant tout apprentissage |
-| 4 | la nuit, sans LoRA (§5, étapes 1 à 4) | consolide sans risque |
+| 1 | bruit ambiant brut → cœur (§1, double audition) | **fait** |
+| 2 | jauge de charge cognitive (§3) | **fait** |
+| 3 | fiches de croyance + quarantaine (§4) | **fait** |
+| 4 | la nuit, sans LoRA (§5, étapes 1 à 4) | **fait** |
 | 5 | vision et œil (phase 4) | |
 | 6 | planification outillée sur PC et imprimante (§6) | prépare le corps |
 | 7 | LoRA hebdomadaire + tests de socle (§5.5) | seulement quand 3 et 4 tournent |
