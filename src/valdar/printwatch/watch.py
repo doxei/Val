@@ -7,6 +7,7 @@ qualité) : c'est ce qui permet de mesurer, d'apprendre, et de prouver.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import threading
@@ -212,17 +213,26 @@ class PrintWatch:
         with self._conn() as con:
             con.execute("UPDATE prints SET ended=?, outcome=?, failed=COALESCE(failed, ?) "
                         "WHERE job=?", (now, state, failed, self.job))
-        self._set_state("baseline", json.dumps({k: p.lifetime_state()
-                                                for k, p in self.predictors.items()}))
-        self.purge(now)
+        self._save_baseline()
+        job = self.job
+        self.job = None       # l'impression est close quoi qu'il arrive ensuite
         if state == "complete":
-            self.notify(WatchEvent("fin", "impression terminée", self.job, 0.0,
+            self.notify(WatchEvent("fin", "impression terminée", job, 0.0,
                                    data={"state": state}))
         else:
             self.notify(WatchEvent("question", f"l'impression s'est arrêtée ({state}) : "
                                    "c'était un raté ? Dis-le-moi, ça m'apprend à voir venir.",
-                                   self.job, 0.3, data={"state": state}))
-        self.job = None
+                                   job, 0.3, data={"state": state}))
+        with contextlib.suppress(OSError):   # image tenue par un autre programme : plus tard
+            self.purge(now)
+
+    def _save_baseline(self) -> None:
+        """Ligne de base de chaque caméra : on fusionne, une caméra absente cette fois-ci
+        garde la sienne (sinon 7 200 images d'apprentissage seraient perdues)."""
+        base = dict(self._baseline)
+        base.update({k: p.lifetime_state() for k, p in self.predictors.items()})
+        self._baseline = base
+        self._set_state("baseline", json.dumps(base))
 
     def purge(self, now: float | None = None) -> int:
         """Efface les images gardées depuis plus de `keep_days` (les scores restent : ils
@@ -232,13 +242,19 @@ class PrintWatch:
         with self._conn() as con:
             rows = con.execute("SELECT id, path FROM frames WHERE path IS NOT NULL AND t < ?",
                                (limit,)).fetchall()
-            for _, p in rows:
-                Path(p).unlink(missing_ok=True)
-            con.executemany("UPDATE frames SET path=NULL WHERE id=?", [(r[0],) for r in rows])
+            done = []
+            for fid, p in rows:
+                try:
+                    Path(p).unlink(missing_ok=True)
+                    done.append((fid,))
+                except OSError:
+                    continue      # fichier verrouillé (Windows) : on réessaiera
+            con.executemany("UPDATE frames SET path=NULL WHERE id=?", done)
         for d in self.frames_dir.glob("*"):
             if d.is_dir() and not any(d.iterdir()):
-                d.rmdir()
-        return len(rows)
+                with contextlib.suppress(OSError):
+                    d.rmdir()
+        return len(done)
 
     # ------------------------------------------------------------------ vision
     def cameras(self) -> list[Any]:

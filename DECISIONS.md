@@ -409,3 +409,45 @@ temps.
 
 Reste à faire : copier la voix dans `data/` (`valdar import-raub`, étape voix ; la copie a été
 bloquée par une permission pendant la session de mesure), puis essayer `valdar chat --voix`.
+
+---
+
+## 2026-10-08 (matin) — Audit des derniers ajouts : 13 défauts trouvés, corrigés
+
+Audit relu par un second regard (rapport complet hors dépôt). Tous reproduits avant correction,
+chacun a son test de non-régression (`tests/test_audit_fixes.py`).
+
+- **Critique — le cœur ne pouvait pas sauvegarder depuis son propre fil** (`heart/store.py`) :
+  la connexion SQLite, ouverte dans le fil principal, refusait le fil du cœur. Après 60 s de
+  `valdar chat`, chaque battement levait une erreur **avant** l'initiative, les rappels, les
+  nocicepteurs et la pensée de fond : tout s'arrêtait, une ligne d'erreur par seconde.
+  Connexion partagée autorisée entre fils + verrou ; une sauvegarde ratée est journalisée et ne
+  fait plus jamais tomber le battement.
+- **« Oublie-moi »** :
+  - la confirmation n'expirait jamais : un « oui » donné des heures plus tard à une autre
+    question effaçait tout. Elle expire en 2 min, une prise de parole spontanée l'annule, et une
+    action irréversible exige un « oui » net (« ok non attends » n'efface rien) ;
+  - un épisode appartenait à celui qui avait parlé en premier : si Zoé demandait l'oubli, ses
+    phrases dans un échange ouvert par Olivier restaient, et l'inverse effaçait celles
+    d'Olivier. Désormais **un épisode = une personne** ;
+  - après l'oubli, l'ancienne conversation pouvait être réinjectée par la « reprise du fil » :
+    effacée aussi, avec la demande en attente et les activations en mémoire de travail ;
+  - le message d'une autre personne pendant une confirmation n'est plus avalé.
+- **Vie privée** : la pensée de fond ne rumine que la vie d'Olivier et la sienne, et ses pensées
+  ne sont plus montrées à un invité. La reprise du fil au démarrage ne concerne qu'Olivier.
+- **Un seul interlocuteur traité à la fois** (dialogue et initiative sérialisés) : le contexte
+  des outils ne peut plus agir pour la mauvaise personne.
+- **Vigie** : la ligne de base d'une caméra absente pendant une impression n'est plus écrasée
+  (7 200 images d'apprentissage) ; une image verrouillée par Windows au moment du ménage ne
+  bloque plus la clôture de l'impression (avant : la suivante s'enregistrait dans l'ancienne).
+- **Nocicepteurs** : un champ « [N/A] » de nvidia-smi n'efface plus la température ; une carte
+  qui ne répond plus garde sa dernière lecture (le réflexe ne se relâche pas quand elle est en
+  difficulté) ; plus de fenêtre console qui clignote ; course entre valeurs et signaux réglée.
+- **Humeur** : après une longue absence, les heures de moral bas sont réparties semaine par
+  semaine (avant : 408 h comptées dans une semaine de 168 h).
+- **Idées** : une idée n'est marquée « proposée » que si Valdar l'a vraiment dite.
+- **Vécu** : un nouvel import ne remplace plus le contexte vivant de Valdar ; les conversations
+  sans identifiant ne fusionnent plus.
+- Connu, laissé tel quel : l'habituation à une gêne répétée est faible (rappel toutes les 5 min
+  contre une fenêtre de 10 min) ; quelques tests dépendent de l'horloge réelle.
+- Tests : **184 verts** (Python 3.11 et 3.13), ruff propre, critères de la phase 1 verts.

@@ -127,7 +127,8 @@ class VecuImport:
                 if speaker == "Olivier":
                     olivier_lines.append({"t": t, "conversation": c.get("name") or "",
                                           "text": text})
-            ep = self.memory.import_episode("claude", f"claude:{c.get('uuid')}",
+            ident = c.get("uuid") or f"{c.get('created_at')}|{c.get('name')}"
+            ep = self.memory.import_episode("claude", f"claude:{ident}",
                                             str(c.get("name") or ""), self.person, rows, ctx)
             if ep is None:
                 skipped += 1

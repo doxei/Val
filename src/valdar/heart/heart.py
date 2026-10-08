@@ -138,12 +138,22 @@ class Heart:
     def _watch_mood(self, t0: float, dt: float) -> None:
         spec = self.hc.mood
         if mood_mod.is_low(self.mood, spec):
-            week = time.strftime("%G-S%V", time.localtime(self.now))
-            if week not in self.low_seconds and self.low_seconds:
-                last = sorted(self.low_seconds)[-1]
-                self.journal.log("mood_week", t=self.now, week=last,
-                                 low_hours=round(self.low_seconds[last] / 3600, 2))
-            self.low_seconds[week] = self.low_seconds.get(week, 0.0) + dt
+            # Un long rattrapage peut couvrir plusieurs semaines : chacune reçoit sa part.
+            t, end = max(t0, self.now - dt), self.now
+            while t < end:
+                week = time.strftime("%G-S%V", time.localtime(t))
+                lt = time.localtime(t)
+                midnight = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+                next_week = midnight + (7 - lt.tm_wday) * 86400
+                chunk = min(end, next_week) - t
+                if chunk <= 0:
+                    break
+                if week not in self.low_seconds and self.low_seconds:
+                    last = sorted(self.low_seconds)[-1]
+                    self.journal.log("mood_week", t=t, week=last,
+                                     low_hours=round(self.low_seconds[last] / 3600, 2))
+                self.low_seconds[week] = self.low_seconds.get(week, 0.0) + chunk
+                t += chunk
             for old in sorted(self.low_seconds)[:-8]:   # 8 semaines d'historique
                 del self.low_seconds[old]
         w = spec.watch
@@ -437,9 +447,15 @@ class Heart:
         return True
 
     def save(self) -> None:
-        if self.store is not None:
-            self.store.save(STATE_KEY, self.snapshot())
+        """Sauvegarde l'état. Une erreur d'écriture (disque plein, base verrouillée) est
+        journalisée et ne fait jamais tomber le cœur : il retentera au prochain délai."""
         self._next_save = self.now + self.hc.save_every_seconds
+        if self.store is None:
+            return
+        try:
+            self.store.save(STATE_KEY, self.snapshot())
+        except Exception as exc:
+            self.journal.log("save_failed", t=self.now, error=str(exc)[:200])
 
     @classmethod
     def load_latest(cls, config: ValdarConfig | None = None, profile: str | None = None,

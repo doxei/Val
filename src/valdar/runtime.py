@@ -98,6 +98,7 @@ class Runtime:
                           memory=self.memory, relations=self.relations)
         self.tool_ctx = ctx
         self._who: Identity = who
+        self._handling = threading.RLock()
         self.registry = build_registry(ctx)
         self.agent = Agent(self.cfg, self.llm, self.registry, self.heart, self.lock,
                            self.facts, self.self_model, self.world_lines, self.urges,
@@ -159,7 +160,12 @@ class Runtime:
         b = self.relations.block(self._who)
         return [b] if b else []
 
+    def _owner(self) -> str:
+        return (self.cfg.agent.console_identity.person if self.cfg.agent else "") or ""
+
     def _thoughts_block(self, query: str) -> list[str]:
+        if (self._who.person or "") != self._owner():
+            return []          # ses pensées de fond sont privées : pas devant un invité
         b = self.thoughts.block()
         return [b] if b else []
 
@@ -167,8 +173,9 @@ class Runtime:
         now = time.time()
         with self.lock:
             feeling = feeling_block(self.heart, self.cfg.expression, self.urges())
-        wm = self.memory.working_memory(now)
-        recent = self.memory.last_thread(now, turns=4)
+        owner = self._owner()   # la pensée de fond ne rumine que la vie d'Olivier et la sienne
+        wm = self.memory.working_memory(now, person=owner)
+        recent = self.memory.last_thread(now, turns=4, person=owner)
         parts = [feeling]
         if wm:
             parts.append(memories_block(wm, now, "CE QUI TE TROTTE DANS LA TÊTE :"))
@@ -252,10 +259,11 @@ class Runtime:
             event = self.initiative.check(self.heart)
         if event is not None:
             idea = self.thoughts.best_idea() if event["kind"] in ("explore", "talk") else None
+            done = None
             if idea is not None:
-                self.thoughts.mark(idea.id, "proposee")
                 event["idea"] = idea.text
-            self._speak_async(_initiative_reason(event, idea), {"initiative": event})
+                done = lambda iid=idea.id: self.thoughts.mark(iid, "proposee")  # noqa: E731
+            self._speak_async(_initiative_reason(event, idea), {"initiative": event}, done)
         self._feel_body(now)
         self._maybe_think(now)
         if self.printwatch is not None and self._thread is None:
@@ -263,15 +271,18 @@ class Runtime:
         for r in self.reminders.pop_due(now):
             self.events.put(Event("rappel", r["texte"], {"rappel": r}))
 
-    def _speak_async(self, reason: str, data: dict[str, Any]) -> None:
+    def _speak_async(self, reason: str, data: dict[str, Any],
+                     on_done: Any = None) -> None:
         if not self._speaking.acquire(blocking=False):
-            return  # il parle déjà de lui-même : on n'empile pas
+            return  # il parle déjà de lui-même : on n'empile pas (l'idée reste en stock)
 
         def run() -> None:
             try:
                 reply = self.agent.spontaneous(reason)
                 kind = "erreur" if reply.error else "initiative"
                 self.events.put(Event(kind, reply.text, data))
+                if on_done is not None and not reply.error:
+                    on_done()
             finally:
                 self._speaking.release()
 
@@ -309,6 +320,10 @@ class Runtime:
 
     # ========================================================== dialogue
     def handle(self, text: str, who: Identity | None = None) -> Reply:
+        with self._handling:    # un seul interlocuteur traité à la fois (contexte des outils)
+            return self._handle(text, who)
+
+    def _handle(self, text: str, who: Identity | None) -> Reply:
         who = who or (self.cfg.agent.console_identity if self.cfg.agent else Identity())
         self._who = who
         self.tool_ctx.person = who.person or ""   # les outils agissent pour celui qui parle

@@ -26,6 +26,10 @@ from valdar.tools.registry import Registry, decide
 
 FORGET_TOOLS = ("oublie_moi",)   # après eux, rien de la personne ne doit rester
 _YES = re.compile(r"^\s*(oui|ok|vas[- ]y|confirme|go|d'accord|c'est bon)\b")
+# Pour une action irréversible : la réponse doit être un oui net, et rien d'autre.
+_STRICT_YES = re.compile(r"^\s*(oui|confirme|oui confirme|oui vas[- ]y)\s*[.!]*\s*$")
+_NO = re.compile(r"\b(non|annule|attends|pas|stop|arrete)\b")
+PENDING_TTL = 120.0   # une demande de confirmation expire au bout de 2 minutes
 
 
 @dataclass
@@ -70,9 +74,11 @@ class Agent:
         self.extras = extras
         self.thread: dict[str, Any] | None = None
         self.busy = threading.Event()        # un échange est en cours (pensées de fond : attendre)
+        self._turn = threading.RLock()       # un seul échange à la fois (dialogue ou initiative)
         self.last_activity = time.time()
         if memory is not None:
-            self.thread = memory.last_thread()
+            self.thread = memory.last_thread(
+                person=cfg.agent.console_identity.person or "")
             self._preload()
 
     def _preload(self) -> None:
@@ -91,6 +97,7 @@ class Agent:
         who = who or self.cfg.agent.console_identity
         text = text.strip()
         self.busy.set()
+        self._turn.acquire()
         try:
             with self.lock:
                 self.heart.interact()
@@ -99,20 +106,34 @@ class Agent:
                     self.heart.fire(name, scale=scale, source="voie_basse")
             self._remember(_speaker(who), text, who)
 
+            reply = None
             if self.pending is not None:
-                reply = self._resolve_pending(text, who, stimuli)
-            else:
+                if time.time() - self.pending.get("asked_at", 0.0) > PENDING_TTL:
+                    self.pending = None           # trop tard : la question ne tient plus
+                elif who.person != self.pending["person"]:
+                    self.pending = None           # quelqu'un d'autre parle : on annule, puis on
+                                                  # traite normalement son message
+                else:
+                    reply = self._resolve_pending(text, who, stimuli)
+            if reply is None:
                 self.history.append({"role": "user", "content": text})
                 reply = self._loop(who, query=text)
                 reply.stimuli = stimuli
             if any(t in FORGET_TOOLS for t in reply.tools_used):
-                self.history.clear()          # ce qui a été dit avant ne doit pas resurgir
+                self.forget_session()         # ce qui a été dit avant ne doit pas resurgir
             elif not reply.error:
                 self._remember("Valdar", reply.text, who)
             return reply
         finally:
+            self._turn.release()
             self.last_activity = time.time()
             self.busy.clear()
+
+    def forget_session(self) -> None:
+        """Après un « oublie-moi » : rien de la conversation en cours ne doit resurgir."""
+        self.history.clear()
+        self.thread = None
+        self.pending = None
 
     def _remember(self, speaker: str, text: str, who: Identity) -> None:
         if self.memory is None:
@@ -126,15 +147,18 @@ class Agent:
     def spontaneous(self, reason: str, who: Identity | None = None) -> Reply:
         """Valdar prend la parole de lui-même (initiative, rappel)."""
         who = who or self.cfg.agent.console_identity
-        self.history.append({
-            "role": "user",
-            "content": (f"[note interne, personne n'a parlé] Tu prends la parole de toi-même : "
-                        f"{reason} Une ou deux phrases naturelles, sans insister ni culpabiliser."),
-        })
-        reply = self._loop(who, query=reason, allow_tools=False)
-        if not reply.error:
-            self._remember("Valdar", reply.text, who)
-        return reply
+        with self._turn:
+            self.pending = None    # une confirmation ne survit pas à un changement de sujet
+            self.history.append({
+                "role": "user",
+                "content": (f"[note interne, personne n'a parlé] Tu prends la parole de "
+                            f"toi-même : {reason} Une ou deux phrases naturelles, sans "
+                            "insister ni culpabiliser."),
+            })
+            reply = self._loop(who, query=reason, allow_tools=False)
+            if not reply.error:
+                self._remember("Valdar", reply.text, who)
+            return reply
 
     # ============================================================ boucle LLM
     def _loop(self, who: Identity, query: str, allow_tools: bool = True) -> Reply:
@@ -240,7 +264,9 @@ class Agent:
         if not decision.allowed:
             return f"refusé : {decision.reason}"
         if decision.needs_confirmation:
-            self.pending = {"tool": name, "args": args, "person": who.person}
+            self.pending = {"tool": name, "args": args, "person": who.person,
+                            "asked_at": time.time(),
+                            "strict": name in FORGET_TOOLS or getattr(tool, "confirm", False)}
             return None
         return self._execute(tool, args)
 
@@ -261,7 +287,10 @@ class Agent:
         p, self.pending = self.pending, None
         if p is None:
             return Reply(text="rien en attente.")
-        if who.person != p["person"] or not _YES.search(normalize(text)):
+        said = normalize(text)
+        ok = (_STRICT_YES.match(said) is not None if p.get("strict")
+              else _YES.search(said) is not None and not _NO.search(said))
+        if who.person != p["person"] or not ok:
             msg = f"ok, j'annule « {p['tool']} »."
             self.history.append({"role": "assistant", "content": msg})
             return Reply(text=msg, stimuli=stimuli)

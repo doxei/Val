@@ -18,6 +18,7 @@ Capteurs lus sans dépendance obligatoire : `nvidia-smi` pour la carte graphique
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -42,15 +43,21 @@ def read_pc(disk_path: Path) -> Reading:
     """Lit les capteurs disponibles. Fractions pour les mémoires, °C pour les températures."""
     out: Reading = {}
     try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=temperature.gpu,memory.used,memory.total",
-             "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5)
+             "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5,
+            creationflags=flags)
         if r.returncode == 0 and r.stdout.strip():
-            temp, used, total = (float(x) for x in r.stdout.splitlines()[0].split(","))
-            out["gpu_temp"] = temp
-            if total > 0:
+            fields = [f.strip() for f in r.stdout.splitlines()[0].split(",")]
+            temp, used, total = (_num(f) for f in (fields + ["", "", ""])[:3])
+            if temp is not None:            # un champ « [N/A] » n'efface pas les autres
+                out["gpu_temp"] = temp
+            if used is not None and total:
                 out["gpu_mem"] = used / total
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except subprocess.TimeoutExpired:
+        out["gpu_hang"] = 1.0               # carte qui ne répond plus : signal à part entière
+    except (OSError, subprocess.SubprocessError):
         pass
     try:
         import psutil
@@ -61,7 +68,7 @@ def read_pc(disk_path: Path) -> Reading:
                for t in temps.get(k, [])]
         if cpu:
             out["cpu_temp"] = max(cpu)
-    except ImportError:
+    except Exception:   # psutil absent ou capteur illisible : on fait sans
         pass
     try:
         du = shutil.disk_usage(disk_path)
@@ -69,6 +76,13 @@ def read_pc(disk_path: Path) -> Reading:
     except OSError:
         pass
     return out
+
+
+def _num(text: str) -> float | None:
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -113,9 +127,16 @@ class Nociception:
     def sample(self, now: float) -> Reading:
         """Lit les capteurs (hors verrou du cœur : nvidia-smi peut prendre 100 ms)."""
         self.last_sample = now
-        values = {k: v for k, v in self.read().items() if k in self.cfg.sensors}
-        self.values = values
-        self.signals = {k: self.signal(k, v) for k, v in values.items()}
+        raw = self.read()
+        values = {k: v for k, v in raw.items() if k in self.cfg.sensors}
+        if raw.get("gpu_hang"):
+            # La carte ne répond plus : on garde sa dernière lecture (le réflexe ne doit pas
+            # se relâcher justement quand elle est en difficulté).
+            for k in ("gpu_temp", "gpu_mem"):
+                if k in self.values and k not in values:
+                    values[k] = self.values[k]
+        signals = {k: self.signal(k, v) for k, v in values.items()}
+        self.values, self.signals = values, signals   # les deux ensemble (lecture concurrente)
         return values
 
     # ---------------------------------------------------------------- douleur
@@ -162,14 +183,15 @@ class Nociception:
                 heart.fire(self.cfg.stimulus, scale=pain, source="nocicepteur")
             self._last_fire[sensor] = now
             self._fired_signal[sensor] = sig
-            felt.append(Pain(sensor, self.values[sensor], sig, pain, danger))
+            felt.append(Pain(sensor, self.values.get(sensor, 0.0), sig, pain, danger))
         return felt
 
     def lines(self) -> list[str]:
         """Ce que Valdar sent de son corps-PC (pour l'état du monde)."""
         out = []
-        for sensor, sig in sorted(self.signals.items(), key=lambda kv: -kv[1]):
-            if sig > 0.0:
-                p = Pain(sensor, self.values[sensor], sig, 0.0, sig >= 1.0)
+        values, signals = self.values, self.signals
+        for sensor, sig in sorted(signals.items(), key=lambda kv: -kv[1]):
+            if sig > 0.0 and sensor in values:
+                p = Pain(sensor, values[sensor], sig, 0.0, sig >= 1.0)
                 out.append(("DANGER : " if p.danger else "gêne : ") + p.text())
         return out

@@ -182,15 +182,19 @@ class Episodic:
 
     def _open_episode(self, con: sqlite3.Connection, now: float, person: str, source: str,
                       first_text: str) -> int:
+        # Un épisode = une personne : quand un autre prend la parole, nouvel épisode. C'est ce
+        # qui permet d'effacer exactement ce qui appartient à quelqu'un (« oublie-moi ») et de
+        # ne montrer à chacun que ses souvenirs.
         if self._current is None:
-            row = con.execute("SELECT id, ended FROM episodes WHERE source=? "
-                              "ORDER BY ended DESC LIMIT 1", (source,)).fetchone()
+            row = con.execute("SELECT id, ended FROM episodes WHERE source=? AND person=? "
+                              "ORDER BY ended DESC LIMIT 1", (source, person)).fetchone()
             if row and now - row[1] <= self.cfg.episode_gap_seconds:
                 self._current = int(row[0])
         if self._current is not None:
-            ended = con.execute("SELECT ended FROM episodes WHERE id=?",
-                                (self._current,)).fetchone()
-            if ended and now - ended[0] <= self.cfg.episode_gap_seconds:
+            cur_ep = con.execute("SELECT ended, person FROM episodes WHERE id=?",
+                                 (self._current,)).fetchone()
+            if cur_ep and cur_ep[1] == person and \
+                    now - cur_ep[0] <= self.cfg.episode_gap_seconds:
                 return self._current
         title = " ".join(first_text.split())[:80]
         cur = con.execute("INSERT INTO episodes(source,title,person,started,ended) "
@@ -227,8 +231,9 @@ class Episodic:
         return ep
 
     def adopt_context(self, context: TemporalContext) -> None:
-        """Après un import, si Valdar n'a encore rien vécu, son contexte part de là."""
-        if self.context.t is None or (context.t or 0) > (self.context.t or 0):
+        """Après un import, si Valdar n'a encore rien vécu, son contexte part de là. S'il a
+        déjà vécu, son contexte vivant n'est jamais remplacé par un import."""
+        if self.context.t is None:
             self.context = context
             with self._lock, self._conn() as con:
                 self._set_state(con, "context", self.context.to_bytes())
@@ -373,11 +378,17 @@ class Episodic:
 
     # ============================================================== reprise du fil
     def last_thread(self, now: float | None = None, source: str = "valdar",
-                    turns: int = 6) -> dict[str, Any] | None:
+                    turns: int = 6, person: str | None = None) -> dict[str, Any] | None:
+        """Dernière conversation ; avec `person`, seulement celle de cette personne."""
         now = time.time() if now is None else now
         with self._conn() as con:
-            row = con.execute("SELECT id, title, started, ended FROM episodes WHERE source=? "
-                              "ORDER BY ended DESC LIMIT 1", (source,)).fetchone()
+            if person is None:
+                row = con.execute("SELECT id, title, started, ended FROM episodes WHERE "
+                                  "source=? ORDER BY ended DESC LIMIT 1", (source,)).fetchone()
+            else:
+                row = con.execute("SELECT id, title, started, ended FROM episodes WHERE "
+                                  "source=? AND person=? ORDER BY ended DESC LIMIT 1",
+                                  (source, person)).fetchone()
             if not row or now - row[3] > self.cfg.resume_hours * 3600:
                 return None
             tail = con.execute("SELECT speaker, text, t FROM turns WHERE episode=? "
@@ -390,14 +401,19 @@ class Episodic:
         with self._lock, self._conn() as con:
             eps = [r[0] for r in con.execute("SELECT id FROM episodes WHERE person=?",
                                              (person,)).fetchall()]
+            gone: set[int] = set()
             for ep in eps:
+                gone |= {r[0] for r in con.execute("SELECT id FROM turns WHERE episode=?",
+                                                   (ep,))}
                 con.execute("DELETE FROM accesses WHERE turn IN "
                             "(SELECT id FROM turns WHERE episode=?)", (ep,))
                 con.execute("DELETE FROM turns WHERE episode=?", (ep,))
                 con.execute("DELETE FROM episodes WHERE id=?", (ep,))
-        if self._current in eps:
-            self._current = None
-        self._index = None
+            if self._current in eps:
+                self._current = None
+            for tid in gone:
+                self.activation.pop(tid, None)
+            self._index = None
         return len(eps)
 
     def count(self) -> dict[str, int]:
