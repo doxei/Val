@@ -62,7 +62,7 @@ class Recollection:
         txt = " ".join(self.text.split())
         if len(txt) > max_chars:
             txt = txt[:max_chars].rsplit(" ", 1)[0] + "…"
-        origin = {"claude": "conversation d'Olivier avec Claude",
+        origin = {"claude": "conversation d'Olivier avec Claude, une autre IA : pas toi",
                   "ancien": "souvenir de l'ancienne installation"}.get(self.source, "")
         where = f"{when_text(self.t, now)}" + (f", {origin}" if origin else "")
         if self.title:
