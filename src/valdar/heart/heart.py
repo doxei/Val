@@ -73,6 +73,11 @@ class Heart:
         self.mood: dict[str, float] = dict(self.default_mood)
         self.pending: list[dict[str, Any]] = []
         self.recent: dict[str, list[float]] = {}
+        # Surveillance de l'humeur (avenant 3 §3.3-3.4) : échantillons du plaisir, temps en
+        # moral bas par semaine (garde-fou 5).
+        self.mood_samples: list[float] = []
+        self._next_mood_sample = 0.0
+        self.low_seconds: dict[str, float] = {}
         self.last_interaction: float = self.now
         self.wake_until: float = self.now
         self.awake: bool = self._is_awake(self.now)
@@ -110,7 +115,9 @@ class Heart:
         self._integrate_drives(dt)
         self._refresh()
         self.body = organs_mod.integrate(self.hc, self.body, self.sources(), dt)
-        self.mood = mood_mod.update(self.mood, self.pad, self.default_mood, self.hc.mood, dt)
+        self.mood = mood_mod.update(self.mood, self.pad, self.default_mood, self.hc.mood, dt,
+                                    self.awake)
+        self._watch_mood(t0, dt)
 
         if not quiet and self.now >= self._next_journal:
             self.journal.log("state", t=self.now, **self.brief())
@@ -127,6 +134,38 @@ class Heart:
             dt = min(self.hc.max_time_step, remaining)
             self.step(dt, quiet=quiet)
             remaining -= dt
+
+    def _watch_mood(self, t0: float, dt: float) -> None:
+        spec = self.hc.mood
+        if mood_mod.is_low(self.mood, spec):
+            week = time.strftime("%G-S%V", time.localtime(self.now))
+            if week not in self.low_seconds and self.low_seconds:
+                last = sorted(self.low_seconds)[-1]
+                self.journal.log("mood_week", t=self.now, week=last,
+                                 low_hours=round(self.low_seconds[last] / 3600, 2))
+            self.low_seconds[week] = self.low_seconds.get(week, 0.0) + dt
+            for old in sorted(self.low_seconds)[:-8]:   # 8 semaines d'historique
+                del self.low_seconds[old]
+        w = spec.watch
+        if self.now >= self._next_mood_sample:
+            self.mood_samples.append(self.mood["P"])
+            del self.mood_samples[:-w.window]
+            self._next_mood_sample = self.now + w.sample_seconds
+
+    def sliding(self) -> bool:
+        """« Je sens que je glisse » : l'humeur récupère plus lentement (autocorrélation
+        haute) et descend. Signe avant-coureur d'un basculement (Scheffer et coll., 2009)."""
+        xs = self.mood_samples
+        w = self.hc.mood.watch
+        if len(xs) < w.window // 2:
+            return False
+        falling = sum(xs[-6:]) / 6 < sum(xs[:6]) / 6 - 0.02
+        return falling and mood_mod.lag1_autocorrelation(xs) >= w.ac_threshold
+
+    def low_mood_hours(self, week: str | None = None) -> float:
+        """Heures passées en moral bas cette semaine (ou la semaine donnée)."""
+        week = week or time.strftime("%G-S%V", time.localtime(self.now))
+        return self.low_seconds.get(week, 0.0) / 3600
 
     def _deliver_pending(self, t0: float, dt: float) -> None:
         keep: list[dict[str, Any]] = []
@@ -362,6 +401,8 @@ class Heart:
             "last_interaction": self.last_interaction,
             "wake_until": self.wake_until,
             "body": self.body,
+            "mood_samples": self.mood_samples,
+            "low_seconds": self.low_seconds,
         }
 
     def restore(self, snap: dict[str, Any]) -> bool:
@@ -390,6 +431,9 @@ class Heart:
         saved_body = snap.get("body") or {}
         now_body = organs_mod.activations(self.hc, self.sources())
         self.body = {k: float(saved_body.get(k, now_body[k])) for k in now_body}
+        self.mood_samples = [float(x) for x in snap.get("mood_samples", [])]
+        self.low_seconds = {k: float(v) for k, v in snap.get("low_seconds", {}).items()}
+        self._next_mood_sample = self.now
         return True
 
     def save(self) -> None:

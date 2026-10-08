@@ -24,6 +24,7 @@ from valdar.llm.backend import ChatResult, LLMBackend, LLMError
 from valdar.memory import Episodic, Facts
 from valdar.tools.registry import Registry, decide
 
+FORGET_TOOLS = ("oublie_moi",)   # après eux, rien de la personne ne doit rester
 _YES = re.compile(r"^\s*(oui|ok|vas[- ]y|confirme|go|d'accord|c'est bon)\b")
 
 
@@ -104,7 +105,9 @@ class Agent:
                 self.history.append({"role": "user", "content": text})
                 reply = self._loop(who, query=text)
                 reply.stimuli = stimuli
-            if not reply.error:
+            if any(t in FORGET_TOOLS for t in reply.tools_used):
+                self.history.clear()          # ce qui a été dit avant ne doit pas resurgir
+            elif not reply.error:
                 self._remember("Valdar", reply.text, who)
             return reply
         finally:

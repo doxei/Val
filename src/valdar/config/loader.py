@@ -103,6 +103,27 @@ class IntensityWord(_Strict):
         return value
 
 
+class BistableSpec(_Strict):
+    """Hystérésis de l'humeur (avenant 3 §3) : terme bistable sur l'axe plaisir.
+
+    dm/dt += κ · (u − u³/w² + h), u = m − center, κ = 1/kappa_tau (réduit la nuit)."""
+    enabled: bool = True
+    center: float = Field(default=-0.15, ge=-1.0, le=1.0)    # m_c, entre les deux puits
+    width: float = Field(default=0.3, gt=0.0, le=1.0)        # w, écart des puits
+    kappa_tau: float = Field(default=1440.0, gt=0.0)         # 1/κ, profondeur des puits
+    bias: float = 0.0                                        # h > 0 : puits bas moins profond
+    sleep_factor: float = Field(default=0.3, ge=0.0, le=1.0)  # κ × facteur pendant le sommeil
+    substep: float = Field(default=60.0, gt=0.0, le=600.0)   # sous-pas d'intégration (s)
+
+
+class MoodWatchSpec(_Strict):
+    """Signes avant-coureurs (avenant 3 §3.4) et temps passé en moral bas (§3.3, garde-fou 5)."""
+    sample_seconds: float = Field(default=600.0, gt=0.0)
+    window: int = Field(default=72, ge=10)                   # 72 × 10 min = 12 h
+    # Mesuré sur 48 h simulées : seul et en train de glisser 0,55-0,85, entouré ≈ 0,40.
+    ac_threshold: float = Field(default=0.7, gt=0.0, lt=1.0)
+
+
 class MoodSpec(_Strict):
     pull_tau: float = Field(default=3600.0, gt=0.0)
     return_tau: float = Field(default=14400.0, gt=0.0)
@@ -110,6 +131,8 @@ class MoodSpec(_Strict):
     neutral_radius: float = Field(default=0.06, ge=0.0)
     intensity_words: list[IntensityWord] = []
     octants: dict[str, str]
+    bistable: BistableSpec = BistableSpec()
+    watch: MoodWatchSpec = MoodWatchSpec()
 
     @model_validator(mode="after")
     def _check_octants(self) -> MoodSpec:
@@ -301,6 +324,28 @@ class NociceptionConfig(_Strict):
     min_pain: float = Field(default=0.05, ge=0.0, le=1.0)
     worsen_step: float = Field(default=0.2, gt=0.0, le=1.0)
     repeat_seconds: float = Field(default=300.0, ge=0.0)
+
+
+class PresenceSpec(_Strict):
+    stimulus: str
+    gain: float = Field(default=0.5, ge=0.0, le=2.0)
+    min_affection: float = 0.2        # greet : au-dessus, la présence réchauffe
+    max_affection: float = -0.2       # wary : en dessous, légère vigilance
+
+
+class RelationsConfig(_Strict):
+    """Relations et modèle de l'autre (phase 7, avenant 2 §4.3 et avenant 4 §8)."""
+    db: str = "personnes.db"
+    encounter_gap_seconds: float = Field(default=1800.0, gt=0.0)
+    affection_rate: float = Field(default=0.05, gt=0.0, le=1.0)
+    affection_half_life_days: float = Field(default=60.0, gt=0.0)
+    trust_rate: float = Field(default=0.02, gt=0.0, le=1.0)
+    state_tau: float = Field(default=1200.0, gt=0.0)          # le ton récent s'efface en 20 min
+    state_min_weight: float = Field(default=0.3, gt=0.0, le=1.0)
+    state_fresh_seconds: float = Field(default=7200.0, gt=0.0)
+    greet: PresenceSpec = PresenceSpec(stimulus="warmth", gain=0.5)
+    wary: PresenceSpec = PresenceSpec(stimulus="concern", gain=0.4)
+    topics: dict[str, list[str]] = {}
 
 
 # ------------------------------------------------------------------------- divers
@@ -584,6 +629,7 @@ class ValdarConfig(_Strict):
     thoughts: ThoughtsConfig = ThoughtsConfig()
     knowledge_db: str = "connaissances.db"
     nociception: NociceptionConfig = NociceptionConfig()
+    relations: RelationsConfig = RelationsConfig()
 
     _root: Path = PrivateAttr(default_factory=Path.cwd)
 
@@ -605,6 +651,9 @@ class ValdarConfig(_Strict):
         for tgt in list(r.positive) + list(r.negative):
             if tgt not in self.heart.variables:
                 raise ValueError(f"episodic.reinstate : variable inconnue '{tgt}'")
+        for spec in (self.relations.greet, self.relations.wary):
+            if spec.stimulus not in self.heart.stimuli:
+                raise ValueError(f"relations : stimulus inconnu '{spec.stimulus}'")
         if self.nociception.stimulus not in self.heart.stimuli:
             raise ValueError(f"nociception : stimulus inconnu '{self.nociception.stimulus}'")
         for tgt in list(self.thoughts.calm) + list(self.thoughts.stir):

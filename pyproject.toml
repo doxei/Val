@@ -44,4 +44,4 @@ packages = ["valdar", "valdar.heart", "valdar.appraisal", "valdar.workspace",
             "valdar.memory", "valdar.expression", "valdar.llm", "valdar.interface",
             "valdar.obs", "valdar.sim", "valdar.config", "valdar.agent", "valdar.tools",
             "valdar.atelier", "valdar.devices", "valdar.migrate", "valdar.voice", "valdar.printwatch",
-            "valdar.knowledge"]
+            "valdar.knowledge", "valdar.relations"]

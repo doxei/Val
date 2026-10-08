@@ -70,6 +70,11 @@ class Facts:
                 "VALUES(?,?,?,?,?,?,?)", (text, n, person, source, confidence, now, now))
         return "noté."
 
+    def forget_person(self, person: str) -> int:
+        """« Oublie-moi » : efface tous les faits liés à la personne."""
+        with self._lock, self._conn() as con:
+            return con.execute("DELETE FROM facts WHERE person=?", (person,)).rowcount
+
     def forget(self, fragment: str) -> str:
         n = _norm(fragment)
         if not n:

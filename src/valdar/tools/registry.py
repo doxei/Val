@@ -27,6 +27,7 @@ class Tool:
     fn: Callable[..., Any]
     tier: str = SAFE
     family: str = "divers"
+    confirm: bool = False     # demande un « oui » de la même personne (ex. « oublie-moi »)
 
     def schema(self) -> dict[str, Any]:
         return {"type": "function",
@@ -66,6 +67,10 @@ class Decision:
 def decide(tool: Tool, who: Identity, cfg: PermissionsConfig) -> Decision:
     """Qui a le droit d'utiliser cet outil, maintenant ?"""
     if tool.tier in (SAFE, SAFETY):
+        if tool.confirm:
+            if who.person is None:
+                return Decision(False, reason="je ne sais pas qui tu es.")
+            return Decision(True, needs_confirmation=True)
         return Decision(True)
     is_owner = who.role in cfg.owner_roles and who.person is not None and not who.minor
     if not is_owner:

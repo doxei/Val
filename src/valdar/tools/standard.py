@@ -36,6 +36,7 @@ class ToolContext:
     printwatch: Any = None    # valdar.printwatch.PrintWatch
     thoughts: Any = None      # valdar.workspace.thoughts.Thoughts
     memory: Any = None        # valdar.memory.Episodic
+    relations: Any = None     # valdar.relations.Relations
 
 
 def build_registry(ctx: ToolContext) -> Registry:
@@ -255,6 +256,35 @@ def build_registry(ctx: ToolContext) -> Registry:
         reg.add(Tool("idee_statut", "Marque une de mes idées : adoptée, rejetée, ou plus tard.",
                      params(["numero", "statut"], numero=s, statut=s), t_idee_statut, SAFE,
                      "soi"))
+    # ------------------------------------------------------------ relations
+    if ctx.relations is not None:
+        rel = ctx.relations
+
+        def t_retenir_sur_toi(genre: str, texte: str) -> str:
+            if not ctx.person:
+                return "je ne sais pas qui tu es : dis-moi ton prénom d'abord."
+            return rel.learn(ctx.person, genre, texte)
+
+        def t_oublie_moi() -> str:
+            who = ctx.person
+            if not who:
+                return "je ne sais pas qui tu es, je n'ai rien à oublier."
+            rel.forget_person(who)
+            n_facts = ctx.facts.forget_person(who)
+            n_eps = ctx.memory.forget_person(who) if ctx.memory is not None else 0
+            return (f"c'est fait : j'ai oublié la personne « {who} » ({n_facts} fait(s), "
+                    f"{n_eps} conversation(s), et tout ce que j'avais appris d'elle).")
+
+        reg.add(Tool("retenir_sur_toi",
+                     "Retiens quelque chose sur la personne qui te parle, pour elle seule : "
+                     "genre « aime » (ce qui lui fait du bien), « agace », « prefere » (comment "
+                     "elle veut que tu lui parles) ou « note ».",
+                     params(["genre", "texte"], genre=s, texte=s), t_retenir_sur_toi, SAFE,
+                     "relations"))
+        reg.add(Tool("oublie_moi",
+                     "La personne qui te parle te demande de l'oublier : efface sa relation, "
+                     "ses faits et ses conversations. Demande confirmation.",
+                     params(), t_oublie_moi, SAFE, "relations", confirm=True))
     return reg
 
 

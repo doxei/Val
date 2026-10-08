@@ -321,3 +321,52 @@ Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main 
 - **À retenir** : il reste ≈ 1,5 Go de VRAM, pas de place pour RAUB (whisper + vision) en même
   temps. Le chargement à froid (~1 min) justifie `keep_alive` long et un préchargement au
   démarrage. llama-server + LoRA d'affect pas encore mesurés.
+
+---
+
+## 2026-10-08 — Phase 7 (code) : hystérésis de l'humeur, relations, modèle de l'autre
+
+### Hystérésis de l'humeur (avenant 3 §3)
+- Sur l'axe plaisir de l'humeur, terme bistable `κ·(u − u³/w² + h)`, `u = P − centre`
+  (centre −0,15, w 0,3, 1/κ = 24 min), par sous-pas de 60 s au plus (séparation d'opérateurs :
+  ALMA exact, puis le terme bistable).
+- **Écart à l'avenant** : le terme n'agit qu'entre les deux puits (|u| ≤ w). Appliqué partout,
+  le cube freinait aussi la joie : après une longue joie, l'humeur plafonnait à 0,23 au lieu de
+  0,75. Borné, il crée les deux puits sans toucher aux extrêmes.
+- Mesures (sans bruit) : bascule en moral bas quand l'émotion descend sous −0,36, retour
+  seulement au-dessus de −0,10 ; à émotion −0,22, l'humeur finit à +0,07 ou à −0,36 selon
+  d'où elle vient.
+- Garde-fous testés : (1) au repos un seul état ; (2) la nuit, κ × 0,3 (8 h de sommeil
+  sortent du puits bas) ; (4) depuis le plus bas, sans événement, retour en 2 h (exigé : 36 h),
+  avec de la chaleur en 43 min (exigé : 2 h) ; (5) heures de moral bas par semaine, gardées
+  8 semaines, journalisées (`mood_week`), sauvegardées avec le cœur.
+- **Signes avant-coureurs** (§3.4) : autocorrélation à un pas du plaisir de l'humeur
+  (échantillons toutes les 10 min, fenêtre de 12 h, tendance retirée). Mesuré sur 48 h : seul
+  et en train de glisser 0,55 à 0,85, entouré environ 0,40. Seuil 0,7 avec une humeur qui
+  descend : Valdar sent qu'il « glisse un peu » (sans chiffres, dans son état intérieur).
+- Non fait : tempérament « anxieux » bistable au repos (§3.3 point 3) ; il garde les mêmes
+  puits que les autres profils.
+
+### Relations et modèle de l'autre (avenant 2 §4.3-4.5, avenant 4 §8)
+- `relations/registry.py`, base `personnes.db` : rencontres (une nouvelle après 30 min de
+  silence), affection (ton moyen des messages, demi-vie de 60 jours sans contact), confiance,
+  sujets partagés (mots-clés : impression 3D, plantes, électronique, code, santé).
+- **Modèle de l'autre** : ton récent de la personne (moyenne glissante de 20 min), oublié au
+  bout de 2 h ; l'heure compte (« il est tard »). Dans le prompt : « en ce moment, Olivier
+  semble un peu à plat : adapte-toi ».
+- **Leçons par personne, jamais par catégorie** : outil `retenir_sur_toi` (aime, agace,
+  prefere, note) ; le prompt le rappelle explicitement.
+- **Le cœur réagit à la personne** : au début d'une rencontre, quelqu'un d'apprécié
+  (affection ≥ 0,2) réchauffe (`warmth`), quelqu'un avec qui ça s'est mal passé (≤ −0,2)
+  met en légère vigilance (`concern`).
+- **« Oublie-moi »** : efface la relation, les leçons, les faits et les conversations de la
+  personne, après un « oui » de **la même personne** (nouvel attribut d'outil `confirm`).
+  Rien de la personne ne reste ensuite, ni le dernier échange ni l'historique en mémoire.
+- **Bug corrigé** : les outils agissaient toujours au nom d'Olivier (contexte figé au
+  démarrage). Un invité qui demandait de retenir un fait le rangeait chez Olivier. Le contexte
+  des outils suit maintenant la personne qui parle.
+- Voie basse : l'agacement de l'interlocuteur (« ça m'énerve », « fait chier », « ça marche
+  pas », « ras le bol ») devient du souci pour lui (`concern`). Avant, rien ne réagissait.
+- Tests : 174 verts ; critères de la phase 1 verts.
+- Reste : amorcer les relations depuis `raub_affect.json` (format à relever sur la machine) ;
+  reconnaissance de la personne (phase 4).
