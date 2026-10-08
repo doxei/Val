@@ -636,7 +636,7 @@ ears:
   wake_model: ""
   wake_threshold: 0.5
   transcript_wake: true
-  wake_stt_model: tiny
+  wake_stt_model: base           # tiny écorchait « Valdar » : base + le nom soufflé
   microphones: [K66, USB Audio, Microphone]
 
 # Double audition (avenant 5 §1) : le niveau du son va au cœur, sans langage, sans rien garder.

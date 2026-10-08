@@ -47,6 +47,8 @@ class Ambient:
         self.last_startle = float("-inf")
         self.last_noise = float("-inf")
         self.stats = {"startle": 0, "noise": 0}
+        self._pending: tuple[float, float, int, float] | None = None
+        self.last_level: float | None = None
 
     def _ewm(self, prev: float | None, x: float, tau: float) -> float:
         if prev is None:
@@ -65,17 +67,29 @@ class Ambient:
         now = self.clock()
         c = self.cfg
         # Un sursaut, c'est une **attaque** : plus fort que le fond ET que l'instant d'avant.
-        # Un bruit qui dure ne fait sursauter qu'une fois.
+        # Un bruit qui dure ne fait sursauter qu'une fois. La décision attend ~130 ms : le
+        # détecteur de parole a besoin de quelques trames pour reconnaître une voix (le début
+        # d'une phrase dite près du micro ne doit pas faire sursauter, un cri si).
+        if self._pending is not None:
+            peak, scale, left, voice = self._pending
+            peak, voice = max(peak, level), max(voice, speech)
+            if left <= 1:
+                self._pending = None
+                if voice < 0.5 or peak >= c.shout_db:
+                    self.last_level = peak
+                    self.stats["startle"] += 1
+                    self.fire(c.startle_stimulus, scale, "voie_basse")
+            else:
+                self._pending = (peak, scale, left - 1, voice)
         before = max(self.base if self.base is not None else level,
                      self.fast if self.fast is not None else level)
         floor = c.shout_db if speech >= 0.5 else c.startle_floor_db
-        if (level >= floor and level - before >= c.startle_rise_db
+        if (self._pending is None and level >= floor and level - before >= c.startle_rise_db
                 and now - self.last_startle >= c.refractory_seconds and not self.speaking()):
             excess = level - before - c.startle_rise_db
             scale = min(1.0, 0.4 + excess / max(1.0, c.startle_span_db))
             self.last_startle = now
-            self.stats["startle"] += 1
-            self.fire(c.startle_stimulus, scale, "voie_basse")
+            self._pending = (level, scale, c.confirm_frames, speech)
         # Le fond suit lentement ; un pic isolé ne le déplace presque pas.
         self.base = self._ewm(self.base, level, c.base_tau_seconds)
         self.fast = self._ewm(self.fast, level, c.fast_tau_seconds)

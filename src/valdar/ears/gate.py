@@ -167,7 +167,9 @@ class Gate:
         if not self.engaged():
             if not self.wake.heard(seg):
                 self.stats["ignored"] += 1      # parole qui ne s'adresse pas à Valdar : oubliée
-                self._note(f"parole {dur:.1f} s : pas de « {self.cfg.names[0]} » entendu")
+                seen = getattr(self.wake, "last_text", None)
+                self._note(f"parole {dur:.1f} s : pas de « {self.cfg.names[0]} » entendu"
+                           + (f" (compris : « {seen.strip()} »)" if seen is not None else ""))
                 return
             self.stats["woken"] += 1
         tr = self.stt.transcribe(seg)

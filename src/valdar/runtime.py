@@ -285,7 +285,9 @@ class Runtime:
             with self.lock:
                 self.heart.fire(name, scale=scale, source=source)
             if name == self.cfg.ambient.startle_stimulus:
-                self.events.put(Event("sursaut", "un bruit soudain m'a fait sursauter",
+                lvl = self.ambient.last_level if self.ambient is not None else None
+                self.events.put(Event("sursaut", "un bruit soudain m'a fait sursauter"
+                                      + (f" ({lvl:.0f} dB)" if lvl is not None else ""),
                                       {"scale": round(scale, 2), "source": source}))
 
         self.ambient = Ambient(self.cfg.ambient, frame_seconds, fire, speaking)

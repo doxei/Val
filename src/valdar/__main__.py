@@ -299,6 +299,8 @@ def _start_ears(cfg, rt, speaker, say, debug: bool):
                 speaking=speaking, on_frame=(ambient.feed if ambient is not None else None),
                 on_note=note)
     rt.gate = gate
+    if debug and hasattr(wake, "peek"):
+        wake.peek = True
 
     def answer() -> None:
         while True:

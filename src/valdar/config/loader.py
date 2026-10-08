@@ -301,7 +301,7 @@ class EarsConfig(_Strict):
     wake_model: str = ""                                      # modèle « Valdar » entraîné
     wake_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     transcript_wake: bool = True                              # compromis tant qu'il manque
-    wake_stt_model: str = "tiny"
+    wake_stt_model: str = "base"     # « tiny » écorche trop les noms propres en français
     microphones: list[str] = ["K66", "USB Audio", "Microphone"]
 
 
@@ -315,6 +315,7 @@ class AmbientConfig(_Strict):
     startle_rise_db: float = Field(default=20.0, gt=0.0)     # attaque au-dessus du fond
     startle_span_db: float = Field(default=15.0, gt=0.0)
     refractory_seconds: float = Field(default=3.0, ge=0.0)
+    confirm_frames: int = Field(default=4, ge=1, le=20)     # ~130 ms pour reconnaître une voix
     startle_stimulus: str = "startle"
     loud_db: float = -32.0               # fond au-dessus : pièce bruyante
     quiet_db: float = -55.0              # fond en dessous : pièce calme

@@ -156,7 +156,8 @@ def test_runtime_saturation_stops_background_thought(runtime_factory):
     amb = rt.make_ambient(DT)
     for _ in range(int(5 / DT)):
         amb.feed(tone(0.002))
-    amb.feed(tone(0.9))
+    for _ in range(6):
+        amb.feed(tone(0.9))
     kinds = []
     while not rt.events.empty():
         kinds.append(rt.events.get().kind)
@@ -187,10 +188,15 @@ def test_voice_onset_does_not_startle_but_a_shout_does():
     for _ in range(int(5 / DT)):
         amb.feed(tone(0.002), 0.0)
         clock.t += DT
-    amb.feed(tone(0.2), 0.9)                    # voix forte près du micro (≈ −17 dB)
+    amb.feed(tone(0.2), 0.1)                    # début de phrase près du micro (≈ −17 dB) :
+    for _ in range(6):                          # le détecteur de parole ne la reconnaît
+        amb.feed(tone(0.2), 0.9)                # qu'au bout de quelques trames
     assert not fired
     clock.t += 10
-    amb.feed(tone(0.9), 0.9)                    # un cri (≈ −4 dB)
+    for _ in range(6):
+        amb.feed(tone(0.002), 0.0)
+    for _ in range(6):
+        amb.feed(tone(0.9), 0.9)                # un cri (≈ −4 dB)
     assert [f[0] for f in fired] == ["startle"]
 
 

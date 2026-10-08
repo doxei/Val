@@ -81,17 +81,29 @@ class SileroVAD:
 
 class WhisperSTT:
     def __init__(self, model: str, device: str = "cpu", compute_type: str = "int8",
-                 language: str = "fr", beam_size: int = 1):
+                 language: str = "fr", beam_size: int = 1, hint: str = ""):
         from faster_whisper import WhisperModel
 
         self.model = WhisperModel(model, device=device, compute_type=compute_type)
         self.language = language
         self.beam_size = beam_size
+        self.hint = hint      # un nom propre que whisper ne connaît pas : on le lui souffle
 
     def transcribe(self, segment: np.ndarray) -> Transcript:
-        segs, _ = self.model.transcribe(segment.astype(np.float32), language=self.language,
-                                        beam_size=self.beam_size,
-                                        condition_on_previous_text=False, vad_filter=False)
+        extra: dict[str, Any] = {}
+        if self.hint:
+            extra = {"initial_prompt": f"{self.hint}, tu m'entends ?", "hotwords": self.hint}
+        try:
+            segs, _ = self.model.transcribe(segment.astype(np.float32),
+                                            language=self.language, beam_size=self.beam_size,
+                                            condition_on_previous_text=False,
+                                            vad_filter=False, **extra)
+        except TypeError:          # faster-whisper trop ancien pour « hotwords »
+            extra.pop("hotwords", None)
+            segs, _ = self.model.transcribe(segment.astype(np.float32),
+                                            language=self.language, beam_size=self.beam_size,
+                                            condition_on_previous_text=False,
+                                            vad_filter=False, **extra)
         texts, probs, nospeech = [], [], []
         for s in segs:
             if s.text.strip():
@@ -107,11 +119,16 @@ class TranscriptWake:
         self.stt = stt
         self.names = names
         self.head = int(head_seconds * SR)
+        self.peek = False          # diagnostic (--debug) : montrer ce que l'éveil a compris
+        self.last_text: str | None = None
 
     def heard(self, segment: np.ndarray) -> bool:
         text = self.stt.transcribe(segment[: self.head]).text
         found = says_name(text, self.names)
-        del text            # rien n'est gardé de ce qui ne s'adressait pas à Valdar
+        # Rien n'est gardé de ce qui ne s'adressait pas à Valdar, sauf à l'écran en mode
+        # diagnostic, demandé par Olivier (en mémoire vive, jamais sur disque).
+        self.last_text = text if self.peek else None
+        del text
         return found
 
 
@@ -155,7 +172,8 @@ def build(cfg: EarsConfig, model_path: Any, llm: Any = None) -> tuple[Any, Any, 
     if wake_file is not None and wake_file.is_file():
         wake: Any = OpenWakeWordWake(str(wake_file), cfg.wake_threshold)
     elif cfg.transcript_wake:
-        wake = TranscriptWake(WhisperSTT(cfg.wake_stt_model, "cpu", "int8"), cfg.names)
+        wake = TranscriptWake(WhisperSTT(cfg.wake_stt_model, "cpu", "int8",
+                                         beam_size=2, hint=cfg.names[0]), cfg.names)
     else:
         raise RuntimeError("aucun mot d'éveil : entraîne le modèle « Valdar » ou active "
                            "ears.transcript_wake")
