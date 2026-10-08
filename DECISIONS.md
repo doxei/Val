@@ -629,3 +629,20 @@ icône sur le bureau.
   nouveaux faits repris portent la source « ancien » (les anciens gardent la leur, un fait déjà
   connu n'est jamais ajouté deux fois).
 - Avenant 2 renommé `docs/avenant-2-heritage.md`.
+
+## 2026-10-08 — Premier lancement complet : deux pannes
+
+- **torch remplacé** : installer ultralytics (vision) a remplacé torch 2.6.0+cu126 (carte
+  graphique) par torch 2.14 sans carte graphique (torchvision le plus récent l'exigeait). La
+  voix ne peut plus tourner sur la carte. Correctifs : `tools/contraintes.txt` (torch,
+  torchvision, torchaudio figés, OpenCV < 5) passé à toutes les installations ; torchvision
+  0.21 (cu126) installé avant la vision ; le lanceur vérifie torch 2.6 + carte graphique et le
+  répare tout seul. Le lanceur fait aussi `git pull` au démarrage.
+- **Fenêtre** : Edge, déjà ouvert, avalait la fenêtre et ignorait position et taille ; et le
+  « toujours devant » cherchait le titre « Valdar », que porte aussi la console. Maintenant :
+  profil Edge à part (`data/edge`), écrans lus avec leurs vraies coordonnées (DPI) et le vrai
+  écran principal, fenêtre d'Edge seulement (classe), sans bordure ni barre de titre, à la
+  taille exacte de l'écran 2, au premier plan, remise en place chaque seconde.
+- **Oreilles** : une erreur en répondant tuait le fil d'écoute (sourd ensuite) : elle est
+  maintenant affichée et l'écoute continue. Un enrôlement de voix abandonné s'arrête seul
+  après 2 minutes (avant, il avalait toutes les phrases).

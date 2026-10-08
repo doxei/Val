@@ -11,7 +11,7 @@ if not exist .venv\Scripts\python.exe (
 .venv\Scripts\python -c "import faster_whisper, silero_vad, sounddevice" >nul 2>&1
 if not errorlevel 1 goto installe
 echo Installation de l'ecoute : faster-whisper et Silero. Journal : tools\logs\ears_install.log
-.venv\Scripts\python -m pip install -e .[system,ears] > tools\logs\ears_install.log 2>&1
+.venv\Scripts\python -m pip install -e .[system,ears] -c tools\contraintes.txt > tools\logs\ears_install.log 2>&1
 if errorlevel 1 goto echec
 :installe
 call tools\valdar_chat.bat %*

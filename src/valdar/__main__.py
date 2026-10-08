@@ -319,7 +319,8 @@ def _start_interface(session):
     url = server.start()
     print(f"(interface : {url})")
     try:
-        open_window(url, ic.screen, ic.kiosk)
+        session.window_stop = open_window(url, ic.screen, ic.kiosk,
+                                          profile=session.cfg.storage_path("edge"))
     except Exception as exc:
         print(f"(fenêtre impossible à ouvrir : {exc} — ouvre {url} dans Edge)")
     return server
@@ -385,7 +386,13 @@ def _start_ears(session, debug: bool):
             if h is None:
                 return
             print("Valdar > ", end="", flush=True)
-            session.on_heard(h, show=lambda p: print(p, end="", flush=True))
+            try:
+                session.on_heard(h, show=lambda p: print(p, end="", flush=True))
+            except Exception as exc:          # une erreur ne doit jamais le rendre sourd
+                import traceback
+
+                print(f"\n(oreilles : erreur en répondant : {exc})")
+                traceback.print_exc()
             print("\nToi > ", end="", flush=True)
             gate.keep_engaged()
 

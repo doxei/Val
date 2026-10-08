@@ -19,7 +19,7 @@ if errorlevel 1 (
 )
 echo.
 echo === Dependances Python ===
-.venv\Scripts\python -m pip install -q -e .[system,ears]
+.venv\Scripts\python -m pip install -q -e .[system,ears] -c tools\contraintes.txt
 echo.
 echo === Ollama ===
 ollama --version

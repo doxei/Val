@@ -71,6 +71,7 @@ class Session:
         self._stop = threading.Event()
         rt.block_providers.append(self._home_block)
         self._threads: list[threading.Thread] = []
+        self.window_stop: Any = None
 
     # ============================================================ démarrage
     def start(self) -> None:
@@ -85,6 +86,8 @@ class Session:
 
     def stop(self) -> None:
         self._stop.set()
+        if self.window_stop is not None:
+            self.window_stop.set()
         if self.watch is not None:
             self.watch.stop()
         if self.mic is not None:
@@ -178,9 +181,17 @@ class Session:
             return "personne inconnue dans le foyer."
         self.enrolling = Enrollment(person, self.cfg.ident.voice_enroll_seconds)
 
+        started = time.time()
+
         def tap(seg: Any) -> bool:
             e = self.enrolling
             if e is None:
+                return False
+            if time.time() - started > 120:   # personne n'a parlé : on n'avale plus rien
+                self.cancel_enroll()
+                self.bus.publish("enroll", {"kind": "voix", "person": person,
+                                            "progress": 0.0, "done": True, "prints": 0,
+                                            "error": "temps écoulé"})
                 return False
             done = e.add(seg)
             self.bus.publish("enroll", {"kind": "voix", "person": person,
