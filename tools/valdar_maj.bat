@@ -4,8 +4,14 @@ cd /d "%~dp0"
 if exist tools\valdar_chat.bat goto racine
 cd ..
 :racine
-echo === Code de Valdar (GitHub doxei/Val) ===
-git pull
+echo === Code de Valdar (GitHub doxei/Val, branche main) ===
+git checkout main
+if errorlevel 1 (
+  echo Impossible de passer sur main : modifications locales ? Lance "git status".
+  pause
+  exit /b 1
+)
+git pull origin main
 if errorlevel 1 (
   echo git pull a echoue : modifications locales ? Lance "git status" pour voir.
   pause
