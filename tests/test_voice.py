@@ -1,4 +1,5 @@
-"""Voix : la chaîne de RAUB à l'identique, synthèse XTTS (simulée), lecteur, import des fichiers."""
+"""Voix : la chaîne d'effets historique à l'identique, synthèse XTTS (simulée), lecteur, import
+des fichiers."""
 import hashlib
 import time
 from pathlib import Path
@@ -9,7 +10,7 @@ from scipy.signal import resample_poly, sosfilt
 
 from valdar.config import load
 from valdar.config.loader import VoiceConfig
-from valdar.migrate import RaubImport
+from valdar.migrate import AncienImport
 from valdar.voice import (
     FakeTTS,
     NullSink,
@@ -23,8 +24,9 @@ from valdar.voice import (
 
 
 # ---------------------------------------------------------------------------------------------
-# Référence : code de RAUB (raub/io/voice.py, profil MEGATRON), recopié tel quel.
-def _raub_band_peaking(x, sr, fc, gain_db, q):
+# Référence : code d'origine de la chaîne d'effets de la voix de Valdar (`io/voice.py`, profil
+# MEGATRON), recopié tel quel.
+def _ref_band_peaking(x, sr, fc, gain_db, q):
     w0 = 2.0 * np.pi * fc / sr
     A = 10.0 ** (gain_db / 40.0)
     alpha = np.sin(w0) / (2.0 * q)
@@ -34,7 +36,7 @@ def _raub_band_peaking(x, sr, fc, gain_db, q):
     return sosfilt(sos, x)
 
 
-def _raub_high_shelf(x, sr, fc, gain_db):
+def _ref_high_shelf(x, sr, fc, gain_db):
     A = np.sqrt(10.0 ** (gain_db / 20.0))
     w0 = 2.0 * np.pi * fc / sr
     alpha = np.sin(w0) / np.sqrt(2.0)
@@ -53,7 +55,7 @@ def _raub_high_shelf(x, sr, fc, gain_db):
     return sosfilt(sos, x)
 
 
-def _raub_pitch_shift(x, semis):
+def _ref_pitch_shift(x, semis):
     f = 2.0 ** (semis / 12.0)
     n = len(x)
     if abs(f - 1.0) < 1e-3 or n < 16:
@@ -66,12 +68,12 @@ def _raub_pitch_shift(x, semis):
     return resample_poly(x2, n, len(x2)) if len(x2) else x
 
 
-class _Megatron:   # VoiceProfile MEGATRON de RAUB (champs utilisés par _character)
+class _Megatron:   # VoiceProfile MEGATRON d'origine (champs utilisés par _character)
     vibrato_hz, vibrato_depth, wobble_hz, wobble_depth = 1.2, 0.04, 0.0, 0.0
     nasal_gain, pitch_shift, echo_ms, echo_gain, lo_fi_bits = 0.0, -2.0, 0.0, 0.0, 15
 
 
-def _raub_character(audio, sr, profile=_Megatron):
+def _ref_character(audio, sr, profile=_Megatron):
     x = audio.astype(np.float64) / 32768.0
     t = np.arange(len(x)) / sr
     if profile.vibrato_hz and profile.vibrato_depth:
@@ -79,11 +81,11 @@ def _raub_character(audio, sr, profile=_Megatron):
     if profile.wobble_hz and profile.wobble_depth:
         x = x * (1.0 + profile.wobble_depth * np.sin(2 * np.pi * profile.wobble_hz * t))
     if profile.nasal_gain:
-        x = _raub_band_peaking(x, sr, 1700.0, profile.nasal_gain, 1.0)
+        x = _ref_band_peaking(x, sr, 1700.0, profile.nasal_gain, 1.0)
     if profile.pitch_shift:
-        x = _raub_pitch_shift(x, profile.pitch_shift)
+        x = _ref_pitch_shift(x, profile.pitch_shift)
     if sr >= 800:
-        x = _raub_high_shelf(x, sr, 400.0, -10.0)
+        x = _ref_high_shelf(x, sr, 400.0, -10.0)
     if profile.lo_fi_bits < 16:
         levels = 2 ** profile.lo_fi_bits
         x = np.round(x * (levels - 1)) / max(1, levels - 1)
@@ -103,16 +105,16 @@ def _speechlike(n, seed=0):
 
 
 @pytest.mark.parametrize("n", [24000, 36001, 10, 4801])
-def test_character_is_bit_exact_with_raub(n):
+def test_character_is_bit_exact_with_original(n):
     cfg = load()
     audio = _speechlike(n, seed=n)
     ours = apply(audio, 24000, cfg.voice.character)
-    raub = _raub_character(audio, 24000)
-    assert ours.shape == raub.shape
-    assert np.array_equal(ours, raub), "la voix doit sortir exactement comme chez RAUB"
+    ref = _ref_character(audio, 24000)
+    assert ours.shape == ref.shape
+    assert np.array_equal(ours, ref), "la voix doit sortir exactement comme à l'origine"
 
 
-def test_raub_pitch_setting_is_really_a_lowpass():
+def test_original_pitch_setting_is_really_a_lowpass():
     """Documenté dans l'avenant 3 : « pitch −2 » ne change pas la hauteur, il coupe au-dessus
     de fs/4. On le garde, c'est le timbre de la voix."""
     from valdar.voice.character import _resample_tone
@@ -184,7 +186,7 @@ def _voice_files(tmp_path: Path) -> tuple[Path, Path]:
     return mdir, ref
 
 
-def test_xtts_latents_once_and_raub_settings(tmp_path):
+def test_xtts_latents_once_and_original_settings(tmp_path):
     mdir, ref = _voice_files(tmp_path)
     model = _FakeXtts()
     be = XttsBackend(mdir, ref, loader=lambda d, dev: (model, model.config))
@@ -200,13 +202,13 @@ def test_xtts_latents_once_and_raub_settings(tmp_path):
     assert be.mode == "latents calculés une fois"
 
 
-def test_xtts_falls_back_to_raub_exact_call(tmp_path):
+def test_xtts_falls_back_to_original_exact_call(tmp_path):
     mdir, ref = _voice_files(tmp_path)
     model = _FakeXtts(broken_inference=True)
     be = XttsBackend(mdir, ref, loader=lambda d, dev: (model, model.config))
     be.synthesize("Test.")
     assert model.synth_calls == [("Test.", str(ref), "fr")]
-    assert be.mode == "appel identique à RAUB"
+    assert be.mode == "appel d'origine à l'identique"
 
 
 def test_xtts_missing_files_says_what_to_do(tmp_path):
@@ -262,13 +264,13 @@ def _tree_hash(root: Path) -> str:
     return h.hexdigest()
 
 
-def test_import_takes_raub_voice_and_nothing_personal(runtime_factory, tmp_path):
-    raub = tmp_path / "raub"
-    vdir = raub / "data" / "voice"
-    mdir = raub / "data" / "models" / "xtts-v2"
+def test_import_takes_voice_and_nothing_personal(runtime_factory, tmp_path):
+    ancien = tmp_path / "ancien"
+    vdir = ancien / "data" / "voice"
+    mdir = ancien / "data" / "models" / "xtts-v2"
     vdir.mkdir(parents=True)
     mdir.mkdir(parents=True)
-    (raub / "data" / "eleven.key").write_text("secret")
+    (ancien / "data" / "eleven.key").write_text("secret")
     for name in ("xtts_ref.wav", "ref_eleven_1.wav", "cal_Olivier_0.wav", "test_sony.wav"):
         (vdir / name).write_bytes(name.encode() * 50)
     rt = runtime_factory()
@@ -276,25 +278,26 @@ def test_import_takes_raub_voice_and_nothing_personal(runtime_factory, tmp_path)
     ref, xdir = data_dir / "voice" / "xtts_ref.wav", data_dir / "models" / "xtts-v2"
 
     def importer():
-        return RaubImport(raub, rt.facts, rt.stock, rt.reminders, rt.checklist,
-                          rt.cfg.storage_path(rt.cfg.atelier.pinouts), data_dir,
-                          voice_ref=ref, xtts_dir=xdir)
+        return AncienImport(ancien, rt.facts, rt.stock, rt.reminders, rt.checklist,
+                            rt.cfg.storage_path(rt.cfg.atelier.pinouts), data_dir,
+                            voice_ref=ref, xtts_dir=xdir)
 
     first = importer().run()
-    assert any(line.startswith("voix : voix de RAUB introuvable") for line in first)
+    assert any(line.startswith("voix : voix introuvable dans l'ancienne installation")
+               for line in first)
     for name in ("config.json", "model.pth", "dvae.pth", "mel_stats.pth", "vocab.json",
                  "speakers_xtts.pth"):
         (mdir / name).write_bytes(name.encode() * 100)
-    before = _tree_hash(raub)
+    before = _tree_hash(ancien)
     steps = []
     report = importer().run(on_step=steps.append)
     assert steps == ["voix"], "seule la voix restait à faire"
-    assert any("Valdar parlera avec la voix de RAUB" in line for line in report)
+    assert any("Valdar parlera avec sa voix" in line for line in report)
     assert ref.read_bytes() == (vdir / "xtts_ref.wav").read_bytes()
     assert (ref.parent / "ref_eleven_1.wav").is_file()
     assert (xdir / "model.pth").read_bytes() == (mdir / "model.pth").read_bytes()
     copied = {p.name for p in data_dir.rglob("*") if p.is_file()}
     assert "cal_Olivier_0.wav" not in copied, "jamais les enregistrements d'une personne"
     assert "eleven.key" not in copied and "test_sony.wav" not in copied
-    assert _tree_hash(raub) == before, "RAUB n'est jamais modifié"
+    assert _tree_hash(ancien) == before, "l'ancienne installation n'est jamais modifiée"
     assert all("déjà importé" in line for line in importer().run())

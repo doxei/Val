@@ -6,7 +6,8 @@
   + activation en cours (amorçage, contiguïté) + humeur.
 - Mémoire de travail : les quelques souvenirs les plus actifs.
 - Reprise du fil : la dernière conversation, pour reprendre là où on s'était arrêté.
-- Souvenirs hérités : conversations importées (RAUB, Claude), marquées par leur source.
+- Souvenirs hérités : conversations importées (Claude, ancienne installation), marquées par
+  leur source.
 """
 from __future__ import annotations
 
@@ -62,7 +63,7 @@ class Recollection:
         if len(txt) > max_chars:
             txt = txt[:max_chars].rsplit(" ", 1)[0] + "…"
         origin = {"claude": "conversation d'Olivier avec Claude",
-                  "raub": "souvenir de RAUB"}.get(self.source, "")
+                  "ancien": "souvenir de l'ancienne installation"}.get(self.source, "")
         where = f"{when_text(self.t, now)}" + (f", {origin}" if origin else "")
         if self.title:
             where += f", « {self.title} »"

@@ -1,4 +1,4 @@
-"""Outils de la phase 2 : ceux de RAUB sans risque, plus la lecture de son propre état.
+"""Outils de la phase 2 : les outils sans risque d'avant, plus la lecture de son propre état.
 
 Chaque outil reçoit ses dépendances par le `ToolContext` (aucun état global).
 """

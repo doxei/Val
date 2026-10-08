@@ -1,12 +1,19 @@
-"""Reprise des données de RAUB (avenant 2 §9). Lecture seule côté RAUB : rien n'y est modifié.
+"""Reprise des données de l'ancienne installation (avenant 2 §9). Lecture seule de ce côté-là :
+rien n'y est modifié.
 
 Importé : faits (memory.json), stock (stock.db), rappels à venir, checklist, base de pinouts,
-marqueurs d'affect (copiés pour la phase 7), et **la voix de RAUB** (avenant 3 §5) : la
-référence clonée, ses extraits sources et le modèle XTTS v2.
+marqueurs d'affect (copiés pour la phase 7), et **la voix** (avenant 3 §5) : la référence
+clonée, ses extraits sources et le modèle XTTS v2.
 Jamais importé : profils voix / visage (trop faibles), enregistrements de calibrage des
 personnes (`cal_*.wav`), clés et jetons. Les fichiers de voix sont pris sur une liste
 fermée, rien d'autre n'est lu dans ces dossiers.
 Chaque import n'est fait qu'une fois (journal data/imports.json).
+
+Compatibilité : les clés du journal (« memoire », « stock »…) n'ont jamais dépendu du nom de
+l'ancienne installation, un import déjà fait reste donc reconnu. Les marqueurs d'affect, copiés
+autrefois sous le nom « <dossier de l'ancienne installation>_affect.json », sont renommés en
+`ancien_affect.json` au premier passage. Les faits repris portent désormais la source « ancien »
+(les anciens faits gardent leur source ; un fait déjà connu n'est jamais ajouté deux fois).
 """
 from __future__ import annotations
 
@@ -29,7 +36,7 @@ def _read_json(path: Path) -> Any:
         return None
 
 
-# La voix de RAUB : liste fermée de fichiers.
+# La voix : liste fermée de fichiers.
 VOICE_FILES = ("xtts_ref.wav", "ref_eleven_1.wav", "ref_eleven_2.wav", "ref_eleven_3.wav")
 XTTS_FILES = ("config.json", "model.pth", "dvae.pth", "mel_stats.pth", "speakers_xtts.pth",
               "vocab.json", "hash.md5", "LICENSE.txt", "README.md")
@@ -54,12 +61,17 @@ def _copy_checked(src: Path, dst: Path) -> bool:
     return True
 
 
-class RaubImport:
-    def __init__(self, raub_root: Path, facts: Facts, stock: Stock, reminders: Reminders,
+# Nouveaux marqueurs écrits par l'import.
+SOURCE = "ancien"
+AFFECT_FILE = "ancien_affect.json"
+
+
+class AncienImport:
+    def __init__(self, root: Path, facts: Facts, stock: Stock, reminders: Reminders,
                  checklist: Checklist, pinouts_path: Path, data_dir: Path,
                  person: str = "olivier", voice_ref: Path | None = None,
                  xtts_dir: Path | None = None):
-        self.root = Path(raub_root)
+        self.root = Path(root)
         self.data = self.root / "data"
         self.facts = facts
         self.stock = stock
@@ -71,6 +83,18 @@ class RaubImport:
         self.voice_ref = Path(voice_ref) if voice_ref else self.data_dir / "voice" / "xtts_ref.wav"
         self.xtts_dir = Path(xtts_dir) if xtts_dir else self.data_dir / "models" / "xtts-v2"
         self.log_path = self.data_dir / "imports.json"
+        self.affect_path = self.data_dir / AFFECT_FILE
+
+    # ---------------------------------------------------------- compatibilité
+    def _legacy_affect(self) -> Path:
+        """Ancien nom des marqueurs d'affect copiés : préfixé par le nom du dossier source."""
+        return self.data_dir / f"{self.root.name.lower()}_affect.json"
+
+    def _adopt_legacy(self) -> None:
+        """Renomme côté Valdar les fichiers écrits sous l'ancien nom (rien à faire sinon)."""
+        old = self._legacy_affect()
+        if old != self.affect_path and old.is_file() and not self.affect_path.exists():
+            old.replace(self.affect_path)
 
     # --------------------------------------------------------------- journal
     def _done(self) -> dict[str, Any]:
@@ -85,7 +109,8 @@ class RaubImport:
     def run(self, force: bool = False,
             on_step: Callable[[str], None] | None = None) -> list[str]:
         if not self.data.is_dir():
-            return [f"dossier RAUB introuvable : {self.data}"]
+            return [f"dossier de l'ancienne installation introuvable : {self.data}"]
+        self._adopt_legacy()
         report = []
         done = self._done()
         for key, fn in (("memoire", self._memory), ("stock", self._stock),
@@ -114,7 +139,7 @@ class RaubImport:
         n = 0
         for it in items:
             if isinstance(it, dict) and str(it.get("text", "")).strip():
-                self.facts.remember(str(it["text"]), person=self.person, source="raub",
+                self.facts.remember(str(it["text"]), person=self.person, source=SOURCE,
                                     confidence=0.7, when=float(it.get("at") or time.time()))
                 n += 1
         return f"{n} souvenir(s) repris"
@@ -135,7 +160,7 @@ class RaubImport:
         for name, qty, unit, loc, threshold in rows:
             if name not in existing:
                 self.stock.set_item(name, float(qty or 0), unit or "", loc or "",
-                                    float(threshold or 0), note="repris de RAUB")
+                                    float(threshold or 0), note="repris de l'ancienne installation")
                 n += 1
         return f"{n} article(s) repris"
 
@@ -156,7 +181,7 @@ class RaubImport:
         if not isinstance(d, dict) or not d.get("items"):
             return "aucune checklist"
         if self.checklist.current.active():
-            return "checklist Valdar déjà active, celle de RAUB n'a pas été reprise"
+            return "checklist Valdar déjà active, l'ancienne n'a pas été reprise"
         self.checklist.create(str(d.get("titre", "")), [str(i.get("text", ""))
                                                          for i in d["items"]])
         done = [str(n + 1) for n, i in enumerate(d["items"]) if i.get("done")]
@@ -165,9 +190,14 @@ class RaubImport:
         return f"checklist « {d.get('titre', '')} » reprise"
 
     def _pinouts(self) -> str:
-        src = self.root / "raub" / "data" / "pinouts.json"
+        # La base de pinouts vit dans le paquet de l'ancienne installation, un sous-dossier
+        # qui porte le nom de l'installation elle-même (<dossier>/<nom>/data/pinouts.json).
+        src = self.root / self.root.name / "data" / "pinouts.json"
         if not src.is_file():
-            return "aucune base de pinouts"
+            found = sorted(self.root.glob("*/data/pinouts.json"))
+            if not found:
+                return "aucune base de pinouts"
+            src = found[0]
         self.pinouts_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, self.pinouts_path)
         n = len(_read_json(self.pinouts_path) or {})
@@ -177,18 +207,18 @@ class RaubImport:
         src = self.data / "affect.json"
         if not src.is_file():
             return "aucun affect"
-        dst = self.data_dir / "raub_affect.json"
-        shutil.copyfile(src, dst)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, self.affect_path)
         return "marqueurs par personne et activité copiés (utilisés en phase 7)"
 
     def _voice(self) -> str:
-        """La voix construite pour RAUB devient celle de Valdar (avenant 3 §5)."""
+        """La voix construite par Olivier devient celle de Valdar (avenant 3 §5)."""
         vdir = self.data / "voice"
         mdir = self.data / "models" / "xtts-v2"
         ref = vdir / "xtts_ref.wav"
         missing = [f for f in XTTS_REQUIRED if not (mdir / f).is_file()]
         if not ref.is_file() or missing:
-            raise _NotNow("voix de RAUB introuvable ("
+            raise _NotNow("voix introuvable dans l'ancienne installation ("
                           + ", ".join((["xtts_ref.wav"] if not ref.is_file() else []) + missing)
                           + ")")
         copied = int(_copy_checked(ref, self.voice_ref))
@@ -202,4 +232,4 @@ class RaubImport:
                 copied += _copy_checked(src, self.xtts_dir / name)
                 size += src.stat().st_size
         return (f"référence clonée + modèle XTTS v2 repris ({size / 1e9:.1f} Go, {copied} "
-                "fichier(s) copié(s), tailles vérifiées) : Valdar parlera avec la voix de RAUB")
+                "fichier(s) copié(s), tailles vérifiées) : Valdar parlera avec sa voix")

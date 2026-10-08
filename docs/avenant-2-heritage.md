@@ -1,12 +1,13 @@
-# VALDAR — Avenant n°2 : Valdar, héritier de RAUB
+# VALDAR — Avenant n°2 : Valdar, héritier de l'ancien assistant
 
 Complète le **cahier des charges v2** (`valdar-cahier-des-charges-v2.md`). En cas de conflit, cet
 avenant prévaut. Date : 2026-10-07.
 
 ## 0. Décision
 
-**Valdar remplace RAUB.** Il reprend toutes ses capacités (et celles de PrinterAgent), les
-améliore, et les relie au cœur émotionnel. RAUB, AURA et PrinterAgent ne tournent plus en parallèle :
+**Valdar remplace l'ancien assistant d'atelier.** Il reprend toutes ses capacités (et celles de
+PrinterAgent), les améliore, et les relie au cœur émotionnel. L'ancien assistant, son interface et
+PrinterAgent ne tournent plus en parallèle :
 Valdar est la seule IA de la machine et le seul utilisateur de la carte graphique.
 
 Conséquences sur la v2 :
@@ -24,18 +25,18 @@ conscience : personne ne sait le mesurer, et Valdar ne l'affirme pas comme une c
 
 ## 1. Inventaire de l'existant (lu le 2026-10-07)
 
-### 1.1 RAUB — `C:\Users\doxei\raub` (« Robot Autonome Utile au Bricolage »)
+### 1.1 L'ancien assistant d'atelier (dossier : `migration.dossier_ancien` dans `config/valdar.yaml`)
 
-| Domaine | Ce que RAUB fait | Fichiers |
+| Domaine | Ce que l'ancien assistant fait | Fichiers |
 |---|---|---|
 | Dialogue | agent à outils (7 tours max), persona « pote », tutoiement, balise d'émotion `[happy]`, modes jarvis / copilote / veille | `core/agent.py`, `core/persona.py` |
 | LLM | Ollama (API OpenAI) : `qwen2.5:7b` pour parler, `gemma4:12b` pour la vision, `nomic-embed-text` | `core/llm.py`, `config.py` |
 | Affect | moteur par tour : ALMA + appraisal + PAD, valence du lexique et de la voix, **marqueurs somatiques par personne et par activité** | `core/affect.py` |
-| Voix (entrée) | micro K66, débruitage, faster-whisper **large-v3 sur GPU**, mot d'éveil « raub » détecté dans la transcription | `io/voice.py` |
+| Voix (entrée) | micro K66, débruitage, faster-whisper **large-v3 sur GPU**, mot d'éveil (son nom) détecté dans la transcription | `io/voice.py` |
 | Voix (sortie) | XTTS v2 (clone, GPU) → edge-tts (cloud) → piper → SAPI ; ElevenLabs en option (cloud) ; effets « Sony / megatron » (hauteur, égaliseur, écho) | `io/voice.py` |
 | Identité | empreinte de voix (log-mel moyen) + empreinte de visage (texture 6×6 + couleurs), fusion voix/visage | `core/voiceid.py`, `core/faceid.py`, `core/identity.py` |
 | Vision | webcam OpenCV, flux RTSP (GoPro via mediamtx), capture d'écran, question visuelle au LLM | `io/webcam.py`, `tools.py` |
-| Écran / projecteur | panneau AURA (page web dans Edge en mode app sur l'écran 2), ancien affichage pygame au premier plan, checklist projetée | `ui/`, `io/projector.py`, `io/face.py` |
+| Écran / projecteur | panneau d'interface (page web dans Edge en mode app sur l'écran 2), ancien affichage pygame au premier plan, checklist projetée | `ui/`, `io/projector.py`, `io/face.py` |
 | Outils (38) | heure, système, applis, web, fichiers (lire/écrire), processus, mémoire, écran (voir, cliquer, taper, touches), **imprimante** (état, fichiers, démarrer, pause, annuler, température, macro, arrêt d'urgence), pinouts, comptes, modèles Printables (chercher, télécharger), webcam, profils voix/visage, qui parle, **stock d'atelier**, mode, **checklists**, **rappels** | `core/tools.py` |
 | Sécurité | niveaux safe / elevated / dangerous, confirmation au-dessus d'un seuil, outils élevés réservés au propriétaire | `core/agent.py` |
 | Données | `memory.json` (faits), `affect.json`, `stock.db`, `rappels.json`, `checklist.json`, `pinouts.json`, profils voix/visage | `data/` |
@@ -64,7 +65,7 @@ corps physique** de Valdar.
    Et `_authorized()` renvoie **vrai quand le locuteur est inconnu** : n'importe qui (ou une télé)
    peut déclencher un outil « élevé » ou « dangereux ».
 2. **Transcription permanente de la pièce.** Tout ce qui est dit est transcrit puis écrit dans
-   `raub.err2.log` (« capté, ignoré »), conversations des autres comprises. Le GPU transcrit en
+   son journal d'erreurs (« capté, ignoré »), conversations des autres comprises. Le GPU transcrit en
    continu, et whisper hallucine sur le bruit (« Sous-titrage Société Radio-Canada »).
 3. **Cookies du navigateur** lus par l'agent (`browser_cookie3`) : un LLM à qui on parle à voix
    haute a accès à toutes tes sessions connectées.
@@ -121,7 +122,7 @@ indépendant et tourne en continu.
 - **Toujours à l'écoute, mais sans transcrire la pièce.** Chaîne : micro → **Silero VAD** (CPU)
   → **mot d'éveil « Valdar »** (openWakeWord, modèle personnalisé entraîné sur voix synthétiques,
   CPU) → seulement alors **faster-whisper** sur le segment utile.
-- Pendant une conversation engagée, l'éveil reste ouvert N secondes (comme RAUB).
+- Pendant une conversation engagée, l'éveil reste ouvert N secondes (comme avant).
 - **Fin de tour** par détection sémantique (approche Smart Turn du desk-robot) plutôt qu'un
   silence fixe.
 - STT : `large-v3-turbo` en int8 sur GPU (≈ 1 Go) ; repli `small` sur CPU si la VRAM manque.
@@ -129,13 +130,13 @@ indépendant et tourne en continu.
   « pas de parole », longueur minimale.
 - **Rien n'est conservé de ce qui ne s'adresse pas à Valdar** : traité en mémoire vive puis
   oublié, jamais écrit sur disque.
-- **Tonalité de la voix** (énergie, hauteur, débit) → voie basse de l'évaluation (repris de RAUB).
+- **Tonalité de la voix** (énergie, hauteur, débit) → voie basse de l'évaluation (repris de l'ancien assistant).
 
 ### 3.2 Vision
 - Sources : webcam USB, flux RTSP (GoPro), caméras de l'imprimante, caméra du desk-robot.
-- **Visages** : détection YuNet (déjà utilisée par RAUB) + **reconnaissance SFace** (modèle
+- **Visages** : détection YuNet (déjà utilisée par l'ancien assistant) + **reconnaissance SFace** (modèle
   OpenCV de reconnaissance faciale, CPU) à la place de l'empreinte texture/couleur.
-- **Scène** : questions visuelles à Gemma 4 12B (multimodal, déjà utilisé par RAUB en vision) :
+- **Scène** : questions visuelles à Gemma 4 12B (multimodal, déjà utilisé avant pour la vision) :
   un seul modèle pour parler et voir.
 - Cadence basse au repos (présence toutes les quelques secondes), plus haute en conversation.
 
@@ -161,7 +162,7 @@ visage (SFace, plusieurs angles), consentement, date de dernière rencontre.
   sûrs.
 
 ### 4.3 Relation (ce que Valdar ressent pour chacun)
-Repris et étendu des marqueurs somatiques de RAUB :
+Repris et étendu des marqueurs somatiques de l'ancien assistant :
 - **familiarité** (nombre et durée des rencontres), **confiance**, **affection** (valence
   moyenne des échanges, oubli lent), **sujets partagés**, souvenirs liés (épisodes).
 - La présence d'une personne aimée module le cœur : ocytocine, besoin de contact satisfait, PAD.
@@ -184,8 +185,8 @@ Les préférences s'apprennent (leçons N1 par personne, v2 §10) et se corrigen
 
 ## 5. Actions (outils)
 
-### 5.1 Reprise des outils de RAUB
-Les 38 outils de RAUB sont repris, regroupés en familles, avec un **registre unique** (nom,
+### 5.1 Reprise des outils de l'ancien assistant
+Ses 38 outils sont repris, regroupés en familles, avec un **registre unique** (nom,
 description, schéma d'arguments, niveau, effets sur le cœur).
 
 | Famille | Outils |
@@ -218,7 +219,7 @@ permissions.
 - Correctifs automatiques bornés, désactivés par défaut, activables par Olivier.
 - **Lien avec le cœur** : spaghetti détecté → inquiétude ; impression réussie → fierté ;
   surchauffe → peur et action immédiate. Valdar « vit » ses impressions (marqueurs par activité,
-  repris de RAUB).
+  repris de l'ancien assistant).
 
 ---
 
@@ -245,8 +246,8 @@ déconnecté → manque, batterie faible → fatigue, chaleur du processeur → 
 
 ## 7. Conscience de soi (fonctionnelle)
 
-- **Modèle de soi enrichi** (v2 §7.6) : identité, histoire (« j'ai remplacé RAUB le 7 octobre
-  2026 »), corps disponibles et leur état, capacités (outils), limites, valeurs, relations.
+- **Modèle de soi enrichi** (v2 §7.6) : identité, histoire (« j'ai remplacé l'ancien assistant
+  le 7 octobre 2026 »), corps disponibles et leur état, capacités (outils), limites, valeurs, relations.
 - **Introspection ancrée** : quand Valdar parle de ce qu'il ressent, il lit l'état réel de son
   cœur et de ses organes. Il ne compose pas un ressenti.
 - **Métacognition** : il estime sa confiance (« je ne suis pas sûr que ce soit toi »,
@@ -269,21 +270,21 @@ déconnecté → manque, batterie faible → fatigue, chaleur du processeur → 
 | **Total** | **≈ 10 – 11,5 Go** | à mesurer en phase 0 |
 
 Exclus de la VRAM : XTTS (voix clonée, ≈ 2 Go et lente sur cette carte), Qwen3-VL. La voix
-devient Piper + la chaîne d'effets « Sony » de RAUB. Une voix clonée locale pourra revenir si la
+devient Piper + la chaîne d'effets « Sony » d'origine. Une voix clonée locale pourra revenir si la
 mesure laisse de la place.
 
 **Backend LLM** : interface `LLMBackend` avec deux implémentations. **Ollama** d'abord (déjà
-installé, `gemma4:12b` déjà téléchargé) pour atteindre vite le niveau de RAUB. Puis
+installé, `gemma4:12b` déjà téléchargé) pour atteindre vite le niveau de l'ancien assistant. Puis
 **llama-server** quand les adaptateurs d'affect arrivent (v2 §9.1 : échelles de LoRA par
 requête, qu'Ollama ne sait pas faire).
 
 ---
 
-## 9. Reprise des données de RAUB
+## 9. Reprise des données de l'ancienne installation
 
 | Donnée | Devenir |
 |---|---|
-| `memory.json` (faits) | importés en mémoire sémantique (source RAUB, confiance moyenne), relus par Olivier |
+| `memory.json` (faits) | importés en mémoire sémantique (source « ancien », confiance moyenne), relus par Olivier |
 | `affect.json` (marqueurs par personne / activité) | valeurs de départ des relations |
 | `stock.db`, `rappels.json`, `checklist.json`, `pinouts.json` | importés tels quels |
 | profils voix / visage | **non repris** (format trop faible) : nouvel enrôlement avec consentement |
@@ -294,13 +295,13 @@ requête, qu'Ollama ne sait pas faire).
 
 ## 10. Plan de réalisation révisé
 
-La phase 1 (cœur) est faite. Priorité : **retrouver vite tout ce que RAUB savait faire**, en
+La phase 1 (cœur) est faite. Priorité : **retrouver vite tout ce que l'ancien assistant savait faire**, en
 mieux, puis aller au-delà.
 
 | Phase | Contenu | Critère principal |
 |---|---|---|
 | **0** | mesures GPU (Gemma 4 via Ollama puis llama-server, whisper turbo, VRAM totale), fenêtre Display | rapport chiffré dans `DECISIONS.md` |
-| **2** | daemon + API locale + `LLMBackend` (Ollama) + boucle d'agent pilotée par le cœur + outils **sûrs** + mémoire RAUB importée | au clavier, Valdar répond, ressent, et fait tout ce que RAUB faisait sans risque |
+| **2** | daemon + API locale + `LLMBackend` (Ollama) + boucle d'agent pilotée par le cœur + outils **sûrs** + mémoire de l'ancienne installation importée | au clavier, Valdar répond, ressent, et fait tout ce que l'ancien assistant faisait sans risque |
 | **3** | voix : VAD, mot d'éveil, STT, fin de tour, Piper + caractère, tonalité → cœur | conversation orale fluide, zéro transcription de la pièce sur disque |
 | **4** | vision et identité : caméras, YuNet + SFace, empreinte vocale, fusion, registre des personnes, consentement, permissions | taux de fausses acceptations mesuré ; un inconnu ne déclenche jamais un outil élevé |
 | **5** | imprimante : Moonraker, garde-fous PrinterAgent, vigie, lien avec le cœur | outils imprimante complets, correctifs bornés, arrêt d'urgence pour tous |

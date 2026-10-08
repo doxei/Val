@@ -1,5 +1,5 @@
 @echo off
-rem Donne a Valdar la voix de RAUB : installe XTTS (une seule fois), reprend la voix, la teste.
+rem Donne a Valdar sa voix : installe XTTS (une seule fois), reprend la voix, la teste.
 cd /d "%~dp0.."
 if not exist tools\logs mkdir tools\logs
 if not exist .venv\Scripts\python.exe (
@@ -16,7 +16,7 @@ if errorlevel 1 goto echec
 .venv\Scripts\python -m pip install -e .[system,voice] >> tools\logs\voice_install.log 2>&1
 if errorlevel 1 goto echec
 :installe
-.venv\Scripts\python -m valdar import-raub
+.venv\Scripts\python -m valdar import-ancien
 .venv\Scripts\python -m valdar voix %*
 pause
 exit /b 0

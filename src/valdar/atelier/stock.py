@@ -1,4 +1,5 @@
-"""Réserve de l'atelier (filaments, vis, composants) — repris de RAUB, même schéma SQLite."""
+"""Réserve de l'atelier (filaments, vis, composants) — reprise de l'ancienne installation,
+même schéma SQLite."""
 from __future__ import annotations
 
 import sqlite3

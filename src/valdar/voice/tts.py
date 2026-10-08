@@ -1,9 +1,10 @@
-"""Synthèse vocale. Backend principal : XTTS v2 local, avec la voix clonée de RAUB.
+"""Synthèse vocale. Backend principal : XTTS v2 local, avec la voix clonée d'origine.
 
-Même modèle, même référence, mêmes réglages que RAUB (`raub/io/voice.py`). Une seule
+Même modèle, même référence, mêmes réglages que le code d'origine de la voix. Une seule
 différence, sans effet sur le son : les latents de la voix sont calculés une fois au
-chargement au lieu d'être recalculés à chaque phrase (RAUB passait par `synthesize`, qui
-refait le clonage à chaque appel). Si cette voie échoue, on retombe sur l'appel exact de RAUB.
+chargement au lieu d'être recalculés à chaque phrase (l'ancien code passait par `synthesize`,
+qui refait le clonage à chaque appel). Si cette voie échoue, on retombe sur l'appel d'origine,
+à l'identique.
 """
 from __future__ import annotations
 
@@ -55,7 +56,7 @@ def split_sentences(text: str, max_chars: int = 230) -> list[str]:
 
 # --------------------------------------------------------------------------- XTTS
 def _patch_transformers() -> None:
-    """Même correctif que RAUB pour transformers 4.57 (coqui-tts teste torchcodec)."""
+    """Même correctif qu'avant pour transformers 4.57 (coqui-tts teste torchcodec)."""
     import transformers.utils.import_utils as iu
 
     if not hasattr(iu, "is_torchcodec_available"):
@@ -119,7 +120,8 @@ class XttsBackend:
             missing = self.check_files()
             if missing:
                 raise TTSError("fichiers de voix absents : " + ", ".join(missing)
-                               + " — lance tools\\valdar_voix.bat (il les reprend de RAUB)")
+                               + " — lance tools\\valdar_voix.bat (il les reprend de "
+                               "l'ancienne installation)")
             t0 = time.time()
             model, cfg = self._loader(self.model_dir, self.device)
             conf = getattr(model, "config", None) or cfg
@@ -135,7 +137,7 @@ class XttsBackend:
                 self.mode = "latents calculés une fois"
             except Exception:
                 self._voice = None
-                self.mode = "appel identique à RAUB"
+                self.mode = "appel d'origine à l'identique"
             self.model, self.cfg = model, cfg
             self.load_seconds = time.time() - t0
 
@@ -148,7 +150,7 @@ class XttsBackend:
                     text, self.language, self._voice[0], self._voice[1], **self._settings))
             except (TypeError, AttributeError):
                 self._voice = None
-                self.mode = "appel identique à RAUB"
+                self.mode = "appel d'origine à l'identique"
         if out is None:
             out = self._infer(lambda: self.model.synthesize(
                 text, self.cfg, speaker_wav=str(self.reference), language=self.language))

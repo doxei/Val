@@ -1,4 +1,5 @@
-"""Rappels et alarmes, avec compréhension des moments en français (repris de RAUB, corrigé)."""
+"""Rappels et alarmes, avec compréhension des moments en français (repris de l'ancienne
+installation, corrigé)."""
 from __future__ import annotations
 
 import json

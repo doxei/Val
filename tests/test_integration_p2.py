@@ -1,4 +1,5 @@
-"""Phase 2 : Ollama (simulé), imprimante (simulée), import RAUB, runtime continu."""
+"""Phase 2 : Ollama (simulé), imprimante (simulée), import de l'ancienne installation, runtime
+continu."""
 import hashlib
 import json
 import sqlite3
@@ -12,7 +13,7 @@ from valdar.config.loader import Identity, LLMConfig, PrinterConfig
 from valdar.devices.moonraker import Moonraker
 from valdar.llm.backend import ChatResult, GenParams
 from valdar.llm.ollama import OllamaBackend
-from valdar.migrate import RaubImport
+from valdar.migrate import AncienImport
 
 
 # ------------------------------------------------------------------ Ollama
@@ -92,10 +93,11 @@ def test_printer_offline_is_reported_not_raised():
     assert "injoignable" in pr.status_text()
 
 
-# ------------------------------------------------------------------ import RAUB
-def _fake_raub(root: Path) -> None:
+# ------------------------------------------------------- import de l'ancienne installation
+def _fake_ancien(root: Path) -> None:
+    """Ancienne installation : data/ à la racine, pinouts dans le paquet <racine>/<nom>/data."""
     data = root / "data"
-    (root / "raub" / "data").mkdir(parents=True)
+    (root / root.name / "data").mkdir(parents=True)
     data.mkdir(parents=True)
     (data / "memory.json").write_text(json.dumps([
         {"text": "Olivier a une CR-10S sous Klipper", "at": 1790000000, "hits": 3},
@@ -115,7 +117,7 @@ def _fake_raub(root: Path) -> None:
         {"text": "flasher", "done": True}, {"text": "câbler", "done": False}]}),
         encoding="utf-8")
     (data / "affect.json").write_text("{}", encoding="utf-8")
-    (root / "raub" / "data" / "pinouts.json").write_text(
+    (root / root.name / "data" / "pinouts.json").write_text(
         json.dumps({"octopus": {"titre": "BTT Octopus"}}), encoding="utf-8")
 
 
@@ -128,14 +130,14 @@ def _hash_tree(root: Path) -> str:
     return h.hexdigest()
 
 
-def test_import_raub(runtime_factory, tmp_path):
-    raub = tmp_path / "raub"
-    _fake_raub(raub)
-    before = _hash_tree(raub)
+def test_import_ancien(runtime_factory, tmp_path):
+    ancien = tmp_path / "ancien"
+    _fake_ancien(ancien)
+    before = _hash_tree(ancien)
     rt = runtime_factory()
     data_dir = rt.cfg.storage_path("x").parent
-    imp = RaubImport(raub, rt.facts, rt.stock, rt.reminders, rt.checklist,
-                     rt.cfg.storage_path(rt.cfg.atelier.pinouts), data_dir)
+    imp = AncienImport(ancien, rt.facts, rt.stock, rt.reminders, rt.checklist,
+                       rt.cfg.storage_path(rt.cfg.atelier.pinouts), data_dir)
     report = imp.run()
     assert any("2 souvenir" in line for line in report)
     assert rt.facts.count() == 2
@@ -146,7 +148,29 @@ def test_import_raub(runtime_factory, tmp_path):
     again = [line for line in imp.run() if not line.startswith("voix")]
     assert again and all("déjà importé" in line for line in again)
     assert rt.facts.count() == 2, "un second import ne double rien"
-    assert _hash_tree(raub) == before, "les fichiers de RAUB ne sont jamais modifiés"
+    assert (data_dir / "ancien_affect.json").is_file()
+    assert _hash_tree(ancien) == before, "les fichiers de l'ancienne installation ne bougent pas"
+
+
+def test_import_ancien_keeps_legacy_markers(runtime_factory, tmp_path):
+    """Données déjà importées par une version précédente : rien n'est refait, et les marqueurs
+    d'affect copiés sous l'ancien nom (<nom du dossier>_affect.json) sont adoptés."""
+    vieux = tmp_path / "vieux"
+    _fake_ancien(vieux)
+    rt = runtime_factory()
+    data_dir = rt.cfg.storage_path("x").parent
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "vieux_affect.json").write_text('{"olivier": 1}', encoding="utf-8")
+    (data_dir / "imports.json").write_text(json.dumps(
+        {k: {"at": 0, "info": "fait"} for k in ("memoire", "stock", "rappels", "checklist",
+                                                 "pinouts", "affect")}), encoding="utf-8")
+    imp = AncienImport(vieux, rt.facts, rt.stock, rt.reminders, rt.checklist,
+                       rt.cfg.storage_path(rt.cfg.atelier.pinouts), data_dir)
+    report = [line for line in imp.run() if not line.startswith("voix")]
+    assert len(report) == 6 and all("déjà importé" in line for line in report)
+    assert rt.facts.count() == 0, "rien n'est importé deux fois"
+    assert not (data_dir / "vieux_affect.json").exists()
+    assert (data_dir / "ancien_affect.json").read_text(encoding="utf-8") == '{"olivier": 1}'
 
 
 # ------------------------------------------------------------------ runtime

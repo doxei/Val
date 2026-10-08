@@ -23,7 +23,7 @@ class Sink(Protocol):
 
 
 class SoundDeviceSink:
-    """Sortie audio par défaut de Windows (comme RAUB)."""
+    """Sortie audio par défaut de Windows (comme avant)."""
 
     def play(self, audio: np.ndarray, sr: int) -> None:
         import sounddevice as sd

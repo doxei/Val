@@ -1,6 +1,6 @@
 """Micro : capture continue (sounddevice), rééchantillonnée en 16 kHz mono, en mémoire vive.
 
-Choix du micro comme RAUB : le K66 en priorité, en MME d'abord (mesuré stable sous Windows).
+Choix du micro comme avant : le K66 en priorité, en MME d'abord (mesuré stable sous Windows).
 """
 from __future__ import annotations
 

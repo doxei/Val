@@ -1,6 +1,6 @@
 """Ouvrir l'interface sur le projecteur (Windows) : Edge en mode application, toujours devant.
 
-Comme le panneau AURA de RAUB : Edge `--app` (une fenêtre sans barre d'adresse), placée sur
+Comme l'ancienne interface : Edge `--app` (une fenêtre sans barre d'adresse), placée sur
 l'écran voulu (2 = le projecteur), puis gardée au premier plan.
 """
 from __future__ import annotations

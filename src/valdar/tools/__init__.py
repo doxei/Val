@@ -1,4 +1,4 @@
-"""Outils de Valdar (repris de RAUB) et politique de permissions."""
+"""Outils de Valdar (repris de l'ancienne installation) et politique de permissions."""
 from valdar.tools.registry import (
     DANGEROUS,
     ELEVATED,

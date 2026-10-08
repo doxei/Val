@@ -221,8 +221,8 @@ font partie. C'est la version matérielle du §1, avec la même interface.
 | Phase | Contenu | État |
 |---|---|---|
 | 1 | cœur continu | fait |
-| 2 | dialogue au clavier, outils sûrs, mémoire de RAUB | fait, à essayer |
-| 2b | voix de RAUB | fait, à essayer |
+| 2 | dialogue au clavier, outils sûrs, mémoire de l'ancienne installation | fait, à essayer |
+| 2b | voix d'origine | fait, à essayer |
 | 2-bis | boucle corps ↔ cœur, socle de valeurs | **fait (cet avenant)** |
 | **0** | mesures sur la machine : Gemma, XTTS, whisper, VRAM | attend les essais d'Olivier |
 | **2c** | mémoire de contexte temporel, mémoire de travail, journal épisodique, reprise du fil, réactivation des souvenirs | fait |

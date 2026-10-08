@@ -290,7 +290,7 @@ class EarsConfig(_Strict):
     end_silence_ms: int = Field(default=700, ge=200)
     min_segment_seconds: float = Field(default=0.4, ge=0.1)
     max_segment_seconds: float = Field(default=20.0, gt=1.0)
-    engaged_seconds: float = Field(default=14.0, ge=0.0)      # comme RAUB
+    engaged_seconds: float = Field(default=14.0, ge=0.0)      # comme avant
     barge_in_frames: int = Field(default=8, ge=1)             # ~250 ms de parole : il se tait
     barge_in_margin_db: float = Field(default=10.0, ge=0.0)   # au-dessus de l'écho de sa voix
     echo_tau_seconds: float = Field(default=1.0, gt=0.0)
@@ -715,15 +715,20 @@ class AtelierConfig(_Strict):
     memory_db: str = "memoire.db"
 
 
+class MigrationConfig(_Strict):
+    """Reprise de l'ancienne installation (`valdar import-ancien`)."""
+    dossier_ancien: str = r"C:\Users\doxei\raub"   # dossier source par défaut (jamais modifié)
+
+
 # ----------------------------------------------------------------------------- voix
 class VoiceCharacter(_Strict):
-    """Chaîne d'effets de RAUB (profil « megatron »), reproduite à l'identique (avenant 3 §5)."""
+    """Chaîne d'effets historique de la voix (profil « megatron »), à l'identique (avenant 3 §5)."""
     am_hz: float = Field(default=1.2, ge=0.0)          # modulation d'amplitude lente
     am_depth: float = Field(default=0.02, ge=0.0, le=0.5)
     wobble_hz: float = Field(default=0.0, ge=0.0)
     wobble_depth: float = Field(default=0.0, ge=0.0, le=0.5)
     nasal_gain_db: float = 0.0                         # pic à 1,7 kHz
-    pitch_shift: float = -2.0    # nom de RAUB ; agit en fait comme un passe-bas à fs/4
+    pitch_shift: float = -2.0    # nom historique ; agit en fait comme un passe-bas à fs/4
     high_shelf_hz: float = Field(default=400.0, gt=0.0)
     high_shelf_db: float = -10.0
     echo_ms: float = Field(default=0.0, ge=0.0)
@@ -762,6 +767,7 @@ class ValdarConfig(_Strict):
     appraisal_fast: AppraisalFastConfig = AppraisalFastConfig()
     printer: PrinterConfig = PrinterConfig()
     atelier: AtelierConfig = AtelierConfig()
+    migration: MigrationConfig = MigrationConfig()
     voice: VoiceConfig = VoiceConfig()
     episodic: EpisodicConfig = EpisodicConfig()
     printwatch: PrintWatchConfig = PrintWatchConfig()

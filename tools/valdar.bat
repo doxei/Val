@@ -48,7 +48,7 @@ if errorlevel 1 (
 )
 if not exist data\imports.json (
   echo Premiere fois : je reprends les donnees de l'ancienne installation...
-  .venv\Scripts\python -m valdar import-raub
+  .venv\Scripts\python -m valdar import-ancien
 )
 
 set OPTIONS=--interface

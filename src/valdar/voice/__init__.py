@@ -1,4 +1,4 @@
-"""Voix de Valdar : celle de RAUB (XTTS v2 + chaîne « megatron »), avenant 3 §5."""
+"""Voix de Valdar : sa voix d'origine (XTTS v2 + chaîne « megatron »), avenant 3 §5."""
 from __future__ import annotations
 
 from valdar.config.loader import ValdarConfig

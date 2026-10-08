@@ -1,4 +1,4 @@
-# VALDAR — Avenant n°3 : dynamique temporelle, portier sensoriel, voix de RAUB
+# VALDAR — Avenant n°3 : dynamique temporelle, portier sensoriel, voix d'origine
 
 **Date** : 7 octobre 2026 (soir). **Statut** : validé par Olivier.
 **Portée** : complète le cahier des charges v2 et l'avenant 2. En cas de conflit, cet avenant
@@ -12,7 +12,7 @@ et phase 3), plan de réalisation (avenant 2 §10).
 Proposition d'Olivier : des réseaux récurrents biologiques (ESN, SNN) pour donner à Valdar une
 mémoire et une émotion qui ont une vraie dynamique dans le temps, et un étage sensoriel qui ne
 réveille le cerveau (Gemma) que quand c'est utile. Plus, en suivant : **garder la voix
-construite pour RAUB**.
+construite par Olivier pour l'ancien assistant**.
 
 | Idée | Décision | Où |
 |---|---|---|
@@ -23,7 +23,7 @@ construite pour RAUB**.
 | Émotion « émergente » d'un réseau récurrent | **Non comme cœur** : le cœur est déjà un système dynamique continu non linéaire, lisible et testé | §3 |
 | Hystérésis de l'humeur | **Oui** : manque réel (on a l'inertie, pas la bistabilité) | §3 |
 | ESN | **Oui, comme capteur expérimental** (« pressentiment »), mesuré, retiré s'il n'apporte rien | §4 |
-| Voix de RAUB | **Gardée à l'identique**, déjà portée dans cette livraison | §5 |
+| Voix d'origine | **Gardée à l'identique**, déjà portée dans cette livraison | §5 |
 
 ---
 
@@ -250,11 +250,11 @@ phase « sommeil » de l'apprentissage (v2 §10).
 
 ---
 
-## 5. Voix : celle de RAUB, conservée
+## 5. Voix : celle d'origine, conservée
 
-### 5.1 Ce qu'est la voix de RAUB (relevé dans son code et ses données)
+### 5.1 Ce qu'est cette voix (relevé dans le code et les données de l'ancienne installation)
 - **Synthèse** : XTTS v2 en local, sur la carte graphique, par clonage depuis
-  `data/voice/xtts_ref.wav`. Cette référence a été faite pour RAUB à partir de trois extraits
+  `data/voice/xtts_ref.wav`. Cette référence a été faite pour l'ancien assistant à partir de trois extraits
   (`ref_eleven_1..3.wav`) d'une voix conçue sur ElevenLabs. Le service ElevenLabs n'est plus
   appelé : tout est local.
 - **Caractère** (profil « megatron ») appliqué ensuite :
@@ -269,7 +269,7 @@ phase « sommeil » de l'apprentissage (v2 §10).
 - **Particularité découverte** : le « pitch −2 » ne change pas la hauteur. Il sous-échantillonne
   puis ré-échantillonne à la longueur d'origine, ce qui fait un **passe-bas à 6 kHz**. Ça fait
   partie du timbre « radio » qu'Olivier a validé : **gardé tel quel**, et documenté.
-- **Secours** de RAUB : edge-tts (service en ligne), puis Piper, puis SAPI. **Non repris** : une
+- **Secours** de l'ancien assistant : edge-tts (service en ligne), puis Piper, puis SAPI. **Non repris** : une
   autre voix n'est pas sa voix. Si XTTS ne démarre pas, Valdar le dit et répond par écrit.
 
 ### 5.2 Décision
@@ -277,19 +277,19 @@ Valdar parle avec **exactement** cette voix : même modèle, même référence, 
 génération, même chaîne d'effets.
 
 ### 5.3 Réalisé dans cette livraison
-- **Import** (`valdar import-raub`, étape « voix ») :
+- **Import** (`valdar import-ancien`, étape « voix ») :
   - copie de `xtts_ref.wav`, des trois extraits sources et du modèle XTTS v2 (~2 Go) dans le
     dossier de Valdar, tailles vérifiées ;
   - **liste fermée de fichiers**. Jamais les enregistrements de calibrage d'une personne
     (`cal_*.wav`), jamais `eleven.key` ;
-  - lecture seule côté RAUB.
-- **Chaîne d'effets** portée échantillon pour échantillon. Un test la compare au code de RAUB
+  - lecture seule côté ancienne installation.
+- **Chaîne d'effets** portée échantillon pour échantillon. Un test la compare au code d'origine
   recopié tel quel : **résultat identique**.
 - **XTTS** :
-  - latents de la voix calculés **une fois** au chargement (RAUB refaisait le clonage à chaque
+  - latents de la voix calculés **une fois** au chargement (l'ancien code refaisait le clonage à chaque
     réponse) ; mêmes réglages de génération ;
-  - repli automatique sur l'appel exact de RAUB si l'API diffère ;
-  - même correctif `transformers` que RAUB.
+  - repli automatique sur l'appel d'origine, à l'identique, si l'API diffère ;
+  - même correctif `transformers` qu'avant.
 - **Parole phrase par phrase** : la première phrase est jouée pendant que la suivante se
   calcule. Taper un message coupe la parole en cours.
 - **Commandes** :
@@ -297,7 +297,7 @@ génération, même chaîne d'effets.
     facteur temps réel et la mémoire de carte graphique prise (`--wav` pour écrire un fichier) ;
   - `valdar chat --voix`, plus `/muet` et `/voix` pendant la conversation.
 - `tools\valdar_voix.bat` installe ce qu'il faut (une fois), reprend la voix et la fait parler.
-  Mêmes versions que l'environnement de RAUB : torch 2.6.0 (CUDA 12.6), coqui-tts 0.27.5,
+  Mêmes versions que l'environnement de l'ancienne installation : torch 2.6.0 (CUDA 12.6), coqui-tts 0.27.5,
   transformers 4.57.6. `valdar_chat.bat` active la voix tout seul quand elle est installée.
 
 ### 5.4 L'émotion dans la voix (plus tard, désactivé par défaut)
@@ -326,7 +326,7 @@ conditions d'usage des extraits ElevenLabs d'origine.
 |---|---|---|
 | Windows + Display | 1 – 1,5 Go | GPU |
 | Gemma 4 12B (texte + vision) + cache 8k | 7,5 – 8,5 Go | GPU |
-| **XTTS v2, voix de RAUB** | **≈ 2 Go** (affiché par `valdar voix`) | GPU |
+| **XTTS v2, voix d'origine** | **≈ 2 Go** (affiché par `valdar voix`) | GPU |
 | faster-whisper large-v3-turbo int8 | ≈ 1 Go | **CPU par défaut**, GPU si la mesure le permet |
 | Portier (VAD, mot d'éveil, sons), empreintes, YuNet, SFace, Obico, ESN, mémoire | 0 | CPU |
 | Adaptateurs LoRA | ≤ 0,6 Go | GPU (phase 9) |
@@ -350,8 +350,8 @@ Leviers, dans l'ordre :
 | Phase | Contenu | Statut / critère |
 |---|---|---|
 | **0** | mesures : Gemma 4 via Ollama, **XTTS** (`valdar voix` l'affiche), whisper turbo CPU et GPU, VRAM totale | rapport chiffré dans `DECISIONS.md` |
-| **2** | agent au clavier, outils sûrs, mémoire RAUB | fait, à essayer |
-| **2b** | **voix de RAUB en sortie** (§5) | **fait dans cette livraison**, à essayer |
+| **2** | agent au clavier, outils sûrs, mémoire de l'ancienne installation | fait, à essayer |
+| **2b** | **voix d'origine en sortie** (§5) | **fait dans cette livraison**, à essayer |
 | **2c** | mémoire de contexte temporel + mémoire de travail (§2) | effets du §2.6 testés ; rappel au moins aussi bon que la v2 sur 50 questions réelles |
 | **3** | portier v1 (§1), transcription après éveil, fin de tour, tonalité → cœur, coupure de la parole à la voix | zéro transcription de la pièce sur disque (test) ; conversation orale fluide |
 | **4** | vision et identité (avenant 2 §4) | inchangé |
@@ -367,7 +367,7 @@ Leviers, dans l'ordre :
 ## 8. Critères d'acceptation (résumé)
 
 **Voix**
-- Chaîne d'effets identique à RAUB (test au résultat près).
+- Chaîne d'effets identique à l'originale (test au résultat près).
 - Aucune donnée personnelle importée.
 - Valdar ne plante jamais si la voix est absente : il répond par écrit.
 

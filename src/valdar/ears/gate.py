@@ -2,7 +2,7 @@
 
 Chaîne : micro → tampon circulaire **en mémoire vive** → détection de parole (VAD) → segment
 de parole → mot d'éveil ? → seulement alors transcription et réponse. Pendant une conversation
-engagée, l'éveil reste ouvert quelques secondes (comme RAUB).
+engagée, l'éveil reste ouvert quelques secondes (comme avant).
 
 Invariants (testés) :
 1. rien n'est jamais écrit sur disque : ni audio, ni texte entendu par hasard ;
@@ -61,7 +61,7 @@ _JUNK = ("sous-titres", "amara", "merci d'avoir regardé", "abonnez-vous",
 
 
 def is_junk(text: str) -> bool:
-    """Phrases que whisper invente sur du bruit (relevées dans RAUB)."""
+    """Phrases que whisper invente sur du bruit (relevées sur l'ancienne installation)."""
     t = text.lower().strip().rstrip(".")
     return not t or any(j in t for j in _JUNK) or len(t) < 2
 

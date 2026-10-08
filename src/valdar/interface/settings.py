@@ -44,7 +44,7 @@ SPEC: list[dict[str, Any]] = [
      "min": 1.0, "max": 3.0, "step": 0.1, "group": "Voix"},
     {"path": "voice.character.pitch_shift", "label": "Filtre radio", "type": "float",
      "min": -6, "max": 0, "step": 0.5, "group": "Voix",
-     "help": "0 = son plein ; -2 = timbre radio de RAUB."},
+     "help": "0 = son plein ; -2 = timbre radio d'origine."},
     {"path": "voice.character.peak", "label": "Volume", "type": "float", "min": 0.2,
      "max": 1.0, "step": 0.05, "group": "Voix"},
     {"path": "voice.enabled", "label": "Voix activée", "type": "bool", "group": "Voix",

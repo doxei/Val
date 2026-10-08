@@ -1,4 +1,4 @@
-"""Outils de l'atelier repris de RAUB : stock, checklist, rappels, pinouts."""
+"""Outils de l'atelier repris de l'ancienne installation : stock, checklist, rappels, pinouts."""
 from valdar.atelier.checklist import Checklist
 from valdar.atelier.pinouts import Pinouts
 from valdar.atelier.reminders import Reminders, parse_when

@@ -1,8 +1,10 @@
-"""Caractère de la voix : la chaîne d'effets de RAUB (profil « megatron »), à l'identique.
+"""Caractère de la voix : la chaîne d'effets historique de la voix de Valdar (profil
+« megatron »), à l'identique.
 
-Portage échantillon pour échantillon de `raub/io/voice.py` (`_character` et ses filtres),
-vérifié par `tests/test_voice.py` contre le code de RAUB. Deux particularités sont gardées
-exprès, parce que c'est ce son-là qu'Olivier a construit et validé pour RAUB :
+Reproduction échantillon pour échantillon de la chaîne d'origine (`_character` et ses
+filtres), vérifiée par `tests/test_voice.py` contre une copie de référence du code d'origine.
+Deux particularités sont gardées exprès, parce que c'est ce son-là qu'Olivier a construit et
+validé pour cette voix :
 - la modulation d'amplitude utilise une profondeur fixe (2 %) ;
 - le « décalage de hauteur » ne change pas la hauteur : il sous-échantillonne puis
   ré-échantillonne à la longueur d'origine, ce qui revient à un passe-bas à fs/4
@@ -51,7 +53,7 @@ def _high_shelf(x: np.ndarray, sr: int, fc: float, gain_db: float) -> np.ndarray
 
 
 def _resample_tone(x: np.ndarray, semis: float) -> np.ndarray:
-    """Le « pitch shift » de RAUB, tel quel (voir l'en-tête du module)."""
+    """Le « pitch shift » d'origine, tel quel (voir l'en-tête du module)."""
     f = 2.0 ** (semis / 12.0)
     n = len(x)
     if abs(f - 1.0) < 1e-3 or n < 16:

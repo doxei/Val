@@ -1,4 +1,4 @@
-"""Base de pinouts des cartes (Octopus, SKR, TMC...) — reprise de RAUB."""
+"""Base de pinouts des cartes (Octopus, SKR, TMC...) — reprise de l'ancienne installation."""
 from __future__ import annotations
 
 import json
@@ -24,7 +24,7 @@ class Pinouts:
     def lookup(self, cible: str) -> str:
         d = self.data()
         if not d:
-            return "ma base de pinouts est vide (importe celle de RAUB : valdar import-raub)."
+            return "ma base de pinouts est vide (importe l'ancienne : valdar import-ancien)."
         n = norm(cible).strip()
         if not n:
             return "dis-moi une carte ou un connecteur (ex : 'BTT Octopus v1.1', 'TMC2209')."

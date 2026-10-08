@@ -443,10 +443,15 @@ atelier:
   pinouts: pinouts.json
   memory_db: memoire.db
 
+# Reprise de l'ancienne installation (« valdar import-ancien ») : dossier source par défaut,
+# lu seulement, jamais modifié. --dossier sur la ligne de commande le remplace.
+migration:
+  dossier_ancien: 'C:\Users\doxei\raub'
 
-# Voix : celle de RAUB, gardée à l'identique (avenant 3 §5). XTTS v2 local (carte graphique),
-# clonée depuis data/voice/xtts_ref.wav, puis la chaîne d'effets « megatron » de RAUB.
-# Les fichiers sont repris de RAUB par « valdar import-raub » (tools\valdar_voix.bat).
+
+# Voix : celle construite par Olivier, gardée à l'identique (avenant 3 §5). XTTS v2 local
+# (carte graphique), clonée depuis data/voice/xtts_ref.wav, puis la chaîne d'effets historique
+# « megatron ». Les fichiers sont repris par « valdar import-ancien » (tools\valdar_voix.bat).
 voice:
   enabled: true
   backend: xtts
@@ -461,7 +466,7 @@ voice:
     wobble_hz: 0.0
     wobble_depth: 0.0
     nasal_gain_db: 0.0
-    pitch_shift: -2.0     # réglage de RAUB : en réalité un passe-bas à 6 kHz, gardé tel quel
+    pitch_shift: -2.0     # réglage historique : en réalité un passe-bas à 6 kHz, gardé tel quel
     high_shelf_hz: 400
     high_shelf_db: -10
     echo_ms: 0

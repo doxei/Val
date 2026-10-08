@@ -33,8 +33,8 @@ Ses 14 tests passaient, mais ils ne vérifiaient pas l'essentiel. Problèmes con
 ### Phase 0 — état constaté par OpenCode (à refaire, carte libre)
 
 - Ollama 0.35 installé avec `gemma4:12b` (8 Go). Pas de llama.cpp installé.
-- **VRAM saturée par RAUB** (whisper large-v3 + Ollama + vision : 11,4 / 12 Go). Valdar et RAUB ne
-  peuvent pas utiliser le GPU en même temps : à arbitrer avant toute mesure.
+- **VRAM saturée par l'ancien assistant** (whisper large-v3 + Ollama + vision : 11,4 / 12 Go).
+  Valdar et lui ne peuvent pas utiliser le GPU en même temps : à arbitrer avant toute mesure.
 - OpenCode avait choisi la « voie B » (transformers + hooks d'activation dans le processus Python).
   **Annulé** : le cahier v2 retient llama-server (llama.cpp) avec des LoRA d'affect dont l'échelle
   change à chaque requête, et un démon Python sans PyTorch. L'extra `[llm]` passe à `httpx`.
@@ -95,26 +95,26 @@ Ses 14 tests passaient, mais ils ne vérifiaient pas l'essentiel. Problèmes con
 
 ### Reste à faire
 - Phase 0 : mesures GPU (llama-server + Gemma 4 12B QAT, adaptateurs d'affect, QLoRA dans 12 Go,
-  fenêtre Display), après arbitrage RAUB / Valdar sur la VRAM.
+  fenêtre Display), après arbitrage ancien assistant / Valdar sur la VRAM.
 - Phase 2 : API FastAPI + WebSocket (flux d'affect), dashboard, Display minimal.
 
 ---
 
-## 2026-10-07 (soir) — Valdar remplace RAUB : avenant n°2
+## 2026-10-07 (soir) — Valdar remplace l'ancien assistant : avenant n°2
 
-Décision d'Olivier : Valdar **remplace** RAUB (et PrinterAgent) et reprend toutes leurs capacités,
-en mieux. Détails : `docs/avenant-2-heritage-raub.md` (prévaut sur la v2).
+Décision d'Olivier : Valdar **remplace** l'ancien assistant d'atelier (et PrinterAgent) et reprend
+toutes leurs capacités, en mieux. Détails : `docs/avenant-2-heritage.md` (prévaut sur la v2).
 
-- RAUB, AURA et Ollama arrêtés par Olivier ; plus aucun d'eux n'utilise la carte graphique
+- L'ancien assistant, son interface et Ollama arrêtés par Olivier ; plus aucun d'eux n'utilise la carte graphique
   (vérifié dans le Gestionnaire des tâches, colonne GPU).
-- Inventaire fait : RAUB (agent à 38 outils, affect par tour avec marqueurs par personne,
-  voix whisper/XTTS, identité voix + visage, panneau AURA, Klipper), PrinterAgent (vigie Obico,
+- Inventaire fait : l'ancien assistant (agent à 38 outils, affect par tour avec marqueurs par personne,
+  voix whisper/XTTS, identité voix + visage, panneau d'interface, Klipper), PrinterAgent (vigie Obico,
   garde-fous G-code, ESP32), desk-robot (corps ESP32-S3 avec protocole documenté).
 - Corrections retenues : identité par vrais modèles (SFace, empreinte vocale neuronale), un
   inconnu n'est jamais autorisé, pas de transcription de la pièce sur disque (VAD + mot d'éveil),
   plus de lecture des cookies du navigateur, API locale uniquement, chaîne vocale 100 % locale.
 - **Backend LLM : Ollama d'abord** (déjà installé avec `gemma4:12b`), derrière `LLMBackend`, pour
-  retrouver vite le niveau de RAUB ; llama-server quand viendront les adaptateurs d'affect.
+  retrouver vite le niveau de l'ancien assistant ; llama-server quand viendront les adaptateurs d'affect.
 - Ordre révisé : 0 mesures GPU → 2 agent + outils sûrs → 3 voix → 4 identité → 5 imprimante →
   6 Display → 7 relations → 8 desk-robot → 9+ affect LoRA, apprentissage.
 
@@ -140,15 +140,16 @@ en mieux. Détails : `docs/avenant-2-heritage-raub.md` (prévaut sur la v2).
   La console clavier vaut « Olivier, confiance 0,8 » : **pas assez pour les outils élevés** tant
   que la reconnaissance (phase 4) n'existe pas. Les outils non autorisés ne sont même pas
   proposés au modèle. Dangereux = confirmation par la même personne.
-- **Outils repris de RAUB** : heure, info système, mémoire, stock, checklists, rappels (analyse
+- **Outils repris de l'ancien assistant** : heure, info système, mémoire, stock, checklists, rappels (analyse
   des moments en français corrigée : « dans 2h30 », « un quart d'heure », « demain à 8h15 »),
   pinouts, imprimante (état, fichiers ; **pause et arrêt d'urgence ouverts à tous**). Nouveau :
   `mon_etat_interieur` (introspection ancrée).
 - **Mémoire** : faits SQLite (source, personne, confiance, archivage au lieu de suppression),
   recherche par mots-clés tolérante aux accents et élisions, complétée par les souvenirs les plus
   importants.
-- **Import RAUB** (`valdar import-raub`) : souvenirs, stock, rappels à venir, checklist, pinouts,
-  marqueurs d'affect (copiés pour la phase 7). Lecture seule côté RAUB (vérifié par empreinte),
+- **Import de l'ancienne installation** (`valdar import-ancien`) : souvenirs, stock, rappels à
+  venir, checklist, pinouts, marqueurs d'affect (copiés pour la phase 7). Lecture seule de ce
+  côté-là (vérifié par empreinte),
   une seule fois (`data/imports.json`).
 - Tests : 103 verts (Python 3.11 et 3.13), dont Ollama et Moonraker simulés.
 - Correctif : après un long rattrapage, le cœur rattrape aussi les secondes passées à
@@ -160,7 +161,7 @@ en mieux. Détails : `docs/avenant-2-heritage-raub.md` (prévaut sur la v2).
 
 ---
 
-## 2026-10-07 (nuit) — Avenant n°3 : dynamique temporelle, portier, voix de RAUB
+## 2026-10-07 (nuit) — Avenant n°3 : dynamique temporelle, portier, voix d'origine
 
 Détails : `docs/avenant-3-dynamique-temporelle.md` (prévaut sur l'avenant 2 pour la voix, le
 budget de la carte graphique et le plan).
@@ -174,18 +175,18 @@ budget de la carte graphique et le plan).
 - **Hystérésis de l'humeur** (bistabilité contrôlée, garde-fous testés) : phase 7.
 - **ESN « pressentiment »** : capteur expérimental, A/B, retiré s'il ne bat pas la référence.
 
-### Phase 2b — Voix de RAUB : faite, à essayer (`tools\valdar_voix.bat`)
-- Décision d'Olivier : **garder la voix construite pour RAUB**. Elle revient dans le budget
+### Phase 2b — Voix d'origine : faite, à essayer (`tools\valdar_voix.bat`)
+- Décision d'Olivier : **garder la voix qu'il avait construite**. Elle revient dans le budget
   de la carte graphique (≈ 2 Go) ; whisper passe sur CPU par défaut. La phase 0 tranche.
 - Relevé : XTTS v2 local cloné depuis `xtts_ref.wav` (fait à partir de trois extraits
-  ElevenLabs), puis chaîne « megatron ». Le réglage « pitch −2 » de RAUB est en réalité un
+  ElevenLabs), puis chaîne « megatron ». Le réglage historique « pitch −2 » est en réalité un
   passe-bas à 6 kHz : gardé tel quel, c'est le timbre.
-- Chaîne d'effets portée à l'identique (test contre le code de RAUB). Latents de la voix
+- Chaîne d'effets portée à l'identique (test contre le code d'origine). Latents de la voix
   calculés une fois au chargement. Parole phrase par phrase. Pas de voix de secours
   différente : sans XTTS, Valdar répond par écrit.
-- Import : étape « voix » de `valdar import-raub`, liste fermée de fichiers (jamais
-  `cal_*.wav`, jamais de clé), lecture seule côté RAUB.
-- Environnement : mêmes versions que RAUB (torch 2.6.0+cu126, coqui-tts 0.27.5,
+- Import : étape « voix » de `valdar import-ancien`, liste fermée de fichiers (jamais
+  `cal_*.wav`, jamais de clé), lecture seule côté ancienne installation.
+- Environnement : mêmes versions qu'avant (torch 2.6.0+cu126, coqui-tts 0.27.5,
   transformers 4.57.6), extra `[voice]`.
 - Tests : 115 verts (Python 3.11 et 3.13), ruff propre.
 
@@ -297,7 +298,7 @@ Détails : `docs/avenant-4-boucle-fermee-et-socle.md` (vision d'Olivier point pa
 
 ## 2026-10-08 — Phase 0 : mesures sur la machine (i5-11400F, 64 Go, RTX 2060 12 Go)
 
-Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main (`ollama serve`).
+Mesures en lecture seule, carte libre (ancien assistant arrêté), Ollama lancé à la main (`ollama serve`).
 
 - **Tests** : 159 verts sous Windows (`.venv`, Python 3.11).
 - **Nocicepteurs** (`read_pc(Path("data"))`) : `gpu_temp` 39 °C, `gpu_mem` 15 %, `disk` 64 %.
@@ -318,7 +319,7 @@ Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main 
   ≈ 8,8 Go pour le modèle et 8k de contexte). Pic de température : 58 °C.
 - **Appel d'outil** via `OllamaBackend.chat` : OK en 0,6 s
   (`lire_heure(fuseau="Europe/Paris")`, contenu vide comme attendu).
-- **À retenir** : il reste ≈ 1,5 Go de VRAM, pas de place pour RAUB (whisper + vision) en même
+- **À retenir** : il reste ≈ 1,5 Go de VRAM, pas de place pour l'ancien assistant (whisper + vision) en même
   temps. Le chargement à froid (~1 min) justifie `keep_alive` long et un préchargement au
   démarrage. llama-server + LoRA d'affect pas encore mesurés.
 
@@ -368,7 +369,7 @@ Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main 
 - Voie basse : l'agacement de l'interlocuteur (« ça m'énerve », « fait chier », « ça marche
   pas », « ras le bol ») devient du souci pour lui (`concern`). Avant, rien ne réagissait.
 - Tests : 174 verts ; critères de la phase 1 verts.
-- Reste : amorcer les relations depuis `raub_affect.json` (format à relever sur la machine) ;
+- Reste : amorcer les relations depuis `ancien_affect.json` (format à relever sur la machine) ;
   reconnaissance de la personne (phase 4).
 
 ---
@@ -376,7 +377,7 @@ Mesures en lecture seule, carte libre (RAUB arrêté), Ollama lancé à la main 
 ## 2026-10-08 — Phase 3 : budget de la carte graphique (Gemma 4 12B + XTTS)
 
 Mesures sur la machine (RTX 2060 12 Go, 12 288 MiB). Bureau seul : 1,1 Go dédiés. Voix lue
-directement dans les fichiers de RAUB pour la mesure (rien copié dans `data/`). Environnement voix
+directement dans les fichiers de l'ancienne installation pour la mesure (rien copié dans `data/`). Environnement voix
 installé dans le `.venv` : torch 2.6.0+cu126, coqui-tts 0.27.5. XTTS sur GPU : chargé en ~27 s,
 ≈ 2 Go de VRAM.
 
@@ -404,10 +405,10 @@ installé dans le `.venv` : torch 2.6.0+cu126, coqui-tts 0.27.5. XTTS sur GPU : 
 **Décision : option a avec `num_ctx` 8192 inchangé**, aucun réglage à modifier. XTTS
 synthétise ~2× plus vite que la parole et Gemma, même à 20 tok/s, écrit bien plus vite qu'on ne
 parle (~4 tok/s). Marge de VRAM étroite (~350 Mo) : si un « out of memory » apparaît (navigateur,
-OrcaSlicer…), passer `llm.num_ctx` à 4096. RAUB et Valdar ne peuvent toujours pas tourner en même
+OrcaSlicer…), passer `llm.num_ctx` à 4096. L'ancien assistant et Valdar ne peuvent toujours pas tourner en même
 temps.
 
-Reste à faire : copier la voix dans `data/` (`valdar import-raub`, étape voix ; la copie a été
+Reste à faire : copier la voix dans `data/` (`valdar import-ancien`, étape voix ; la copie a été
 bloquée par une permission pendant la session de mesure), puis essayer `valdar chat --voix`.
 
 ---
@@ -474,7 +475,7 @@ chacun a son test de non-régression (`tests/test_audit_fixes.py`).
   encore entraîné**. En attendant, **compromis** : un petit whisper (« tiny ») lit seulement le
   début de chaque phrase, en mémoire, cherche « Valdar » (tolère « val dar », « baldar »), puis
   le texte est jeté. Désactivable (`ears.transcript_wake: false`).
-- Filtres de RAUB contre les hallucinations de whisper (« sous-titres… Amara », « merci
+- Filtres de l'ancien assistant contre les hallucinations de whisper (« sous-titres… Amara », « merci
   d'avoir regardé »), probabilité de parole et log-probabilité.
 - **Coupure** : quand on lui parle pendant qu'il parle (~250 ms de voix), il se tait.
 - Tonalité (énergie, débit) mesurée sur chaque phrase ; pas encore envoyée au cœur.
@@ -613,3 +614,18 @@ icône sur le bureau.
   `lire_article`.
 - **Lanceur** `tools\valdar.bat` : installe ce qui manque, pose l'icône sur le bureau au
   premier lancement, démarre tout (voix, oreilles, caméra, interface).
+
+## 2026-10-08 — Un seul nom : Valdar
+
+- Les anciens noms (de l'assistant remplacé et de son interface) disparaissent du code et des
+  documents : on dit « l'ancien assistant », « l'ancienne installation », ou simplement Valdar. Le thème visuel
+  de l'interface s'appelle **Azur** (nuit bleue, lueur cyan, accents dorés).
+- Import : `valdar import-ancien` (`tools\valdar_import_ancien.bat`), classe `AncienImport`
+  (`src/valdar/migrate/ancien.py`). Dossier source par défaut dans la config, à un seul
+  endroit : `migration.dossier_ancien` ; `--dossier` le remplace ponctuellement.
+- Compatibilité avec ce qui est déjà importé : les clés de `data/imports.json` n'ont pas changé
+  (rien n'est refait) ; les marqueurs d'affect copiés sous l'ancien nom
+  (`<nom du dossier>_affect.json`) sont renommés `ancien_affect.json` au prochain import ; les
+  nouveaux faits repris portent la source « ancien » (les anciens gardent la leur, un fait déjà
+  connu n'est jamais ajouté deux fois).
+- Avenant 2 renommé `docs/avenant-2-heritage.md`.

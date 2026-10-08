@@ -29,8 +29,8 @@ if errorlevel 1 (
   timeout /t 8 >nul
 )
 if not exist data\imports.json (
-  echo Premiere fois : je reprends les donnees de RAUB...
-  .venv\Scripts\python -m valdar import-raub
+  echo Premiere fois : je reprends les donnees de l'ancienne installation...
+  .venv\Scripts\python -m valdar import-ancien
 )
 set VOIX=
 if exist data\models\xtts-v2\model.pth (

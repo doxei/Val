@@ -4,7 +4,9 @@
                       --voix : il répond à voix haute ; --ecoute : il écoute au micro
                       --camera : il regarde la pièce ; --interface : visage et onglets
   valdar voix         faire dire une phrase à Valdar (test de la voix, mesures)
-  valdar import-raub  reprendre les données de RAUB, voix comprise (lecture seule côté RAUB)
+  valdar import-ancien
+                      reprendre les données de l'ancienne installation, voix comprise
+                      (lecture seule de ce côté-là ; dossier : migration.dossier_ancien)
   valdar heart        cœur seul, en temps réel (Ctrl+C pour sauvegarder et quitter)
   valdar status       état actuel du cœur (sans le modifier)
   valdar sim          simulation accélérée de N jours (n'écrit jamais dans la vraie base)
@@ -412,7 +414,7 @@ def _cmd_voix(args: argparse.Namespace) -> int:
     tts = make_tts(cfg)
     missing = tts.check_files()
     if missing:
-        print("Il manque : " + ", ".join(missing) + ".\nLance d'abord « valdar import-raub » "
+        print("Il manque : " + ", ".join(missing) + ".\nLance d'abord « valdar import-ancien » "
               "(tools\\valdar_voix.bat le fait tout seul).")
         return 1
     print("Chargement de la voix (XTTS sur la carte graphique)…", flush=True)
@@ -423,8 +425,8 @@ def _cmd_voix(args: argparse.Namespace) -> int:
         return 1
     print(f"Voix chargée en {tts.load_seconds:.1f} s ({tts.mode}).")
     text = " ".join(args.texte).strip() or ("Salut Olivier. C'est moi, Valdar. La voix que tu "
-                                            "avais construite pour RAUB, c'est la mienne "
-                                            "maintenant, et j'y tiens.")
+                                            "as construite, c'est la mienne, et j'y "
+                                            "tiens.")
     if args.wav:
         parts = [apply(tts.synthesize(s), tts.sample_rate, cfg.voice.character)
                  for s in split_sentences(text, cfg.voice.max_sentence_chars)]
@@ -460,26 +462,27 @@ def _cmd_voix(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_import_raub(args: argparse.Namespace) -> int:
+def _cmd_import_ancien(args: argparse.Namespace) -> int:
     from pathlib import Path
 
     from valdar.atelier import Checklist, Reminders, Stock
     from valdar.memory import Facts
-    from valdar.migrate import RaubImport
+    from valdar.migrate import AncienImport
 
     cfg = load()
     a = cfg.atelier
     path = cfg.storage_path
-    imp = RaubImport(Path(args.raub), Facts(path(a.memory_db)), Stock(path(a.stock_db)),
-                     Reminders(path(a.reminders)), Checklist(path(a.checklist)),
-                     path(a.pinouts), path("x").parent,
-                     person=(cfg.agent.console_identity.person if cfg.agent else "") or "",
-                     voice_ref=cfg.repo_path(cfg.voice.xtts.reference),
-                     xtts_dir=cfg.repo_path(cfg.voice.xtts.model_dir))
+    root = Path(args.dossier or cfg.migration.dossier_ancien)
+    imp = AncienImport(root, Facts(path(a.memory_db)), Stock(path(a.stock_db)),
+                       Reminders(path(a.reminders)), Checklist(path(a.checklist)),
+                       path(a.pinouts), path("x").parent,
+                       person=(cfg.agent.console_identity.person if cfg.agent else "") or "",
+                       voice_ref=cfg.repo_path(cfg.voice.xtts.reference),
+                       xtts_dir=cfg.repo_path(cfg.voice.xtts.model_dir))
 
     def step(key: str) -> None:
         if key == "voix":
-            print("… je reprends la voix de RAUB (environ 2 Go à copier, ça peut prendre une "
+            print("… je reprends la voix (environ 2 Go à copier, ça peut prendre une "
                   "minute)", flush=True)
 
     for line in imp.run(force=args.force, on_step=step):
@@ -559,10 +562,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--wav", default=None, help="écrire dans un fichier .wav au lieu de jouer")
     p.set_defaults(func=_cmd_voix)
 
-    p = sub.add_parser("import-raub", help="reprendre les données de RAUB")
-    p.add_argument("--raub", default=r"C:\Users\doxei\raub", help="dossier de RAUB")
+    p = sub.add_parser("import-ancien", help="reprendre les données de l'ancienne installation")
+    p.add_argument("--dossier", default=None,
+                   help="dossier de l'ancienne installation (défaut : migration.dossier_ancien "
+                        "dans config/valdar.yaml)")
     p.add_argument("--force", action="store_true", help="refaire même si déjà importé")
-    p.set_defaults(func=_cmd_import_raub)
+    p.set_defaults(func=_cmd_import_ancien)
 
     p = sub.add_parser("import-vecu", help="faire des conversations d'Olivier des souvenirs")
     p.add_argument("--dossier", default=r"C:\Users\doxei\Documents\training ia",
