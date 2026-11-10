@@ -64,6 +64,7 @@ class Engine:
         self._gg: Any = None
         self._got: dict[int, np.ndarray] = {}
         self._want_rows = 0
+        self._reading = False
         self.steered = False
 
     # ----------------------------------------------------------- chargement
@@ -235,6 +236,8 @@ class Engine:
 
     def _on_tensor(self, t: Any, ask: bool, _user: Any) -> bool:
         try:
+            if ask and not self._reading:      # hors lecture : ne rien demander (vitesse)
+                return False
             name = self._gg.ggml_get_name(t) or b""
             if not name.startswith(b"l_out-"):
                 return not ask
@@ -265,7 +268,11 @@ class Engine:
             self._got = {}
             self._want_rows = len(toks)
             self.llm.reset()
-            self.llm.eval(toks)
+            self._reading = True
+            try:
+                self.llm.eval(toks)
+            finally:
+                self._reading = False
             out = np.zeros((self.n_layers - 1, self.n_embd), dtype=np.float32)
             missing = []
             for layer in range(1, self.n_layers):
