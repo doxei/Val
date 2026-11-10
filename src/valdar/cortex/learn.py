@@ -114,7 +114,8 @@ def trials(cfg: Any, engine: Engine | None = None, say: Any = _say,
     eng = engine or Engine(cfg.cortex, cfg.root, capture=True, n_ctx=2048)
     eng.load()
     if (v.n_layers, v.n_embd) != (eng.n_layers, eng.n_embd):
-        raise ValueError("vecteurs appris sur un autre modèle : relance « valdar cortex apprendre »")
+        raise ValueError("vecteurs appris sur un autre modèle : "
+                         "relance « valdar cortex apprendre »")
     first, last = v.best_layers(*cfg.cortex.layers)
     alpha = cfg.cortex.alpha
     es = sc.get("essais") or {}

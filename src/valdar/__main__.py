@@ -563,46 +563,69 @@ def _cmd_chrono(args: argparse.Namespace) -> int:
 
 
 def _cmd_cortex(args: argparse.Namespace) -> int:
-    """Le cortex : installer le modèle, apprendre les sentiments, les essayer, l'activer."""
+    """Le cortex : installer le modèle, apprendre les sentiments, les essayer, l'activer.
+    Tout ce qui s'affiche est aussi écrit dans data/cortex/journal.txt."""
+    import time
+    import traceback
+
     from valdar.interface.settings import Settings
 
     cfg = load()
+    journal = (cfg.root / cfg.cortex.vectors).parent / "journal.txt"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+
+    def say(line: str) -> None:
+        print(line, flush=True)
+        with journal.open("a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
+
     todo = (["installer", "apprendre", "essais", "activer"] if args.action == "tout"
             else [args.action])
-    for step in todo:
-        if step == "installer":
-            from valdar.cortex.learn import download
+    say(f"=== valdar cortex {args.action} ===")
+    try:
+        for step in todo:
+            if step == "installer":
+                from valdar.cortex.learn import download
 
-            download(cfg)
-        elif step == "apprendre":
-            from valdar.cortex.learn import learn
+                download(cfg, say)
+            elif step == "apprendre":
+                from valdar.cortex.backend import free_ollama
+                from valdar.cortex.learn import learn
 
-            print("Apprentissage des sentiments (le modèle lit des situations contrastées)…")
-            learn(cfg)
-        elif step == "essais":
-            from valdar.cortex.learn import trials
+                free_ollama(cfg)
+                say("Apprentissage des sentiments (le modèle lit des situations contrastées)…")
+                learn(cfg, say=say)
+            elif step == "essais":
+                from valdar.cortex.backend import free_ollama
+                from valdar.cortex.learn import trials
 
-            print("Essais d'injection (sans rien dire de son état dans le prompt)…")
-            rep = trials(cfg)
-            if args.action == "tout" and rep["axes_nets"] * 2 < rep["axes_total"]:
-                print("Moins de la moitié des sentiments agissent dans le bon sens : je "
-                      "n'active pas le cortex. Valdar reste sur Ollama.")
-                return 2
-        elif step == "activer":
-            Settings(cfg).store("llm.backend", "cortex")
-            print("Cortex activé : au prochain démarrage, Valdar pense avec ses sentiments "
-                  "dans ses couches. Pour revenir : valdar cortex desactiver")
-        elif step == "desactiver":
-            Settings(cfg).store("llm.backend", "ollama")
-            print("Cortex désactivé : Valdar repasse par Ollama.")
-        elif step == "etat":
-            path = cfg.root / cfg.cortex.model_path
-            vec = cfg.root / cfg.cortex.vectors
-            print(f"moteur : {cfg.llm.backend}")
-            print(f"modèle : {path} ({'présent' if path.is_file() else 'absent'})")
-            print(f"vecteurs : {vec} ({'présents' if vec.is_file() else 'absents'})")
-            print(f"force : {cfg.cortex.alpha}, couches {list(cfg.cortex.layers)}, "
-                  f"description en texte : {'oui' if cfg.cortex.describe_state else 'non'}")
+                free_ollama(cfg)
+                say("Essais d'injection (sans rien dire de son état dans le prompt)…")
+                rep = trials(cfg, say=say)
+                if args.action == "tout" and rep["axes_nets"] * 2 < rep["axes_total"]:
+                    say("Moins de la moitié des sentiments agissent dans le bon sens : je "
+                        "n'active pas le cortex. Valdar reste sur Ollama.")
+                    return 2
+            elif step == "activer":
+                Settings(cfg).store("llm.backend", "cortex")
+                say("Cortex activé : au prochain démarrage, Valdar pense avec ses sentiments "
+                    "dans ses couches. Pour revenir : valdar cortex desactiver")
+            elif step == "desactiver":
+                Settings(cfg).store("llm.backend", "ollama")
+                say("Cortex désactivé : Valdar repasse par Ollama.")
+            elif step == "etat":
+                path = cfg.root / cfg.cortex.model_path
+                vec = cfg.root / cfg.cortex.vectors
+                say(f"moteur : {cfg.llm.backend}")
+                say(f"modèle : {path} ({'présent' if path.is_file() else 'absent'})")
+                say(f"vecteurs : {vec} ({'présents' if vec.is_file() else 'absents'})")
+                say(f"force : {cfg.cortex.alpha}, couches {list(cfg.cortex.layers)}, "
+                    f"description en texte : {'oui' if cfg.cortex.describe_state else 'non'}")
+    except Exception as exc:
+        say(f"ÉCHEC ({type(exc).__name__}) : {exc}")
+        say(traceback.format_exc())
+        return 1
+    say("=== terminé ===")
     return 0
 
 

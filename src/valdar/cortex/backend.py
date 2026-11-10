@@ -14,6 +14,15 @@ from valdar.cortex.vectors import Vectors
 from valdar.llm.backend import ChatResult, GenParams, LLMError, ToolCall
 
 
+def free_ollama(cfg: Any) -> None:
+    """Demande à Ollama de décharger Gemma : deux Gemma ne tiennent pas sur la carte."""
+    with contextlib.suppress(Exception):
+        import httpx
+
+        httpx.post(cfg.llm.url.rstrip("/") + "/api/generate",
+                   json={"model": cfg.llm.model, "keep_alive": 0}, timeout=3.0)
+
+
 class CortexBackend:
     supports_stream = True
     supports_feeling = True
@@ -28,7 +37,7 @@ class CortexBackend:
         self.feeling: dict[str, float] = {}
         self.problem = ""               # pourquoi l'injection est coupée, s'il y a lieu
         self._lock = threading.RLock()
-        self._ollama_url = cfg.llm.url
+        self._cfg = cfg
         self._freed = False
         self._applied: Any = None
         self._fallback: Any = None      # Ollama, si le cortex ne peut pas se charger
@@ -57,7 +66,8 @@ class CortexBackend:
             return
         self.engine.load()
         if (v.n_layers, v.n_embd) != (self.engine.n_layers, self.engine.n_embd):
-            self.problem = "vecteurs appris sur un autre modèle (relance « valdar cortex apprendre »)"
+            self.problem = ("vecteurs appris sur un autre modèle "
+                            "(relance « valdar cortex apprendre »)")
             return
         self.vectors = v
 
@@ -66,11 +76,7 @@ class CortexBackend:
         if self._freed or not self.cc.free_ollama:
             return
         self._freed = True
-        with contextlib.suppress(Exception):
-            import httpx
-
-            httpx.post(self._ollama_url.rstrip("/") + "/api/generate",
-                       json={"model": self.cfg.model, "keep_alive": 0}, timeout=3.0)
+        free_ollama(self._cfg)
 
     # ------------------------------------------------------------ sentiments
     def feel(self, coefs: dict[str, float]) -> bool:
