@@ -10,4 +10,8 @@ def make_backend(cfg):
         from valdar.llm.ollama import OllamaBackend
 
         return OllamaBackend(cfg.llm)
+    if cfg.llm.backend == "cortex":
+        from valdar.cortex.backend import CortexBackend
+
+        return CortexBackend(cfg)
     raise ValueError(f"backend LLM inconnu : {cfg.llm.backend}")

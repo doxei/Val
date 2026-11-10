@@ -700,3 +700,60 @@ n8n:
   #     params: {message: "le texte de la notification"}
   #     required: [message]
   #     tier: safe
+
+# Le cortex (avenant 6) : Valdar charge lui-même Gemma (fichier GGUF, llama.cpp) et ses
+# sentiments sont injectés dans les couches du modèle, comme le « Golden Gate Claude »
+# d'Anthropic, mais pilotés en continu par le cœur. Actif quand llm.backend vaut « cortex ».
+cortex:
+  model_path: data/models/cortex/gemma-4-12b-it.gguf
+  model_urls:                    # essayées dans l'ordre (QAT de Google d'abord : 7,0 Go,
+                                 # entraîné pour le 4 bits ; sinon Q4_K_M d'unsloth, 7,1 Go)
+    - https://huggingface.co/google/gemma-4-12B-it-qat-q4_0-gguf/resolve/main/gemma-4-12b-it-qat-q4_0.gguf
+    - https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/main/gemma-4-12b-it-Q4_K_M.gguf
+  gpu_layers: -1                 # toutes les couches sur la carte
+  n_batch: 512
+  threads: 6
+  flash_attn: true
+  kv_q8: true                    # cache d'attention en 8 bits : moitié moins de mémoire
+  vectors: data/cortex/vecteurs.npz
+  scenarios: config/cortex_scenarios.yaml
+  layers: [16, 32]               # tiers du milieu (48 couches) : là où vivent les émotions
+  alpha: 0.12                    # part totale du flux résiduel déplacée à coefficient 1
+  inject: true
+  describe_state: true           # false : il ne ressent QUE par l'injection (essai d'introspection)
+  free_ollama: true
+  # coefficient = tanh(gain × Σ poids × source) × strength. Sources : celles du cœur
+  # (P, A, D, <drive>_exc, need_*, <variable>_dev) et du lien (bond_warm, bond_cold,
+  # bond_trust, bond_familiarity, other_P, other_A, alone).
+  axes:
+    valence:     {plus: joie, minus: tristesse, gain: 1.5, weights: {P: 1.0}}
+    activation:  {plus: excitation, minus: calme, gain: 1.2, weights: {A: 1.0}}
+    puissance:   {plus: assurance, minus: vulnérabilité, gain: 1.5, weights: {D: 1.0}}
+    attachement: {plus: tendresse, minus: froideur, gain: 1.5,
+                  weights: {care_exc: 1.5, oxytocin_dev: 1.5, bond_warm: 0.8, bond_cold: -0.8}}
+    curiosite:   {plus: curiosité, minus: ennui, gain: 1.0,
+                  weights: {seeking_exc: 2.0, need_novelty: 0.4}}
+    jeu:         {plus: espièglerie, minus: sérieux, gain: 1.0, weights: {play_exc: 2.0}}
+    peur:        {plus: peur, minus: sécurité, gain: 1.0, weights: {fear_exc: 2.5}}
+    colere:      {plus: colère, minus: patience, gain: 1.0, weights: {rage_exc: 2.5}}
+    manque:      {plus: manque, minus: présence, gain: 1.0,
+                  weights: {panic_exc: 2.0, need_contact: 0.8}}
+    fatigue:     {plus: fatigue, minus: forme, gain: 1.0, weights: {need_rest: 1.5}}
+    confiance:   {plus: confiance, minus: méfiance, gain: 1.0,
+                  weights: {bond_trust: 1.5, bond_cold: -1.0}}
+  psyche:
+    valence_axis: valence
+    arousal_axis: activation
+    contagion: 0.25              # l'humeur de l'autre déteint (Hatfield)
+    secure_base: 0.5             # une personne aimée présente apaise (Bowlby)
+    soothed: [peur, manque]
+    negativity: 1.2              # le négatif pèse plus que le positif (Baumeister)
+    negative_poles: [peur, colere, manque]
+    bipolar: [valence]
+    regulation:                  # part de l'émotion montrée (Gross) : le reste est retenu
+      minor: {colere: 0.3, peur: 0.5}
+      stranger: {colere: 0.6, manque: 0.5}
+    dead_zone: 0.08
+    budget: 1.6                  # intensité totale maximale (au-delà, le modèle perd le fil)
+    inertia_seconds: 20          # un sentiment glisse, il ne saute pas (Kuppens)
+    step: 0.1                    # pas de quantification (le cache de calcul reste valable)

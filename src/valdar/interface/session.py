@@ -330,6 +330,13 @@ class Session:
             "ears": None if gate is None else {"engaged": gate.engaged(), **gate.stats},
             "speaking": bool(self.speaker and self.speaker.speaking()),
             "pain": rt.nociception.lines(),
+            "cortex": {"actif": bool(getattr(rt.llm, "supports_feeling", False)),
+                       "injecte": bool(getattr(getattr(rt.llm, "engine", None), "steered",
+                                               False)),
+                       "sentiments": {k: round(v, 2) for k, v in rt.feeling.applied.items()
+                                      if v},
+                       "resume": rt.feeling.words(),
+                       "probleme": getattr(rt.llm, "problem", "")},
             "who": {"name": self.last_who.name, "confidence": self.last_who.confidence},
             "muted": self.muted,
             "silenced": bool(getattr(rt.initiative, "silenced", False)),

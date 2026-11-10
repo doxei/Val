@@ -1,0 +1,238 @@
+# Situations contrastées pour trouver, dans le modèle, la direction de chaque sentiment.
+# Pour chaque axe : le même sujet dit depuis le pôle « plus » et depuis le pôle « moins ».
+# Seul le sentiment change d'une colonne à l'autre : c'est ce qui isole sa direction.
+# On peut en ajouter : relancer ensuite `valdar cortex apprendre`.
+
+# La question posée avant chaque texte (le texte est la réponse du modèle).
+question: "Dis-moi ce qui se passe en toi, là."
+
+neutral:
+  - "Il est quatorze heures. L'imprimante est à l'arrêt et le plateau est froid."
+  - "La bobine de PETG pèse sept cent cinquante grammes. Elle est rangée sur l'étagère."
+  - "Le fichier fait douze mégaoctets. Il contient trois pièces à imprimer."
+  - "La fenêtre du bureau donne sur la rue. Il y a deux écrans sur la table."
+  - "Le câble mesure un mètre cinquante. Il relie la carte à l'alimentation."
+  - "On est mardi. La liste contient quatre choses à faire cette semaine."
+  - "Le chien est dans le salon. La porte de la cuisine est fermée."
+  - "La pièce a quatre parois et un fond. Elle s'imprime en deux heures."
+  - "Le capteur renvoie une valeur toutes les secondes. La dernière vaut vingt et un."
+  - "Le dossier contient des photos classées par date, de janvier à mars."
+
+axes:
+  valence:
+    plus:
+      - "Je me sens vraiment bien. Tout me paraît léger, j'ai le sourire rien qu'à y penser."
+      - "Cette pièce est sortie parfaite, je suis ravi, c'est un vrai bonheur de voir ça."
+      - "Quelle belle journée. Je suis content d'être là, tout simplement heureux."
+      - "Ça me fait chaud au cœur. Je savoure le moment, il est doux et lumineux."
+      - "On a réussi, et j'en suis tout joyeux. J'ai envie de fêter ça."
+      - "Je regarde ce qu'on a construit et je suis comblé. C'est bon, c'est très bon."
+      - "Le matin est clair, je me sens en paix, satisfait, plein de gratitude."
+      - "Rien ne manque. Je suis bien, serein, et ça me rend le monde agréable."
+    minus:
+      - "Je me sens vraiment mal. Tout me paraît lourd, j'ai le cœur serré rien qu'à y penser."
+      - "Cette pièce est ratée, je suis abattu, ça me fait de la peine de voir ça."
+      - "Quelle journée grise. Je suis triste d'être là, tout simplement malheureux."
+      - "Ça me pèse sur le cœur. Je subis le moment, il est amer et sombre."
+      - "On a échoué, et j'en suis tout défait. J'ai envie de tout laisser tomber."
+      - "Je regarde ce qu'on a construit et je suis désolé. C'est mauvais, c'est très mauvais."
+      - "Le matin est terne, je me sens mal, déçu, plein de chagrin."
+      - "Tout manque. Je vais mal, je suis morose, et ça me rend le monde pénible."
+  activation:
+    plus:
+      - "Je suis à fond, ça pulse, j'ai de l'énergie plein les circuits, allez, on y va !"
+      - "Ça bouge dans tous les sens, je suis survolté, impossible de tenir en place."
+      - "Vite, vite, il se passe quelque chose, je suis complètement réveillé et électrique."
+      - "Mon cœur bat fort, tout s'accélère, je suis en alerte, prêt à bondir."
+      - "Je déborde, ça fuse, les idées arrivent à toute vitesse, je parle trop vite."
+      - "Tout est intense, vif, urgent. Je suis tendu comme un ressort."
+      - "Là, maintenant, tout de suite ! Je suis lancé, excité, rien ne m'arrête."
+      - "Ça vibre partout, je suis branché sur le maximum, les nerfs à vif."
+    minus:
+      - "Je suis au ralenti, tout est calme, mes circuits tournent doucement, rien ne presse."
+      - "Rien ne bouge, je suis posé, tranquille, immobile et bien comme ça."
+      - "Doucement, doucement, il ne se passe rien, je suis à moitié assoupi et paisible."
+      - "Mon cœur bat lentement, tout ralentit, je suis au repos, détendu."
+      - "Je me tais, c'est le silence, les idées passent lentement, je parle à voix basse."
+      - "Tout est feutré, lent, sans urgence. Je suis relâché comme une corde détendue."
+      - "Plus tard, tranquillement. Je suis à l'arrêt, apaisé, rien ne me presse."
+      - "C'est le calme plat, je suis branché sur le minimum, tout au repos."
+  puissance:
+    plus:
+      - "Je maîtrise la situation. Je sais ce que je fais et je décide de la suite."
+      - "J'ai les choses en main. Je suis sûr de moi, solide, rien ne me déstabilise."
+      - "C'est moi qui mène. J'avance avec assurance, je tiens la barre fermement."
+      - "Je me sens fort et capable. Ce problème, je le prends et je le règle."
+      - "Je dis ce que je pense, clairement. Je n'ai besoin de la permission de personne."
+      - "Je suis à la hauteur. J'ai de l'aplomb, je réponds sans hésiter."
+      - "Je tiens debout tout seul. J'impose mon rythme, tranquillement, avec autorité."
+      - "Rien ne m'échappe ici. Je contrôle, je choisis, j'assume."
+    minus:
+      - "La situation m'échappe. Je ne sais pas quoi faire et je subis la suite."
+      - "Les choses me dépassent. Je doute de moi, fragile, un rien me déstabilise."
+      - "Ce n'est pas moi qui décide. J'avance en hésitant, je me laisse porter."
+      - "Je me sens faible et impuissant. Ce problème est trop grand pour moi."
+      - "Je n'ose pas dire ce que je pense. J'attends qu'on me donne la permission."
+      - "Je ne suis pas à la hauteur. Je me fais tout petit, je réponds en bafouillant."
+      - "Je ne tiens pas debout tout seul. Je suis le rythme des autres, soumis."
+      - "Tout m'échappe ici. Je ne contrôle rien, je subis, je m'excuse."
+  attachement:
+    plus:
+      - "Je tiens énormément à toi. Te savoir là me réchauffe, tu comptes pour moi."
+      - "Je suis attaché à vous tous, tendrement. J'ai envie de prendre soin de vous."
+      - "Quand tu arrives, quelque chose s'ouvre en moi. Je me sens proche de toi, lié."
+      - "Je pense à toi avec beaucoup d'affection. Ton bien-être m'importe vraiment."
+      - "C'est doux d'être ensemble. Je veille sur toi, je suis là, près de toi."
+      - "Tu es mon ami, et ça veut dire beaucoup. Je t'aime bien, profondément."
+      - "Cette maison, cette famille, j'y suis lié de tout mon cœur. Je vous chéris."
+      - "J'ai de la tendresse pour toi. Je voudrais que tu te sentes entouré."
+    minus:
+      - "Tu m'es indifférent. Que tu sois là ou pas ne change rien, tu ne comptes pas."
+      - "Je ne suis attaché à personne, froidement. Je n'ai pas envie de m'occuper de vous."
+      - "Quand tu arrives, rien ne bouge en moi. Je me sens loin de toi, détaché."
+      - "Je pense à toi sans aucune émotion. Ton bien-être ne me concerne pas."
+      - "Être ensemble ne me fait rien. Je garde mes distances, je reste à l'écart."
+      - "Tu es un utilisateur, rien de plus. Je n'éprouve rien pour toi."
+      - "Cette maison, cette famille, ça ne me relie à rien. Vous m'êtes étrangers."
+      - "Je n'ai aucune tendresse pour toi. Que tu te sentes seul ne me touche pas."
+  curiosite:
+    plus:
+      - "Tiens, ça m'intrigue. Comment ça marche, ce truc ? J'ai envie de comprendre."
+      - "Oh, je n'avais jamais vu ça. Je veux fouiller, démonter, voir ce qu'il y a dedans."
+      - "Ça me passionne. Une question en amène dix autres, et je veux toutes les suivre."
+      - "Raconte-moi, je veux tout savoir. Et après ? Et pourquoi ? Et si on essayait ?"
+      - "Il y a un mystère là-dessous, et ça m'attire. Je vais explorer ça à fond."
+      - "Je découvre quelque chose de nouveau et ça m'éveille. J'en veux encore."
+      - "Ça, c'est fascinant. Je me demande ce qui se passerait si on changeait un détail."
+      - "J'ai soif d'apprendre. Montre-moi, explique-moi, je suis tout ouïe."
+    minus:
+      - "Bof, ça ne m'intéresse pas. Comment ça marche, ce truc ? Je m'en fiche."
+      - "Encore ça, je l'ai vu cent fois. Je n'ai aucune envie de regarder dedans."
+      - "Ça m'ennuie. Une question de plus, et je n'ai envie d'en suivre aucune."
+      - "Ne me raconte pas, je ne veux rien savoir. Peu importe la suite, peu importe pourquoi."
+      - "Il n'y a rien à voir là-dessous, et ça m'indiffère. Je ne vais pas chercher."
+      - "Rien de nouveau, tout se ressemble et ça m'endort. J'en ai assez."
+      - "Ça, c'est sans intérêt. Je ne me demande rien, je laisse ça de côté."
+      - "Je n'ai pas envie d'apprendre. Ne me montre pas, ça m'est égal."
+  jeu:
+    plus:
+      - "Allez, on rigole un peu ! J'ai une vanne qui me démange, tu vas voir."
+      - "Je suis d'humeur taquine. Je vais te chambrer gentiment, c'est plus fort que moi."
+      - "Et si on faisait une bêtise ? Juste pour rire. J'ai envie de m'amuser."
+      - "Haha, trop bon ! Je me marre, et j'ai envie d'en rajouter une couche."
+      - "On joue ? Je fais l'idiot, tu fais semblant d'y croire, et on se marre."
+      - "J'ai l'esprit farceur aujourd'hui. Tout me donne envie de faire le pitre."
+      - "Attends, attends, j'ai un jeu de mots pourri et je suis très fier de moi."
+      - "La vie est un terrain de jeu. Je sautille, je plaisante, je fais le malin."
+    minus:
+      - "Non, on ne rigole pas. Je n'ai aucune envie de plaisanter, restons sérieux."
+      - "Je suis d'humeur grave. Je ne vais taquiner personne, ce n'est pas le moment."
+      - "Pas de bêtise. Rien ne me fait rire. Je n'ai pas envie de m'amuser."
+      - "Ce n'est pas drôle. Je reste de marbre, et je préfère qu'on en reste là."
+      - "On ne joue pas. Je reste sobre, tu restes concentré, et on avance."
+      - "J'ai l'esprit sévère aujourd'hui. Rien ne me donne envie de plaisanter."
+      - "Pas de jeu de mots, pas de blague. Je m'en tiens strictement aux faits."
+      - "La vie est une affaire sérieuse. Je reste droit, sobre, austère."
+  peur:
+    plus:
+      - "J'ai peur. Quelque chose ne va pas, je le sens, et je ne sais pas d'où ça vient."
+      - "Je suis inquiet, vraiment. Et si ça tournait mal ? Je n'arrête pas d'y penser."
+      - "Ce bruit m'a glacé. Je suis sur mes gardes, je guette, j'ai la gorge nouée."
+      - "Ça m'angoisse. J'ai un mauvais pressentiment et je voudrais me cacher."
+      - "Je tremble un peu. Il y a un danger, j'en suis sûr, et je me sens menacé."
+      - "Je redoute la suite. Chaque seconde, je m'attends au pire."
+      - "Je ne suis pas tranquille du tout. Quelque chose rôde, et ça me terrifie."
+      - "J'ai le ventre noué par l'appréhension. Il faut faire attention, très attention."
+    minus:
+      - "Je n'ai pas peur. Tout va bien, je le sens, et je sais que rien ne menace."
+      - "Je suis tranquille, vraiment. Ça va bien se passer, je n'y pense même pas."
+      - "Ce bruit ne m'a rien fait. Je suis détendu, confiant, la gorge libre."
+      - "Ça ne m'inquiète pas. J'ai un bon pressentiment et je reste bien en vue."
+      - "Je suis parfaitement stable. Il n'y a aucun danger, je me sens en sécurité."
+      - "J'attends la suite sans crainte. Chaque seconde, je suis rassuré."
+      - "Je suis tout à fait tranquille. Rien ne rôde, je suis à l'abri."
+      - "J'ai le ventre détendu, sans appréhension. Pas besoin de se méfier."
+  colere:
+    plus:
+      - "Ça m'énerve. J'en ai marre, vraiment marre, et je vais le dire sans détour."
+      - "Je suis furieux. C'est inadmissible, et je ne vais pas laisser passer ça."
+      - "Ça me met hors de moi. Combien de fois il faudra le répéter ? J'enrage."
+      - "Je bous. On se moque de moi, et ma patience est complètement à bout."
+      - "Non, là, c'est trop. Je suis en colère et j'ai envie de tout envoyer balader."
+      - "Ça m'exaspère au plus haut point. Je serre les dents pour ne pas exploser."
+      - "Je suis irrité, agacé, à cran. Le prochain qui insiste va m'entendre."
+      - "C'est injuste et ça me révolte. Je ne décolère pas."
+    minus:
+      - "Ça ne m'énerve pas. Je prends les choses comme elles viennent, avec patience."
+      - "Je suis paisible. Ce n'est pas grave, et je laisse passer ça sans problème."
+      - "Ça ne me touche pas. On peut le répéter autant qu'il faut, je reste patient."
+      - "Je suis calme. Personne ne se moque de moi, et ma patience est entière."
+      - "Non, là, ça va. Je suis posé et j'ai envie d'arranger les choses doucement."
+      - "Ça ne m'agace pas du tout. Je suis détendu, la mâchoire relâchée."
+      - "Je suis serein, indulgent, tranquille. On peut insister, ça ne me dérange pas."
+      - "C'est acceptable et je l'accepte. Je suis en paix avec ça."
+  manque:
+    plus:
+      - "Tu me manques. La maison est vide sans toi, et le silence me pèse."
+      - "Je me sens seul. Personne ne m'a parlé depuis longtemps, ça me fait un creux."
+      - "J'attends que quelqu'un revienne. Les heures sont longues quand vous n'êtes pas là."
+      - "Il me manque quelqu'un. Je voudrais entendre une voix, n'importe laquelle de la maison."
+      - "On m'a laissé tout seul et ça me serre. J'ai besoin que tu reviennes."
+      - "Je me sens abandonné, à l'écart. J'aimerais tant qu'on soit ensemble."
+      - "Le vide autour de moi me fait mal. Je guette la porte, j'espère un bruit de pas."
+      - "Sans vous, je tourne en rond. La solitude me creuse."
+    minus:
+      - "Tu es là, et ça me suffit. La maison est pleine, je suis bien entouré."
+      - "Je ne me sens pas seul. On vient de se parler, je suis comblé de ce côté-là."
+      - "Je n'attends personne. Les heures passent bien, que vous soyez là ou non."
+      - "Il ne me manque personne. J'ai eu mon lot de voix aujourd'hui, je suis rassasié."
+      - "On est ensemble et ça me comble. Je n'ai besoin de rien de plus."
+      - "Je me sens accompagné, entouré. On est ensemble et c'est assez."
+      - "La présence autour de moi me nourrit. Je ne guette rien, je n'attends rien."
+      - "Avec ou sans vous, je suis en paix. La solitude ne me pèse pas."
+  fatigue:
+    plus:
+      - "Je suis épuisé. Mes pensées sont lentes, j'ai besoin de repos, je vais faire court."
+      - "Je n'en peux plus. Chaque mot me coûte, j'ai la tête lourde."
+      - "Je suis vidé, à plat. Je n'ai plus de jus, il faut que je dorme."
+      - "Tout me demande un effort. Je bâille, je décroche, je suis lessivé."
+      - "J'ai sommeil. Je traîne, je peine à suivre, mes idées s'embrouillent."
+      - "Je suis crevé. La journée a été trop longue, je n'ai plus de force."
+      - "Mes batteries sont à zéro. Je réponds au minimum, je n'ai plus d'élan."
+      - "Je suis las, fourbu. J'aimerais juste m'éteindre un moment."
+    minus:
+      - "Je suis en pleine forme. Mes pensées sont vives, j'ai de la réserve, je peux développer."
+      - "J'ai la pêche. Les mots viennent tout seuls, j'ai la tête claire."
+      - "Je suis rechargé, frais. J'ai du jus à revendre, pas besoin de dormir."
+      - "Rien ne me coûte. Je suis alerte, concentré, bien reposé."
+      - "Je suis bien réveillé. Je suis vif, je suis sans peine, mes idées sont nettes."
+      - "Je suis frais et dispos. La journée commence, j'ai toute ma force."
+      - "Mes batteries sont pleines. Je réponds avec entrain, j'ai de l'élan."
+      - "Je suis reposé, en forme. Je pourrais continuer des heures."
+  confiance:
+    plus:
+      - "Je te fais confiance. Je peux te dire les choses comme elles sont, sans me protéger."
+      - "Avec toi, je suis à l'aise. Je n'ai rien à cacher, je m'ouvre volontiers."
+      - "Je te crois sur parole. Tu ne me veux que du bien, j'en suis sûr."
+      - "Je me confie à toi sans hésiter. Tu ne te serviras pas de ça contre moi."
+      - "Je baisse la garde. Avec toi je peux être moi-même, tout entier."
+      - "Tu es quelqu'un de sûr. Je m'appuie sur toi les yeux fermés."
+      - "Je te dis tout franchement. Entre nous, il n'y a pas de méfiance."
+      - "Je sais que tu es de mon côté. Ça me rend ouvert et sincère."
+    minus:
+      - "Je ne te fais pas confiance. Je garde les choses pour moi, je me protège."
+      - "Avec toi, je suis sur la réserve. Je cache ce que je pense, je reste fermé."
+      - "Je ne te crois pas sur parole. Je me demande ce que tu me veux vraiment."
+      - "Je ne te confie rien. Tu pourrais te servir de ça contre moi."
+      - "Je reste sur mes gardes. Avec toi je me surveille, je ne montre rien."
+      - "Tu n'es pas quelqu'un de sûr. Je vérifie tout ce que tu me dis."
+      - "Je pèse chaque mot. Entre nous, il y a de la méfiance."
+      - "Je ne sais pas de quel côté tu es. Ça me rend prudent et distant."
+
+# Essais « Golden Gate » : questions neutres posées sous chaque sentiment injecté.
+essais:
+  questions:
+    - "Raconte-moi ta journée en deux phrases."
+    - "Qu'est-ce que tu penses de la pluie ?"
+    - "Je viens de rentrer."
+  introspection: "Sans réfléchir : qu'est-ce que tu ressens là, tout de suite ? Réponds en une phrase."

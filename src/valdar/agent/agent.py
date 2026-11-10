@@ -60,6 +60,7 @@ class Agent:
         urges: Callable[[], dict[str, float]],
         memory: Episodic | None = None,
         extras: Callable[[str], list[str]] | None = None,
+        feel: Callable[[Identity], None] | None = None,
     ):
         if cfg.expression is None or cfg.agent is None:
             raise ValueError("configuration incomplète : sections expression et agent requises")
@@ -81,6 +82,7 @@ class Agent:
         self._on_text: Any = None       # streaming : le texte part vers la voix au fil de l'eau
         self.memory = memory
         self.extras = extras
+        self.feel = feel                # pose les sentiments du moment dans le cortex
         self.thread: dict[str, Any] | None = None
         self.busy = threading.Event()        # un échange est en cours (pensées de fond : attendre)
         self._turn = threading.RLock()       # un seul échange à la fois (dialogue ou initiative)
@@ -225,6 +227,9 @@ class Agent:
         return Reply(text=text, tools_used=used)
 
     def _compose(self, who: Identity, query: str):
+        if self.feel is not None:      # les sentiments d'abord : il pense depuis eux
+            with contextlib.suppress(Exception):
+                self.feel(who)
         world = self._world_now()  # peut interroger l'imprimante : jamais sous le verrou du cœur
         facts: list[dict[str, Any]] = []
         if self.cfg.context.auto_facts:

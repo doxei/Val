@@ -649,6 +649,62 @@ class LLMConfig(_Strict):
     history_messages: int = Field(default=16, ge=2)
 
 
+class CortexAxis(_Strict):
+    """Un sentiment injecté : coefficient = tanh(gain × Σ poids × source) × strength."""
+    plus: str
+    minus: str
+    weights: dict[str, float] = {}
+    gain: float = Field(default=1.0, gt=0.0)
+    strength: float = Field(default=1.0, ge=0.0, le=2.0)
+
+
+class CortexPsyche(_Strict):
+    valence_axis: str = "valence"
+    arousal_axis: str = "activation"
+    contagion: float = Field(default=0.25, ge=0.0, le=1.0)
+    secure_base: float = Field(default=0.5, ge=0.0, le=1.0)
+    soothed: list[str] = []
+    negativity: float = Field(default=1.2, ge=1.0, le=2.0)
+    negative_poles: list[str] = []
+    bipolar: list[str] = []
+    regulation: dict[str, dict[str, float]] = {}
+    dead_zone: float = Field(default=0.08, ge=0.0, lt=1.0)
+    budget: float = Field(default=1.6, ge=0.0)
+    inertia_seconds: float = Field(default=20.0, ge=0.0)
+    step: float = Field(default=0.1, ge=0.0, le=0.5)
+
+
+class CortexConfig(_Strict):
+    """Le cortex : Gemma chargé par Valdar lui-même, sentiments injectés dans les couches."""
+    model_path: str = "data/models/cortex/gemma-4-12b-it.gguf"
+    model_urls: list[str] = []       # essayées dans l'ordre
+    gpu_layers: int = -1
+    n_batch: int = Field(default=512, gt=0)
+    threads: int = Field(default=6, gt=0)
+    flash_attn: bool = True
+    kv_q8: bool = True
+    vectors: str = "data/cortex/vecteurs.npz"
+    scenarios: str = "config/cortex_scenarios.yaml"
+    layers: tuple[int, int] = (16, 32)
+    alpha: float = Field(default=0.12, ge=0.0, le=1.0)
+    inject: bool = True              # false : le modèle seul, sans injection (comparaison)
+    describe_state: bool = True      # garder aussi le bloc « ton état intérieur » en texte
+    free_ollama: bool = True         # demander à Ollama de libérer la carte au chargement
+    axes: dict[str, CortexAxis] = {}
+    psyche: CortexPsyche = CortexPsyche()
+
+    @model_validator(mode="after")
+    def _known_axes(self) -> CortexConfig:
+        p = self.psyche
+        names = [*p.soothed, *p.negative_poles, *p.bipolar]
+        for rules in p.regulation.values():
+            names += list(rules)
+        for n in names:
+            if n not in self.axes:
+                raise ValueError(f"cortex.psyche : axe inconnu '{n}'")
+        return self
+
+
 class Modulated(_Strict):
     """valeur = base + Σ poids × source, bornée à range."""
     base: float
@@ -863,6 +919,7 @@ class ValdarConfig(_Strict):
     relations: RelationsConfig = RelationsConfig()
     context: ContextConfig = ContextConfig()
     embeddings: EmbeddingsConfig = EmbeddingsConfig()
+    cortex: CortexConfig = CortexConfig()
 
     _root: Path = PrivateAttr(default_factory=Path.cwd)
 

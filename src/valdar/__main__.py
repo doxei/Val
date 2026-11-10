@@ -562,6 +562,50 @@ def _cmd_chrono(args: argparse.Namespace) -> int:
                   sense=not args.sans_sens)
 
 
+def _cmd_cortex(args: argparse.Namespace) -> int:
+    """Le cortex : installer le modèle, apprendre les sentiments, les essayer, l'activer."""
+    from valdar.interface.settings import Settings
+
+    cfg = load()
+    todo = (["installer", "apprendre", "essais", "activer"] if args.action == "tout"
+            else [args.action])
+    for step in todo:
+        if step == "installer":
+            from valdar.cortex.learn import download
+
+            download(cfg)
+        elif step == "apprendre":
+            from valdar.cortex.learn import learn
+
+            print("Apprentissage des sentiments (le modèle lit des situations contrastées)…")
+            learn(cfg)
+        elif step == "essais":
+            from valdar.cortex.learn import trials
+
+            print("Essais d'injection (sans rien dire de son état dans le prompt)…")
+            rep = trials(cfg)
+            if args.action == "tout" and rep["axes_nets"] * 2 < rep["axes_total"]:
+                print("Moins de la moitié des sentiments agissent dans le bon sens : je "
+                      "n'active pas le cortex. Valdar reste sur Ollama.")
+                return 2
+        elif step == "activer":
+            Settings(cfg).store("llm.backend", "cortex")
+            print("Cortex activé : au prochain démarrage, Valdar pense avec ses sentiments "
+                  "dans ses couches. Pour revenir : valdar cortex desactiver")
+        elif step == "desactiver":
+            Settings(cfg).store("llm.backend", "ollama")
+            print("Cortex désactivé : Valdar repasse par Ollama.")
+        elif step == "etat":
+            path = cfg.root / cfg.cortex.model_path
+            vec = cfg.root / cfg.cortex.vectors
+            print(f"moteur : {cfg.llm.backend}")
+            print(f"modèle : {path} ({'présent' if path.is_file() else 'absent'})")
+            print(f"vecteurs : {vec} ({'présents' if vec.is_file() else 'absents'})")
+            print(f"force : {cfg.cortex.alpha}, couches {list(cfg.cortex.layers)}, "
+                  f"description en texte : {'oui' if cfg.cortex.describe_state else 'non'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -621,6 +665,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sans-oreilles", action="store_true")
     p.add_argument("--sans-sens", action="store_true")
     p.set_defaults(func=_cmd_chrono)
+
+    p = sub.add_parser("cortex", help="Gemma chargé par Valdar, sentiments dans les couches")
+    p.add_argument("action", choices=["tout", "installer", "apprendre", "essais", "activer",
+                                      "desactiver", "etat"])
+    p.set_defaults(func=_cmd_cortex)
 
     p = sub.add_parser("kiwix", help="installer les bibliothèques hors ligne (Wikipédia…)")
     p.set_defaults(func=_cmd_kiwix)

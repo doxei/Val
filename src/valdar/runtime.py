@@ -17,6 +17,7 @@ from valdar.agent import Agent, Reply
 from valdar.atelier import Checklist, Pinouts, Reminders, Stock
 from valdar.config import ValdarConfig, load
 from valdar.config.loader import Identity
+from valdar.cortex.affect import Feeling, bond_from
 from valdar.devices.moonraker import Moonraker
 from valdar.expression import load_self_model
 from valdar.expression.compose import feeling_block, memories_block
@@ -129,7 +130,8 @@ class Runtime:
             add_n8n_tools(self.registry, self.cfg.n8n)
         self.agent = Agent(self.cfg, self.llm, self.registry, self.heart, self.lock,
                            self.facts, self.self_model, self.world_lines, self.urges,
-                           memory=self.memory, extras=self.extra_blocks)
+                           memory=self.memory, extras=self.extra_blocks, feel=self.feel)
+        self.feeling = Feeling(self.cfg.cortex)
         self.tool_ctx.on_recall = self.agent._reinstate
         self.block_providers: list[Any] = [self._relation_block, self._knowledge_block,
                                            self._thoughts_block]
@@ -395,6 +397,7 @@ class Runtime:
 
         def run() -> None:
             try:
+                self.feel(None)          # seul avec ses pensées : il pense depuis son humeur
                 th = self.thoughts.think(now)
                 if th is not None:
                     self.events.put(Event("pensee", th.reflection,
@@ -405,6 +408,19 @@ class Runtime:
                 self.agent.warm()
 
         threading.Thread(target=run, name="valdar-pensee", daemon=True).start()
+
+    def feel(self, who: Identity | None) -> dict[str, float]:
+        """Les sentiments du moment (cœur + lien avec `who`, None = seul) posés dans les
+        couches du cortex. Sans cortex, ne fait que les calculer (affichage)."""
+        now = time.time()
+        person = self.relations.get(who.person) if who is not None else None
+        bond = bond_from(person, who, now, self.cfg.relations)
+        with self.lock:
+            src = self.heart.sources()
+            coefs = self.feeling.update(src, bond, now)
+        if getattr(self.llm, "supports_feeling", False):
+            self.llm.feel(coefs)
+        return coefs
 
     def _maybe_sleep_work(self, now: float) -> None:
         """La nuit : nettoyer, auditer, résumer, consolider (une fois par sommeil)."""
