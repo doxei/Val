@@ -372,3 +372,62 @@ def test_one_pass_wake_reuses_the_transcription():
     g.feed(tone(0.3, SR))
     g.feed(np.zeros(SR, np.float32))
     assert len(heard) == 1 and both._kept is None        # pas pour lui : rien de gardé
+
+
+def test_transcription_starts_during_the_silence_and_is_reused():
+    import threading as th
+
+    started = []
+
+    class SlowSTT:
+        def __init__(self):
+            self.calls = 0
+
+        def transcribe(self, seg):
+            self.calls += 1
+            started.append(len(seg))
+            return Transcript("Valdar tu m'entends", -0.1, 0.01)
+
+    class Wake:
+        def heard(self, seg):
+            return True
+
+    stt = SlowSTT()
+    heard: list = []
+    done = th.Event()
+    cfg = load().ears.model_copy(update={"early_ms": 200, "end_silence_ms": 700})
+    g = Gate(cfg, EnergyVAD(0.005), Wake(), stt,
+             lambda h: (heard.append(h), done.set()))
+    g.feed(tone(0.3, SR))                          # 1 s de parole
+    g.feed(np.zeros(int(0.8 * SR), np.float32))    # puis le silence de fin de phrase
+    assert done.wait(5)
+    assert stt.calls == 1                          # une seule transcription, anticipée
+    assert heard[0].timing["anticipee"] is True
+    assert g.stats["anticipated"] == 1
+
+
+def test_anticipation_is_dropped_when_speech_resumes():
+    class STT:
+        def __init__(self):
+            self.calls = 0
+
+        def transcribe(self, seg):
+            self.calls += 1
+            return Transcript("Valdar alors", -0.1, 0.01)
+
+    class Wake:
+        def heard(self, seg):
+            return True
+
+    stt = STT()
+    heard: list = []
+    cfg = load().ears.model_copy(update={"early_ms": 200, "end_silence_ms": 700})
+    g = Gate(cfg, EnergyVAD(0.005), Wake(), stt, heard.append)
+    g.feed(tone(0.3, SR))
+    g.feed(np.zeros(int(0.4 * SR), np.float32))    # petite pause : anticipation lancée
+    g.feed(tone(0.3, SR))                          # il reprend : elle ne vaut plus rien
+    g.feed(np.zeros(int(0.8 * SR), np.float32))
+    import time as _t
+    _t.sleep(0.3)
+    assert len(heard) == 1 and heard[0].timing["anticipee"] is False
+    assert heard[0].seconds > 2.0                  # la phrase entière, pas le début

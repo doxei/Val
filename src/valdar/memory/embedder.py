@@ -30,13 +30,21 @@ class Embedder:
         self.clock = clock
         self._down_until = 0.0
         self.last_error = ""
+        self.disabled = False
+        self.last_seconds: float | None = None
 
     @property
     def signature(self) -> str:
         return f"{self.cfg.backend}:{self.cfg.model}"
 
     def available(self) -> bool:
-        return self.cfg.backend == "ollama" and self.clock() >= self._down_until
+        return (self.cfg.backend == "ollama" and not self.disabled
+                and self.clock() >= self._down_until)
+
+    def disable(self, why: str) -> None:
+        """Plus de vrai modèle pour cette session : vecteurs maison seulement."""
+        self.disabled = True
+        self.last_error = why
 
     def embed_many(self, texts: list[str]) -> np.ndarray | None:
         """Vecteurs normés (une ligne par texte), ou None si le modèle est indisponible."""
@@ -49,7 +57,9 @@ class Embedder:
             body["options"] = {"num_gpu": 0}
         try:
             post = self.client.post if self.client is not None else httpx.post
+            t0 = time.perf_counter()
             r = post(self.url + "/api/embed", json=body, timeout=self.cfg.timeout_seconds)
+            self.last_seconds = time.perf_counter() - t0
             r.raise_for_status()
             m = np.asarray(r.json()["embeddings"], dtype=np.float32)
             if m.ndim != 2 or len(m) != len(texts):

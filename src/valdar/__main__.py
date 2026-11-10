@@ -286,6 +286,9 @@ def _start_vision(session) -> None:
         return
     if session.prints is None:
         session.prints = Prints(cfg.storage_path(cfg.ident.db))
+    session.camera = cam
+    if not cam.available:
+        print("(pas de caméra pour l'instant : je reconnais à la voix, et je réessaierai)")
     faces = detector = None
     try:
         det = fetch(cfg.repo_path(cfg.ident.face_detector), [cfg.ident.face_detector_url],
@@ -303,7 +306,9 @@ def _start_vision(session) -> None:
               on_dog_table=session.on_dog_table)
     session.watch = w
     w.start()
-    print("(je regarde la pièce : visages" + (", chien et table" if detector else "") + ")")
+    if cam.available:
+        print("(je regarde la pièce : visages" + (", chien et table" if detector else "")
+              + ")")
 
 
 def _start_interface(session):
@@ -415,7 +420,8 @@ def _cmd_voix(args: argparse.Namespace) -> int:
 
     import numpy as np
 
-    from valdar.voice import Speaker, apply, make_tts, split_sentences, to_int16
+    from valdar.voice import Speaker, make_tts, split_sentences, to_int16
+    from valdar.voice.character import render
 
     cfg = load()
     tts = make_tts(cfg)
@@ -435,7 +441,8 @@ def _cmd_voix(args: argparse.Namespace) -> int:
                                             "as construite, c'est la mienne, et j'y "
                                             "tiens.")
     if args.wav:
-        parts = [apply(tts.synthesize(s), tts.sample_rate, cfg.voice.character)
+        parts = [render(tts.synthesize(s), tts.sample_rate, cfg.voice.character,
+                        cfg.voice.effets)
                  for s in split_sentences(text, cfg.voice.max_sentence_chars)]
         audio = to_int16(np.concatenate(parts)) if parts else np.zeros(0, np.int16)
         with wave.open(args.wav, "wb") as wf:
@@ -546,6 +553,87 @@ def _cmd_kiwix(args: argparse.Namespace) -> int:
     return interactive(cfg.repo_path(cfg.kiwix.dir))
 
 
+def _cmd_voix_nouvelle(args: argparse.Namespace) -> int:
+    from valdar.voice.nouvelle import main as nouvelle
+
+    return nouvelle(load(), args.voice_id, redo=args.refaire, back=args.revenir,
+                    effets=args.effets)
+
+
+def _cmd_chrono(args: argparse.Namespace) -> int:
+    from valdar.chrono import main as chrono
+
+    return chrono(load(), voice=not args.sans_voix, ears=not args.sans_oreilles,
+                  sense=not args.sans_sens)
+
+
+def _cmd_cortex(args: argparse.Namespace) -> int:
+    """Le cortex : installer le modèle, apprendre les sentiments, les essayer, l'activer.
+    Tout ce qui s'affiche est aussi écrit dans data/cortex/journal.txt."""
+    import time
+    import traceback
+
+    from valdar.interface.settings import Settings
+
+    cfg = load()
+    journal = (cfg.root / cfg.cortex.vectors).parent / "journal.txt"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+
+    def say(line: str) -> None:
+        print(line, flush=True)
+        with journal.open("a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
+
+    todo = (["installer", "apprendre", "essais", "activer"] if args.action == "tout"
+            else [args.action])
+    say(f"=== valdar cortex {args.action} ===")
+    try:
+        for step in todo:
+            if step == "installer":
+                from valdar.cortex.learn import download
+
+                download(cfg, say)
+            elif step == "apprendre":
+                from valdar.cortex.backend import free_ollama
+                from valdar.cortex.learn import learn
+
+                free_ollama(cfg)
+                say("Apprentissage des sentiments (le modèle lit des situations contrastées)…")
+                learn(cfg, say=say)
+            elif step == "essais":
+                from valdar.cortex.backend import free_ollama
+                from valdar.cortex.learn import trials
+
+                free_ollama(cfg)
+                say("Essais d'injection (sans rien dire de son état dans le prompt)…")
+                rep = trials(cfg, say=say)
+                if args.action == "tout" and rep["axes_nets"] * 2 < rep["axes_total"]:
+                    say("Moins de la moitié des sentiments agissent dans le bon sens : je "
+                        "n'active pas le cortex. Valdar reste sur Ollama.")
+                    return 2
+            elif step == "activer":
+                Settings(cfg).store("llm.backend", "cortex")
+                say("Cortex activé : au prochain démarrage, Valdar pense avec ses sentiments "
+                    "dans ses couches. Pour revenir : valdar cortex desactiver")
+            elif step == "desactiver":
+                Settings(cfg).store("llm.backend", "ollama")
+                say("Cortex désactivé : Valdar repasse par Ollama.")
+            elif step == "etat":
+                path = cfg.root / cfg.cortex.model_path
+                vec = cfg.root / cfg.cortex.vectors
+                say(f"moteur : {cfg.llm.backend}")
+                say(f"modèle : {path} ({'présent' if path.is_file() else 'absent'})")
+                say(f"vecteurs : {vec} ({'présents' if vec.is_file() else 'absents'})")
+                say(f"force : {cfg.cortex.alpha}, couches {list(cfg.cortex.layers)}, "
+                    f"description en texte : {'oui' if cfg.cortex.describe_state else 'non'}")
+    except Exception as exc:
+        say(f"ÉCHEC ({type(exc).__name__}) : {exc}")
+        say(traceback.format_exc())
+        return 1
+    say("=== terminé ===")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -591,6 +679,25 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--minutes", type=float, default=None,
                    help="avec --ratee : minutes avant la fin où c'était déjà fichu")
     p.set_defaults(func=_cmd_vigie)
+
+    p = sub.add_parser("voix-nouvelle",
+                       help="nouvelle voix depuis ElevenLabs (extraits, référence, avant/après)")
+    p.add_argument("--voice-id", default="kmzDWJGT4adCbA85GELi")
+    p.add_argument("--refaire", action="store_true", help="redemander les extraits")
+    p.add_argument("--revenir", action="store_true", help="remettre la voix précédente")
+    p.add_argument("--effets", action="store_true", help="garder les effets « megatron »")
+    p.set_defaults(func=_cmd_voix_nouvelle)
+
+    p = sub.add_parser("chrono", help="chronomètre un tour complet (clavier, voix, oreilles)")
+    p.add_argument("--sans-voix", action="store_true")
+    p.add_argument("--sans-oreilles", action="store_true")
+    p.add_argument("--sans-sens", action="store_true")
+    p.set_defaults(func=_cmd_chrono)
+
+    p = sub.add_parser("cortex", help="Gemma chargé par Valdar, sentiments dans les couches")
+    p.add_argument("action", choices=["tout", "installer", "apprendre", "essais", "activer",
+                                      "desactiver", "etat"])
+    p.set_defaults(func=_cmd_cortex)
 
     p = sub.add_parser("kiwix", help="installer les bibliothèques hors ligne (Wikipédia…)")
     p.set_defaults(func=_cmd_kiwix)

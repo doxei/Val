@@ -221,7 +221,7 @@ def test_xtts_missing_files_says_what_to_do(tmp_path):
 def test_speaker_plays_sentence_by_sentence():
     sink = NullSink()
     tts = FakeTTS()
-    sp = Speaker(VoiceConfig(), tts, sink=sink).start()
+    sp = Speaker(VoiceConfig(streaming=False), tts, sink=sink).start()
     sp.say("Salut Olivier. *Ça* va ? Moi oui.")
     assert sp.wait_done(timeout=10)
     sp.close()
@@ -301,3 +301,138 @@ def test_import_takes_voice_and_nothing_personal(runtime_factory, tmp_path):
     assert "eleven.key" not in copied and "test_sony.wav" not in copied
     assert _tree_hash(ancien) == before, "l'ancienne installation n'est jamais modifiée"
     assert all("déjà importé" in line for line in importer().run())
+
+
+
+def test_speaker_streams_chunks_with_one_continuous_chain():
+    sink = NullSink()
+    tts = FakeTTS()
+    sp = Speaker(VoiceConfig(), tts, sink=sink).start()
+    sp.say("Salut Olivier. Ça va ?")
+    assert sp.wait_done(timeout=10)
+    sp.close()
+    assert len(sink.played) == 6                      # 3 morceaux par phrase, à la suite
+    assert sum(n for n, _ in sink.played) == sum(max(240, 60 * len(t)) for t in tts.texts)
+    assert sp.stats.first_chunk_seconds is not None
+
+
+def test_character_stream_matches_the_original_chain():
+    from valdar.voice.character import CharacterStream
+
+    ch = load().voice.character
+    sr = 24000
+    x = _speechlike(sr * 3)
+    ref = apply(x, sr, ch)
+    cs = CharacterStream(sr, ch)
+    st = np.concatenate([cs.process(x[i:i + 2048]) for i in range(0, len(x), 2048)])
+
+    def spec(y):
+        f = np.abs(np.fft.rfft(y * np.hanning(len(y))))
+        return 20 * np.log10(np.add.reduceat(f, np.linspace(0, len(f) - 1, 60).astype(int))
+                             + 1e-9)
+
+    assert np.corrcoef(spec(ref), spec(st))[0, 1] > 0.98          # même timbre
+    rms = [20 * np.log10(np.sqrt(np.mean(y ** 2))) for y in (ref, st)]
+    assert abs(rms[0] - rms[1]) < 1.5                              # même niveau
+    assert np.abs(st).max() <= ch.peak + 1e-9                      # jamais de saturation
+    jumps = [abs(st[i] - st[i - 1]) for i in range(2048, len(st), 2048)]
+    assert max(jumps) <= np.abs(np.diff(st)).max()                 # pas de clic aux raccords
+
+
+def test_xtts_stream_uses_cached_latents_and_original_settings(tmp_path):
+    mdir, ref = _voice_files(tmp_path)
+    model = _FakeXtts()
+    calls = []
+
+    def inference_stream(text, language, lat, emb, **kw):
+        calls.append((text, lat, emb, kw))
+        for i in range(3):
+            yield np.full(100, 0.1 * (i + 1), dtype=np.float32)
+
+    model.inference_stream = inference_stream
+    be = XttsBackend(mdir, ref, loader=lambda d, dev: (model, model.config))
+    chunks = list(be.stream("Salut.", chunk_size=15))
+    assert [round(float(c[0]), 2) for c in chunks] == [0.1, 0.2, 0.3]
+    text, lat, emb, kw = calls[0]
+    assert (lat, emb) == ("LAT", "EMB") and kw["stream_chunk_size"] == 15
+    assert kw["temperature"] == 0.75 and kw["enable_text_splitting"] is False
+    assert len(model.latent_calls) == 1
+
+
+def test_xtts_stream_falls_back_to_whole_sentence(tmp_path):
+    mdir, ref = _voice_files(tmp_path)
+    model = _FakeXtts()                          # pas d'inference_stream
+    be = XttsBackend(mdir, ref, loader=lambda d, dev: (model, model.config))
+    chunks = list(be.stream("Salut."))
+    assert len(chunks) == 1 and chunks[0].dtype == np.float32
+
+
+def test_xtts_reference_list_goes_to_latents(tmp_path):
+    mdir, ref = _voice_files(tmp_path)
+    ref2 = tmp_path / "b.wav"
+    ref2.write_bytes(b"RIFF")
+    model = _FakeXtts()
+    be = XttsBackend(mdir, [ref, ref2], loader=lambda d, dev: (model, model.config))
+    be.synthesize("Salut.")
+    assert model.latent_calls[0]["audio_path"] == [str(ref), str(ref2)]
+    missing = XttsBackend(mdir, [ref, tmp_path / "absent.wav"]).check_files()
+    assert any("absent.wav" in m for m in missing)
+
+
+def test_without_effects_only_the_level_changes():
+    from valdar.voice.character import PlainStream, render
+
+    ch = load().voice.character
+    x = _speechlike(24000)
+    out = render(x, 24000, ch, effets=False)
+    assert np.corrcoef(out, x.astype(np.float64))[0, 1] > 0.9999   # même son
+    assert abs(np.abs(out).max() - ch.peak) < 1e-9
+    ps = PlainStream(24000, ch)
+    st = np.concatenate([ps.process(x[i:i + 4096]) for i in range(0, len(x), 4096)])
+    assert np.corrcoef(st, x.astype(np.float64))[0, 1] > 0.9999
+    assert np.abs(st).max() <= ch.peak + 1e-9
+
+
+def test_new_voice_clips_switch_and_way_back(tmp_path, monkeypatch):
+    import wave as _wave
+
+    from valdar.interface.settings import Settings
+    from valdar.voice import nouvelle
+
+    class Resp:
+        status_code = 200
+        content = (np.sin(np.arange(24000) / 10) * 8000).astype("<i2").tobytes()
+        text = ""
+
+    sent = []
+
+    def post(url, params=None, headers=None, json=None, timeout=None):
+        sent.append((url, params, headers, json))
+        return Resp()
+
+    clips = nouvelle.make_clips(tmp_path / "clips", "kmzDWJGT4adCbA85GELi", "CLE", post=post)
+    assert len(clips) == 5 and all(p.is_file() for p in clips)
+    url, params, headers, body = sent[0]
+    assert "kmzDWJGT4adCbA85GELi" in url and params["output_format"] == "pcm_24000"
+    assert body["model_id"] == "eleven_multilingual_v2" and headers["xi-api-key"] == "CLE"
+    with _wave.open(str(clips[0])) as wf:
+        assert wf.getnchannels() == 1 and wf.getframerate() == 24000
+    assert not any(b"CLE" in p.read_bytes() for p in clips)      # la clé n'est nulle part
+
+    cfg = load()
+    cfg = cfg.model_copy(deep=True)
+    cfg.storage.dir = str(tmp_path / "data")
+    st = Settings(cfg, tmp_path / "reglages.json")
+    old = cfg.voice.xtts.reference
+    base = cfg.storage_path("voix")
+    base.mkdir(parents=True)
+    import json as _json
+
+    (base / "voix_precedente.json").write_text(
+        _json.dumps({"reference": old, "effets": True}), encoding="utf-8")
+    st.store("voice.xtts.reference", ["data/voix/a.wav", "data/voix/b.wav"])
+    st.store("voice.effets", False)
+    import valdar.interface.settings as S
+    monkeypatch.setattr(S, "Settings", lambda c: st)
+    assert nouvelle.main(cfg, "kmzDWJGT4adCbA85GELi", back=True) == 0
+    assert cfg.voice.xtts.reference == old and cfg.voice.effets is True

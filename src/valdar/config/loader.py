@@ -288,6 +288,7 @@ class EarsConfig(_Strict):
     vad_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     preroll_seconds: float = Field(default=0.5, ge=0.0, le=3.0)
     end_silence_ms: int = Field(default=700, ge=200)
+    early_ms: int = Field(default=250, ge=0)   # transcription anticipée dès ce silence (0 = non)
     min_segment_seconds: float = Field(default=0.4, ge=0.1)
     max_segment_seconds: float = Field(default=20.0, gt=1.0)
     engaged_seconds: float = Field(default=14.0, ge=0.0)      # comme avant
@@ -458,6 +459,13 @@ class EmbeddingsConfig(_Strict):
     batch: int = Field(default=16, ge=1, le=256)
     backfill_every_seconds: float = Field(default=60.0, gt=0.0)
     min_similarity: float = Field(default=0.45, ge=0.0, le=1.0)  # à calibrer sur la machine
+    # Serveur des plongements. Vide = un Ollama à part, processeur seul, lancé par Valdar
+    # (port `sidecar_port`) : le cerveau ne quitte jamais la carte graphique. Le même
+    # serveur que Gemma n'est utilisé que si `same_server_ok` (sinon, avec
+    # OLLAMA_MAX_LOADED_MODELS=1, chaque recherche éjecte Gemma : +6 s et cache perdu).
+    url: str = ""
+    sidecar_port: int = Field(default=11435, ge=1024, le=65535)
+    same_server_ok: bool = False
 
     @model_validator(mode="after")
     def _check(self) -> EmbeddingsConfig:
@@ -634,8 +642,67 @@ class LLMConfig(_Strict):
     num_ctx: int = Field(default=8192, gt=0)
     think: bool = False
     timeout_seconds: float = Field(default=300.0, gt=0.0)
+    # Après une pensée de fond (et au démarrage), refaire lire à Gemma la partie stable du
+    # prompt : le message suivant ne paie que ses propres jetons (cache d'Ollama).
+    warm_cache: bool = True
     max_tool_rounds: int = Field(default=6, ge=1)
     history_messages: int = Field(default=16, ge=2)
+
+
+class CortexAxis(_Strict):
+    """Un sentiment injecté : coefficient = tanh(gain × Σ poids × source) × strength."""
+    plus: str
+    minus: str
+    weights: dict[str, float] = {}
+    gain: float = Field(default=1.0, gt=0.0)
+    strength: float = Field(default=1.0, ge=0.0, le=2.0)
+
+
+class CortexPsyche(_Strict):
+    valence_axis: str = "valence"
+    arousal_axis: str = "activation"
+    contagion: float = Field(default=0.25, ge=0.0, le=1.0)
+    secure_base: float = Field(default=0.5, ge=0.0, le=1.0)
+    soothed: list[str] = []
+    negativity: float = Field(default=1.2, ge=1.0, le=2.0)
+    negative_poles: list[str] = []
+    bipolar: list[str] = []
+    regulation: dict[str, dict[str, float]] = {}
+    dead_zone: float = Field(default=0.08, ge=0.0, lt=1.0)
+    budget: float = Field(default=1.6, ge=0.0)
+    inertia_seconds: float = Field(default=20.0, ge=0.0)
+    step: float = Field(default=0.1, ge=0.0, le=0.5)
+
+
+class CortexConfig(_Strict):
+    """Le cortex : Gemma chargé par Valdar lui-même, sentiments injectés dans les couches."""
+    model_path: str = "data/models/cortex/gemma-4-12b-it.gguf"
+    model_urls: list[str] = []       # essayées dans l'ordre
+    gpu_layers: int = -1
+    n_batch: int = Field(default=512, gt=0)
+    threads: int = Field(default=6, gt=0)
+    flash_attn: bool = True
+    kv_q8: bool = True
+    vectors: str = "data/cortex/vecteurs.npz"
+    scenarios: str = "config/cortex_scenarios.yaml"
+    layers: tuple[int, int] = (16, 32)
+    alpha: float = Field(default=0.12, ge=0.0, le=1.0)
+    inject: bool = True              # false : le modèle seul, sans injection (comparaison)
+    describe_state: bool = True      # garder aussi le bloc « ton état intérieur » en texte
+    free_ollama: bool = True         # demander à Ollama de libérer la carte au chargement
+    axes: dict[str, CortexAxis] = {}
+    psyche: CortexPsyche = CortexPsyche()
+
+    @model_validator(mode="after")
+    def _known_axes(self) -> CortexConfig:
+        p = self.psyche
+        names = [*p.soothed, *p.negative_poles, *p.bipolar]
+        for rules in p.regulation.values():
+            names += list(rules)
+        for n in names:
+            if n not in self.axes:
+                raise ValueError(f"cortex.psyche : axe inconnu '{n}'")
+        return self
 
 
 class Modulated(_Strict):
@@ -797,7 +864,8 @@ class VoiceCharacter(_Strict):
 
 class XttsConfig(_Strict):
     model_dir: str = "data/models/xtts-v2"
-    reference: str = "data/voice/xtts_ref.wav"
+    # Un fichier, ou une liste d'extraits (XTTS en tire des latents communs).
+    reference: str | list[str] = "data/voice/xtts_ref.wav"
     language: str = "fr"
     device: str = "cuda"
 
@@ -808,6 +876,13 @@ class VoiceConfig(_Strict):
     xtts: XttsConfig = XttsConfig()
     character: VoiceCharacter = VoiceCharacter()
     max_sentence_chars: int = Field(default=230, ge=40, le=270)   # XTTS : 273 car. max en français
+    # En flux : XTTS rend la phrase morceau par morceau (inference_stream), le premier part
+    # aux haut-parleurs avant que la phrase soit finie. Faux = phrase entière, comme avant.
+    streaming: bool = True
+    # Chaîne d'effets « megatron » (filtre radio, saturation). Faux = la voix telle quelle,
+    # seulement mise au bon niveau.
+    effets: bool = True
+    stream_chunk_size: int = Field(default=20, ge=5, le=100)   # jetons XTTS par morceau
 
 
 class ValdarConfig(_Strict):
@@ -844,6 +919,7 @@ class ValdarConfig(_Strict):
     relations: RelationsConfig = RelationsConfig()
     context: ContextConfig = ContextConfig()
     embeddings: EmbeddingsConfig = EmbeddingsConfig()
+    cortex: CortexConfig = CortexConfig()
 
     _root: Path = PrivateAttr(default_factory=Path.cwd)
 

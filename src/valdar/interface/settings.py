@@ -25,6 +25,14 @@ SPEC: list[dict[str, Any]] = [
      "help": "Gemma réfléchit avant de répondre : plus juste, beaucoup plus lent."},
     {"path": "llm.keep_alive", "label": "Garder le modèle chargé", "type": "text",
      "group": "Cerveau", "help": "ex. 30m, 2h, -1 (toujours)."},
+    {"path": "cortex.inject", "label": "Sentiments injectés dans les couches", "type": "bool",
+     "group": "Cerveau", "help": "Avec le cortex : le cœur déplace les activations du modèle."},
+    {"path": "cortex.alpha", "label": "Force de l'injection", "type": "float", "min": 0.0,
+     "max": 0.5, "step": 0.01, "group": "Cerveau",
+     "help": "0,05 à 0,1 : subtil. Au-delà de 0,3 il peut perdre le fil."},
+    {"path": "cortex.describe_state", "label": "Décrire aussi son état en texte",
+     "type": "bool", "group": "Cerveau",
+     "help": "Décoché : il ne ressent que par l'injection (essai d'introspection)."},
     {"path": "llm.history_messages", "label": "Messages gardés en tête", "type": "int",
      "min": 4, "max": 60, "step": 2, "group": "Cerveau"},
     {"path": "expression.temperature.base", "label": "Créativité (température)",
@@ -47,6 +55,10 @@ SPEC: list[dict[str, Any]] = [
      "help": "0 = son plein ; -2 = timbre radio d'origine."},
     {"path": "voice.character.peak", "label": "Volume", "type": "float", "min": 0.2,
      "max": 1.0, "step": 0.05, "group": "Voix"},
+    {"path": "voice.effets", "label": "Effets « megatron » (radio, saturation)",
+     "type": "bool", "group": "Voix", "help": "Décoché : la voix telle quelle."},
+    {"path": "voice.streaming", "label": "Voix en flux (1er son plus tôt)", "type": "bool",
+     "group": "Voix"},
     {"path": "voice.enabled", "label": "Voix activée", "type": "bool", "group": "Voix",
      "restart": True},
     # --- oreilles
@@ -173,18 +185,26 @@ class Settings:
         if spec is None:
             raise KeyError(f"réglage inconnu : {path}")
         v = coerce(spec, value)
+        self.store(path, v)
+        return {"path": path, "value": v, "restart": bool(spec.get("restart"))}
+
+    def store(self, path: str, value: Any) -> None:
+        """Applique et garde un réglage (sans liste blanche : pour les commandes de Valdar,
+        jamais pour l'interface)."""
         with self._lock:
-            _set(self.cfg, path, v)
+            _set(self.cfg, path, value)
             saved = self._saved()
             node = saved
             *head, last = path.split(".")
             for part in head:
                 node = node.setdefault(part, {})
-            node[last] = v
+            node[last] = value
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(saved, ensure_ascii=False, indent=2),
                                  encoding="utf-8")
-        return {"path": path, "value": v, "restart": bool(spec.get("restart"))}
+
+    def get(self, path: str) -> Any:
+        return _get(self.cfg, path)
 
     def reset(self) -> None:
         with self._lock:

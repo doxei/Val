@@ -26,7 +26,7 @@ from valdar.expression.compose import (
     with_context,
 )
 from valdar.heart import Heart
-from valdar.llm.backend import ChatResult, LLMBackend, LLMError
+from valdar.llm.backend import ChatResult, GenParams, LLMBackend, LLMError
 from valdar.memory import Episodic, Facts
 from valdar.tools.registry import Registry, decide
 
@@ -60,6 +60,7 @@ class Agent:
         urges: Callable[[], dict[str, float]],
         memory: Episodic | None = None,
         extras: Callable[[str], list[str]] | None = None,
+        feel: Callable[[Identity], None] | None = None,
     ):
         if cfg.expression is None or cfg.agent is None:
             raise ValueError("configuration incomplète : sections expression et agent requises")
@@ -81,6 +82,7 @@ class Agent:
         self._on_text: Any = None       # streaming : le texte part vers la voix au fil de l'eau
         self.memory = memory
         self.extras = extras
+        self.feel = feel                # pose les sentiments du moment dans le cortex
         self.thread: dict[str, Any] | None = None
         self.busy = threading.Event()        # un échange est en cours (pensées de fond : attendre)
         self._turn = threading.RLock()       # un seul échange à la fois (dialogue ou initiative)
@@ -225,6 +227,9 @@ class Agent:
         return Reply(text=text, tools_used=used)
 
     def _compose(self, who: Identity, query: str):
+        if self.feel is not None:      # les sentiments d'abord : il pense depuis eux
+            with contextlib.suppress(Exception):
+                self.feel(who)
         world = self._world_now()  # peut interroger l'imprimante : jamais sous le verrou du cœur
         facts: list[dict[str, Any]] = []
         if self.cfg.context.auto_facts:
@@ -299,6 +304,25 @@ class Agent:
         impulses = r.positive if p > 0 else r.negative
         with self.lock:
             self.heart.apply(impulses, amp=abs(p) * r.gain)
+
+    def warm(self, who: Identity | None = None) -> bool:
+        """Réchauffe le cache d'Ollama : fait relire au modèle la partie stable (personnalité,
+        outils, conversation en cours) quand personne ne parle, pour que le prochain message
+        ne paie que ses propres jetons. Utile après une pensée de fond ou au démarrage, qui
+        ont remplacé ce cache. Ne touche pas à l'historique."""
+        if self.busy.is_set() or not self._llm_lock.acquire(blocking=False):
+            return False
+        try:
+            who = who or self.cfg.agent.console_identity
+            system, context, params = self._compose(who, "")
+            msgs = with_context(self._window() + [{"role": "user", "content": "…"}], context)
+            self.llm.chat(msgs, system=system, tools=self._tool_schemas(who),
+                          params=GenParams(temperature=0.0, max_tokens=1))
+            return True
+        except Exception:
+            return False
+        finally:
+            self._llm_lock.release()
 
     def _tool_schemas(self, who: Identity) -> list[dict[str, Any]]:
         perms = self.cfg.permissions

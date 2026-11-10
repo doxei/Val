@@ -173,10 +173,16 @@ def prompt_parts(
     moment = [
         facts_block(facts),
         *(extra_blocks or []),
-        feeling_block(heart, cfg.expression, urges),
+        feeling_block(heart, cfg.expression, urges) if _describe(cfg) else "",
         world_block(world),
     ]
     return ("\n\n".join(p for p in stable if p), "\n\n".join(p for p in moment if p))
+
+
+def _describe(cfg: ValdarConfig) -> bool:
+    """Avec le cortex, on peut couper la description en texte de l'état intérieur : il ne
+    ressent alors que par l'injection dans ses couches (essai d'introspection)."""
+    return cfg.llm.backend != "cortex" or cfg.cortex.describe_state
 
 
 CONTEXT_OPEN = "[CONTEXTE POUR TOI — personne ne l'a dit, ne le récite pas]"

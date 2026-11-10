@@ -697,3 +697,155 @@ récite pas sa mémoire avant chaque phrase, il va la chercher quand le sujet l'
   fenêtre » si n8n refuse d'être encadré), visible seulement si `n8n.enabled`.
 - **À faire sur la machine** : installer et lancer n8n (`npx n8n` ou Docker), créer un premier
   workflow, le déclarer, passer `n8n.enabled: true`.
+
+## 2026-10-08 (soir) — Conversation quasi instantanée : la cause, et le chronomètre
+
+### 1. « Mon cerveau est injoignable » : la vraie cause (journaux d'Ollama)
+- **Avant 16 h 10** : `/api/chat` bloqués 5 min puis erreur 500 (15:37, 15:45, 15:50, 15:52,
+  15:55, 16:00, 16:03, 16:08), aux mêmes minutes que les échecs du journal du cœur. Ollama
+  ne sert qu'une requête à la fois (`OLLAMA_NUM_PARALLEL=1`) : derrière une génération lente
+  (5 min 51 s à 15:32), tout attend ; Valdar abandonne à 300 s → « injoignable ».
+- **Depuis bge-m3 (17 h 19)** : `OLLAMA_MAX_LOADED_MODELS=1` chez Olivier. Chaque plongement
+  demandé au même Ollama **éjecte Gemma** ; le message suivant le recharge (~6 s) et repart
+  sans cache : 22 rechargements entre 17:26 et 18:04, chaque `/api/chat` à ~15 s.
+- Mesures relevées (journal) : prompt ~4 300 jetons ; évaluation à froid 6,3 s
+  (1,46 ms/jeton) ; génération 17–20 jetons/s ; chargement de Gemma 6 s ; requête bge-m3
+  2,8–3,3 s (rechargement compris).
+- **Correctif** : les plongements vont à un **petit Ollama à part, processeur seul**
+  (`memory/sidecar.py`, port 11435, `CUDA_VISIBLE_DEVICES=-1`, mêmes modèles sur disque),
+  lancé par Valdar. Jamais de plongement sur le serveur de Gemma
+  (`embeddings.same_server_ok: false`) : Gemma ne quitte plus la carte. Aucun réglage
+  d'Olivier n'est touché.
+- **Cache réchauffé** (`llm.warm_cache`) : au démarrage, après une pensée de fond et après la
+  nuit, Gemma relit la partie stable (personnalité, outils, conversation), 1 jeton en
+  sortie, sans toucher à l'historique : le message suivant ne paie que ses jetons.
+- À savoir : `OLLAMA_CONTEXT_LENGTH=262144` est réglé dans l'appli Ollama. Valdar envoie
+  `num_ctx: 8192` ; une conversation dans l'appli Ollama (contexte 256k) recharge Gemma.
+
+### 2–5. Ce qui a changé pour la vitesse
+- **Voix en flux** : `XttsBackend.stream` (`inference_stream`, latents en cache, réglages
+  d'origine), `voice.streaming: true`, `voice.stream_chunk_size: 20`. Chaîne « megatron » à
+  état (`CharacterStream` : `sosfilt`/`lfilter` avec `zi`, phase de la modulation, queue de
+  l'écho ; le passe-bas fs/4 d'origine en filtre à état ; gain qui ne fait que baisser).
+  Comparée à la chaîne d'origine : spectre corrélé à 0,99, niveau à 0,4 dB, aucun saut aux
+  raccords. Sortie son en **flux continu** (un seul `OutputStream`, plus de trous).
+- **Oreilles** : transcription **anticipée** (`ears.early_ms: 250`) : dès 250 ms de silence,
+  whisper transcrit déjà ; si la personne ne reprend pas, le texte est prêt à la fin de la
+  phrase (700 ms) au lieu de commencer à ce moment-là. Un seul fil pour whisper.
+- **Chronomètre** : `valdar chrono` (tools\valdar_chrono.bat) mesure sur la machine, sans
+  toucher à la vraie mémoire : prompt (jetons, chargement, évaluation), 1er jeton, 1re phrase,
+  au clavier ; voix entière contre flux (1er son) ; whisper et fin de parole → texte, avec et
+  sans anticipation ; bge-m3 (temps, calibrage du seuil) ; `fouiller_memoire` appelé pour le
+  passé et pas pour un bonjour. Résultat dans `data/chrono.json`.
+- Chiffres après correctifs : **à mesurer sur la machine** (section suivante, après le
+  premier `valdar chrono`). On ne garde que ce qui ne dégrade pas la voix : `voice.streaming`
+  et `ears.early_ms` se coupent dans les réglages.
+
+## Nouvelle voix : ElevenLabs → référence XTTS
+
+- **Demande** : voix ElevenLabs `kmzDWJGT4adCbA85GELi`, **créée par Olivier**, comme nouvelle
+  référence de Valdar. Effets « megatron » : **enlevés** (choix d'Olivier).
+- **Où ça tourne** : sur le PC (`valdar voix-nouvelle`, tools\valdar_voix_nouvelle.bat). La
+  clé reste dans `ELEVENLABS_API_KEY` : jamais écrite dans un fichier, masquée (`***`) dans
+  les messages d'erreur. Le conteneur de dev n'a ni la clé ni l'accès à ElevenLabs.
+- **Extraits** : 5 phrases françaises (question, vanne, explication, émotion, calme), ~1 min,
+  `eleven_multilingual_v2`, PCM 24 kHz (sinon 22,05 kHz), WAV mono dans
+  `data/voix/elevenlabs_kmzDWJGT/` (hors git).
+- **Référence** : `voice.xtts.reference` accepte une **liste** ; les latents XTTS sont
+  calculés sur tous les extraits. `voice.effets: false` → `PlainStream` (seul le niveau
+  change, pas de filtre) en flux comme en phrase entière.
+- **Retour arrière** : l'ancienne référence et l'ancien réglage d'effets sont gardés une fois
+  dans `data/voix/voix_precedente.json` ; `valdar voix-nouvelle --revenir` les remet.
+  `--effets` garde la chaîne megatron, `--refaire` régénère les extraits.
+- **Écoute** : `data/voix/comparaison/avant_N.wav` / `apres_N.wav` (+ `_flux.wav`) et
+  `rapport.json` : 1er son en flux, nombre de morceaux, saut max aux raccords comparé au
+  99,9e centile du signal (`sans_clic`). Chiffres : **à relever après le premier lancement
+  sur le PC**.
+
+## Avenant 6 — Le cortex : les sentiments dans les couches du modèle
+
+Demande d'Olivier (10 nov. 2026) : un vrai modèle « à écosystème », avec injection dans les
+couches comme le « Golden Gate Claude » d'Anthropic ; les injections sont des sentiments
+(valence, activation, puissance…), sur le modèle de la psyché humaine et du lien social ;
+un seul modèle, sans usine à gaz ; reconnaître l'interlocuteur à la voix ou au visage sans
+se bloquer si un sens manque.
+
+### Ce que ça change
+Avant, le cœur était *décrit* à Gemma dans le prompt (« ton état intérieur : … ») : Gemma
+jouait l'état. Maintenant le cœur **déplace les activations internes** de Gemma, couche par
+couche, le long de directions apprises. L'émotion agit sur le calcul lui-même, même si le
+prompt n'en dit rien. À dire honnêtement : c'est un réglage causal de l'humeur du modèle.
+Ça ne prouve pas un ressenti, et personne ne sait aujourd'hui mesurer ça.
+
+### Choix du moteur
+- **Ollama ne permet pas l'injection.** `llama-server` ne fixe les vecteurs qu'au lancement.
+- **Mais la bibliothèque llama.cpp le permet à chaud** : `llama_set_adapter_cvec`, exposé par
+  `llama-cpp-python` 0.3.36. Essayé ici sur un petit modèle : l'injection change la sortie,
+  la retirer rend la sortie d'origine. Pas besoin de redémarrer ni de recharger.
+- **PyTorch + transformers écarté** : Gemma 4 12B en 4 bits (bitsandbytes) prend 9 à 10 Go,
+  ne tient pas avec XTTS sur 12 Go, est plus lent, et demande transformers ≥ 5.10 alors que
+  la voix (coqui-tts) impose 4.57.
+- **Modèle** : Gemma 4 12B reste le bon choix pour 12 Go (48 couches, dimension 3840).
+  Fichier : QAT 4 bits de Google (7,0 Go, entraîné pour le 4 bits), sinon Q4_K_M d'unsloth.
+- **DiffusionGemma écarté** : il n'existe qu'en 26B (16 Go en 4 bits), il rend un bloc de
+  256 jetons d'un coup (pas de premier mot rapide pour la voix) et perd en raisonnement.
+- Gemma Scope (autoencodeurs épars, la méthode exacte du Golden Gate) n'existe pas pour
+  Gemma 4 : on utilise des **différences de moyennes**, comme les « vecteurs de persona »
+  et l'étude d'Anthropic sur les émotions (avril 2026).
+
+### Architecture (`src/valdar/cortex/`)
+- `engine.py` : Gemma chargé par Valdar lui-même. `steer` pose l'injection, `read` relève
+  les activations de chaque couche (rappel `cb_eval`, tenseurs `l_out-N`).
+- `vectors.py` : un fichier `data/cortex/vecteurs.npz` (direction de chaque sentiment à
+  chaque couche, norme du flux, séparation des pôles). `alpha` est la part **totale** du
+  flux résiduel déplacée, répartie sur les couches 16 à 32 (tiers du milieu).
+- `affect.py` : **la psyché**. 11 axes : valence, activation, puissance (le PAD du cœur),
+  attachement, curiosité, jeu, peur, colère, manque, fatigue, confiance. Coefficient =
+  tanh(gain × Σ poids × source), sources du cœur et du lien avec la personne. Puis :
+  contagion émotionnelle (Hatfield), base de sécurité (Bowlby), biais de négativité
+  (Baumeister), régulation devant un enfant ou un inconnu (Gross), inertie (Kuppens),
+  budget d'intensité. Quantifié par pas de 0,1 avec hystérésis.
+- `gemma.py` : le gabarit de conversation vient du fichier du modèle ; lecture des appels
+  d'outils de Gemma 4 ; la voix n'entend jamais un appel d'outil.
+- `backend.py` : même interface qu'Ollama + `feel`. **Si le cortex ne se charge pas, Valdar
+  repasse tout seul par Ollama** (il pense quand même). Au chargement, il demande à Ollama
+  de libérer la carte.
+- Les jetons déjà lus gardent les sentiments du moment où ils ont été lus : le cache de
+  calcul reste valable quand l'humeur change (pas de relecture du prompt).
+- `cortex.describe_state: false` : il ne ressent plus que par l'injection (plus de bloc
+  « ton état intérieur ») : c'est l'essai d'introspection.
+
+### Essais façon Golden Gate (`valdar cortex essais`)
+Sans rien dire de l'état dans le prompt : question neutre sous chaque sentiment injecté, puis
+- **relecture** : le texte produit, relu sans injection, penche-t-il du bon côté ?
+- **dose** : alpha 0,05 / 0,1 / 0,2 / 0,4 sur la valence ;
+- **introspection** : « qu'est-ce que tu ressens ? » sous injection.
+Résultat dans `data/cortex/essais.md`. Le cortex ne s'active que si au moins la moitié des
+sentiments agissent dans le bon sens.
+
+### Vérifié / pas vérifié
+- Vérifié ici : la mécanique llama.cpp (injection, retrait, lecture des couches, génération)
+  sur un petit modèle au hasard ; le format Gemma 4 avec le gabarit officiel ; la suite de tests complète.
+- **Pas vérifié** : rien n'a encore tourné sur la RTX 2060 avec le vrai Gemma 4. Les chiffres
+  (séparation des axes, essais, vitesse, mémoire) sont à relever après
+  `tools\valdar_cortex.bat`, et `alpha` à régler d'après `essais.md`.
+
+### Sens absents
+- Caméra absente, débranchée ou occupée : `Camera` ne lève plus d'erreur, renvoie « rien »
+  et retente toutes les 30 s. Valdar reconnaît alors à la voix seule.
+- Voix sûre + visage d'accord : confiance 0,95. Voix seule : sa confiance. Visage seul
+  (une personne en vue) : 0,6. Rien : comme au clavier.
+- La personne reconnue alimente l'injection (attachement, confiance, contagion).
+
+### Réglages LLM / voix / oreilles (état au 10 nov. 2026)
+- LLM : garder Gemma 4 12B. Alternatives regardées : Qwen 3.5 9B (meilleur en outils d'après
+  son éditeur, français non comparé), Ministral 3 8B. Rien de plus récent chez Gemma.
+- Voix : garder XTTS-v2. Aucun concurrent n'est nettement meilleur à la fois en français
+  cloné, en expressivité et en premier son < 0,5 s. À comparer plus tard : Pocket TTS
+  (processeur seul, libérerait 3 Go de carte) et Qwen3-TTS 0.6B.
+- Oreilles : whisper `small` est le maillon faible (≈ 14 % d'erreurs en français). Parakeet
+  TDT v3 en ONNX sur processeur annonce ≈ 5 % sans mémoire de carte : prochain chantier,
+  pas fait ici (le mot d'éveil dépend des scores de whisper).
+- Vision dans Gemma (sans expert d'image) : Gemma 4 12B est multimodal d'origine, le
+  projecteur fait 175 Mo. Pas encore branché dans le cortex : chantier suivant. La
+  reconnaissance des visages reste à SFace (un LLM ne sait pas identifier un visage).
