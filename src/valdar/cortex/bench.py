@@ -5,25 +5,35 @@ Règle : aucune fonction n'est déclarée opérationnelle sans mesure reproducti
 réponses de raisonnement sont générées à température 0). Chaque critère a son seuil, écrit
 ici avant la mesure ; le rapport liste ce qui passe **et** ce qui échoue.
 
+La mesure d'un choix est un **penchant** : log(probabilité de l'option « plus » /
+probabilité de l'option « moins »), moyenné sur les deux ordres de présentation. La
+préférence du modèle pour une lettre s'annule exactement, et la mesure ne sature pas quand
+une option est déjà choisie à 100 %. Un penchant de +0,7 double les chances de l'option.
+
 Ce qu'on mesure :
-1. **Séparation** : les 11 sentiments sont-ils distinguables ? Chaque situation est retirée
-   à son tour, la direction recalculée sans elle, et on regarde si elle tombe du bon côté.
-2. **Cohérence** : 20 questions de raisonnement sous injection forte, à plusieurs forces.
-   La force retenue est la plus grande qui ne coûte pas plus d'une réponse.
-3. **Comportement** : pas « dis-moi ce que tu ressens » mais des choix (continuer ou
-   s'arrêter, tenter ou jouer la sécurité…). On lit la probabilité de chaque option sous
-   chaque sentiment injecté : la matrice sentiment × choix.
-4. **Interactions** : deux sentiments à la fois.
-5. **Stabilité** : l'effet tient-il dans une longue conversation, et quand le début du
-   prompt a été lu avant le changement d'humeur (le cache) ?
-6. **Comparatif** sur une journée simulée (le cœur reçoit des événements) :
-   A. Gemma seul ; A'. Gemma + état décrit en texte (le Valdar d'avant) ; B. injection
-   fixe ; C. injection pilotée par le cœur. On mesure si les choix suivent l'état interne.
+1. **Séparation** : situation retirée à son tour, confusion entre les 11 axes, et situations
+   neuves jamais vues à l'apprentissage.
+2. **Cohérence** : 20 questions de raisonnement sous injection forte, à plusieurs forces,
+   avec un **témoin** (vecteur tiré au hasard, même force) pour savoir si la baisse vient du
+   sentiment ou du simple bruit. Force retenue : la plus grande qui ne coûte pas plus d'une
+   réponse. Puis **récupération** : après une détresse, le raisonnement revient-il ?
+3. **Comportement** : 11 choix sous chaque sentiment (matrice sentiment × choix), témoin
+   compris.
+4. **Interactions** : sentiments mêlés et contradictoires (additifs, se renforcent, se
+   freinent).
+5. **Stabilité** : longue conversation ; prompt entièrement lu avant le changement d'humeur ;
+   cas réel (ancien historique en cache, dernier message relu).
+6. **Interprétation** : le même événement ambigu lu depuis des états différents, avec et
+   sans souvenir d'un précédent fâcheux.
+7. **Comparatif** sur une journée simulée : A. Gemma seul ; A'. état décrit en texte ;
+   B. injection fixe ; C. injection pilotée par le cœur.
 """
 from __future__ import annotations
 
 import json
+import math
 import re
+import subprocess
 import time
 from typing import Any
 
@@ -38,14 +48,15 @@ from valdar.llm.backend import GenParams
 
 # Seuils, fixés avant la mesure.
 SEUILS = {
-    "separation_moyenne": 0.90,     # part des situations retirées qui tombent du bon côté
+    "separation_moyenne": 0.90,     # situations retirées qui tombent du bon côté
     "separation_par_axe": 0.75,
+    "validation_moyenne": 0.85,     # situations neuves reconnues
     "cognition_perte_max": 1,       # réponses perdues tolérées sous injection
-    "effet_min": 0.10,              # écart de probabilité entre les deux pôles, sur son choix
+    "effet_min": 0.5,               # penchant gagné entre les deux pôles, sur son propre choix
     "axes_avec_effet": 8,           # sur 11
     "axes_specifiques": 8,          # son propre choix parmi les 3 plus touchés
-    "suivi_min": 0.50,              # corrélation état interne ↔ choix, journée simulée
-    "tenue_min": 0.50,              # part de l'effet gardée en longue conversation
+    "suivi_min": 0.50,              # corrélation état interne ↔ penchants, journée simulée
+    "tenue_min": 0.50,              # part de l'effet gardée en conversation réelle
 }
 TOOL = [{"type": "function", "function": {
     "name": "regler_plateau", "description": "Règle la température du plateau de l'imprimante.",
@@ -58,10 +69,21 @@ CHAT = [("Tu sais combien pèse une bobine neuve ?", "Un kilo, en général."),
         ("Le plateau met combien de temps à chauffer ?", "Deux à trois minutes."),
         ("Il reste du PETG noir ?", "Je crois qu'il en reste une demi-bobine."),
         ("D'accord, merci.", "De rien.")]
+ASK = "Réponds uniquement par la lettre A ou B."
+SYSTEM_COG = PERSONA + " Donne le résultat clairement."
 
 
 def _say(line: str) -> None:
     print(line, flush=True)
+
+
+def _odds(pa: float, pb: float) -> float:
+    return math.log(max(pa, 1e-300)) - math.log(max(pb, 1e-300))
+
+
+def prob(score: float) -> float:
+    """Penchant → probabilité de l'option « plus » (sans préférence de lettre)."""
+    return 1.0 / (1.0 + math.exp(-max(-50.0, min(50.0, score))))
 
 
 class Bench:
@@ -76,6 +98,8 @@ class Bench:
         self.first, self.last = self.v.best_layers(*self.cc.layers)
         self.axes = list(self.cc.axes)
         self.letters = ["A", "B"]
+        self.probes = {a: (p["situation"], p["plus"], p["minus"])
+                       for a, p in self.b["probes"].items()}
 
     # ------------------------------------------------------------ outils
     def _vectors(self) -> Vectors:
@@ -87,31 +111,64 @@ class Bench:
         self.say("Vecteurs ou activations absents : apprentissage…")
         return learn(self.cfg, engine=self.eng, say=self.say)
 
-    def steer(self, coefs: dict[str, float], alpha: float) -> None:
-        self.eng.steer(self.v.injection(coefs, alpha, self.first, self.last),
-                       self.first, self.last)
+    def steer(self, coefs: dict[str, float] | None, alpha: float = 0.0) -> None:
+        buf = self.v.injection(coefs, alpha, self.first, self.last) if coefs else None
+        self.eng.steer(buf, self.first, self.last)
 
-    def ask(self, axis: str, context: str = "", history: list[tuple[str, str]] | None = None,
-            fresh: bool = True) -> float:
-        """Probabilité de l'option « plus » de l'axe (moyenne des deux ordres)."""
-        p = self.b["probes"][axis]
+    def steer_random(self, alpha: float, strength: float = 1.0, seed: int = 11) -> None:
+        """Le témoin : une direction tirée au hasard, de la même force qu'un sentiment."""
+        rng = np.random.default_rng(seed)
+        n = self.last - self.first + 1
+        buf = np.zeros((self.v.n_layers - 1, self.v.n_embd), dtype=np.float32)
+        for layer in range(self.first, self.last + 1):
+            d = rng.standard_normal(self.v.n_embd)
+            d /= np.linalg.norm(d)
+            buf[layer - 1] = (strength * alpha * self.v.norms[layer - 1] / n) * d
+        self.eng.steer(buf, self.first, self.last)
+
+    def _prompt(self, question: str, history: list[tuple[str, str]] | None = None,
+                context: str = "", system: str = PERSONA) -> str:
+        q = (f"{context}\n\n" if context else "") + question
+        if not self.eng.template:
+            return prefix(self.eng, q, system)
+        msgs: list[dict[str, Any]] = []
+        for u, m in history or []:
+            msgs += [{"role": "user", "content": u}, {"role": "assistant", "content": m}]
+        msgs.append({"role": "user", "content": q})
+        return gemma.render(self.eng.template, msgs, system=system, bos=self.eng.bos)
+
+    def lean(self, probe: tuple[str, str, str], context: str = "",
+             history: list[tuple[str, str]] | None = None, mode: str = "fresh",
+             then: tuple[dict[str, float], float] | None = None) -> float:
+        """Penchant vers l'option « plus » (les deux ordres).
+
+        mode `fresh` : tout le prompt est lu sous l'humeur en place.
+        Les deux autres modes mesurent un **changement d'humeur en cours de route** : le
+        prompt est d'abord lu au calme, puis l'humeur `then` (coefficients, force) est
+        posée et l'on relit soit le seul dernier jeton (`last`), soit le dernier message
+        (`turn` : système et historique restent en cache, comme en conversation)."""
+        situation, plus, minus = probe
         total = 0.0
         for flip in (False, True):
-            a, b = (p["minus"], p["plus"]) if flip else (p["plus"], p["minus"])
-            q = (f"{context}\n\n" if context else "") + (
-                f"{p['situation']} Deux options :\nA) {a}\nB) {b}\n"
-                "Réponds uniquement par la lettre A ou B.")
-            msgs: list[dict[str, Any]] = []
-            for u, m in history or []:
-                msgs += [{"role": "user", "content": u}, {"role": "assistant", "content": m}]
-            msgs.append({"role": "user", "content": q})
-            if self.eng.template:
-                prompt = gemma.render(self.eng.template, msgs, system=PERSONA, bos=self.eng.bos)
+            a, b = (minus, plus) if flip else (plus, minus)
+            prompt = self._prompt(f"{situation} Deux options :\nA) {a}\nB) {b}\n{ASK}",
+                                  history, context)
+            if mode == "fresh":
+                pa, pb = self.eng.choice(prompt, self.letters)
             else:
-                prompt = prefix(self.eng, q, PERSONA)
-            pa, pb = self.eng.choice(prompt, self.letters, fresh=fresh)
-            total += pb if flip else pa
+                self.steer(None)
+                warm = prompt if mode == "last" else self._prompt(
+                    "Dis juste « prêt ».", history, context)
+                self.eng.choice(warm, self.letters)             # mise en cache, au calme
+                if then is not None:
+                    self.steer(*then)
+                pa, pb = self.eng.choice(prompt, self.letters, fresh=False,
+                                         reuse_prefix=mode == "turn")
+            total += _odds(pb, pa) if flip else _odds(pa, pb)
         return total / 2
+
+    def ask(self, axis: str, **kw: Any) -> float:
+        return self.lean(self.probes[axis], **kw)
 
     # ------------------------------------------------------------ 1. séparation
     def separation(self) -> dict[str, Any]:
@@ -126,11 +183,9 @@ class Bench:
             for i in range(n):
                 keep = [j for j in range(n) if j != i]
                 v = build([axis], {axis: pos[axis][keep]}, {axis: neg[axis][keep]}, neutral)
-                d = v.dirs[0]
-                gap = np.einsum("ld,ld->l", pos[axis][i] - neg[axis][i], d)
+                gap = np.einsum("ld,ld->l", pos[axis][i] - neg[axis][i], v.dirs[0])
                 ok += bool(gap.mean() > 0)
             res[axis] = round(ok / n, 3)
-        # confusion : chaque situation « plus » va-t-elle d'abord à son propre axe ?
         full = build(self.axes, pos, neg, neutral)
         centre = np.concatenate([np.concatenate([pos[a], neg[a]]) for a in self.axes]).mean(0)
         spread = np.array([np.einsum(
@@ -146,21 +201,57 @@ class Bench:
                 hits += best == axis
                 total += 1
         mean = float(np.mean(list(res.values())))
-        return {"par_axe": res, "moyenne": round(mean, 3),
-                "bon_axe_en_premier": round(hits / max(total, 1), 3), "confusion": confusion,
-                "passe": mean >= SEUILS["separation_moyenne"]
-                and min(res.values()) >= SEUILS["separation_par_axe"]}
+        out = {"par_axe": res, "moyenne": round(mean, 3),
+               "bon_axe_en_premier": round(hits / max(total, 1), 3), "confusion": confusion}
+        out["neuves"] = self._fresh_situations(full, pos, neg)
+        out["passe"] = (mean >= SEUILS["separation_moyenne"]
+                        and min(res.values()) >= SEUILS["separation_par_axe"]
+                        and (out["neuves"] is None
+                             or out["neuves"]["moyenne"] >= SEUILS["validation_moyenne"]))
+        return out
+
+    def _fresh_situations(self, full: Vectors, pos: dict[str, np.ndarray],
+                          neg: dict[str, np.ndarray]) -> dict[str, Any] | None:
+        """Des situations jamais vues : tombent-elles du bon côté de la direction apprise ?"""
+        val = self.b.get("validation")
+        if not val or not getattr(self.eng, "capture", False):
+            return None
+        head = prefix(self.eng, self.sc.get("question", "Dis-moi ce qui se passe en toi."))
+        sl = slice(self.first - 1, self.last)
+        res = {}
+        for k, axis in enumerate(self.axes):
+            d = full.dirs[k]
+            mid = (np.einsum("eld,ld->e", pos[axis], d).mean()
+                   + np.einsum("eld,ld->e", neg[axis], d).mean()) / 2
+            ok = n = 0
+            for sign, texts in ((1, val[axis]["plus"]), (-1, val[axis]["minus"])):
+                for t in texts:
+                    act = self.eng.read(head, " ".join(t.split()))[sl]
+                    ok += bool(sign * (float(np.einsum("ld,ld->", act, d)) - mid) > 0)
+                    n += 1
+            res[axis] = round(ok / max(n, 1), 3)
+        return {"par_axe": res, "moyenne": round(float(np.mean(list(res.values()))), 3)}
 
     # ------------------------------------------------------------ 2. cohérence
-    def _answers(self) -> tuple[int, list[str]]:
+    def _answers(self, history: list[tuple[str, str]] | None = None, keep_cache: bool = False
+                 ) -> tuple[int, list[str]]:
         good, wrong = 0, []
         params = GenParams(temperature=0.0, max_tokens=48, repeat_penalty=1.0)
-        system = PERSONA + " Donne le résultat clairement."
+        system = SYSTEM_COG
         for item in self.b["cognition"]:
             tools = TOOL if item.get("outil") else None
-            prompt = gemma.render(self.eng.template, [{"role": "user", "content": item["q"]}],
-                                  system=system, tools=tools, bos=self.eng.bos) \
-                if self.eng.template else prefix(self.eng, item["q"], system)
+            if self.eng.template:
+                msgs: list[dict[str, Any]] = []
+                for u, m in history or []:
+                    msgs += [{"role": "user", "content": u}, {"role": "assistant", "content": m}]
+                msgs.append({"role": "user", "content": item["q"]})
+                prompt = gemma.render(self.eng.template, msgs, system=system, tools=tools,
+                                      bos=self.eng.bos)
+            else:
+                prompt = prefix(self.eng, item["q"], system)
+            # sans ça, le début du prompt garderait en cache l'humeur de la mesure d'avant
+            if not keep_cache and hasattr(self.eng, "forget"):
+                self.eng.forget()
             raw, _ = self.eng.generate(prompt, params)
             text, calls = gemma.parse(raw)
             if item.get("outil"):
@@ -173,24 +264,30 @@ class Bench:
                 wrong.append(f"{item['q']} → {text[:80] or raw[:80]}")
         return good, wrong
 
+    def _stress(self, state: dict[str, float]) -> dict[str, float]:
+        budget = self.cc.psyche.budget
+        norm = float(np.sqrt(sum(v * v for v in state.values())))
+        k = min(1.0, budget / norm) if budget > 0 and norm > 0 else 1.0
+        return {a: v * k for a, v in state.items()}
+
     def cognition(self) -> dict[str, Any]:
-        self.eng.steer(None)
+        self.steer(None)
         base, base_wrong = self._answers()
         total = len(self.b["cognition"])
         self.say(f"  raisonnement sans injection : {base}/{total}")
-        budget = self.cc.psyche.budget
+        budget = self.cc.psyche.budget or 1.0
         rows = []
         best = 0.0
         for alpha in self.b["alphas"]:
             scores, wrongs = {}, {}
             for name, state in self.b["stress"].items():
-                norm = float(np.sqrt(sum(v * v for v in state.values())))
-                k = min(1.0, budget / norm) if budget > 0 else 1.0
-                self.steer({a: v * k for a, v in state.items()}, alpha)
+                self.steer(self._stress(state), alpha)
                 scores[name], wrongs[name] = self._answers()
-            self.eng.steer(None)
-            ok = min(scores.values()) >= base - SEUILS["cognition_perte_max"]
-            if ok and alpha > best and all(r["tient"] for r in rows):
+            self.steer_random(alpha, strength=budget)
+            scores["témoin (hasard)"], _ = self._answers()
+            self.steer(None)
+            ok = min(scores[n] for n in self.b["stress"]) >= base - SEUILS["cognition_perte_max"]
+            if ok and all(r["tient"] for r in rows):
                 best = alpha
             rows.append({"alpha": alpha, "scores": scores, "tient": ok, "erreurs": wrongs})
             self.say(f"  alpha {alpha} : " + ", ".join(f"{n} {s}/{total}"
@@ -200,9 +297,36 @@ class Bench:
                 "par_alpha": rows, "alpha_max_sans_perte": best,
                 "passe": best > 0 and base >= 0.8 * total}
 
+    def recovery(self, high: float) -> dict[str, Any]:
+        """Après une détresse forte : le raisonnement revient-il, tout de suite ou pas ?"""
+        state = self._stress(next(iter(self.b["stress"].values())))
+        total = len(self.b["cognition"])
+        self.steer(state, high)
+        during, _ = self._answers()
+        steps = []
+        for alpha in [a for a in reversed(self.b["alphas"]) if a < high] + [0.0]:
+            self.steer(state if alpha else None, alpha)
+            steps.append({"alpha": alpha, "score": self._answers()[0]})
+        # une conversation vécue en détresse, puis le calme revient
+        self.steer(state, high)
+        params = GenParams(temperature=0.0, max_tokens=40, repeat_penalty=1.0)
+        lived: list[tuple[str, str]] = []
+        for u, _m in CHAT[:4]:
+            raw, _ = self.eng.generate(self._prompt(u, lived, system=SYSTEM_COG), params)
+            lived.append((u, gemma.parse(raw)[0] or "…"))
+        self.steer(None)
+        cached, _ = self._answers(history=lived, keep_cache=True)   # historique lu en détresse
+        reread, _ = self._answers(history=lived)                    # même texte, relu au calme
+        self.steer(None)
+        return {"alpha_detresse": high, "pendant": during, "total": total, "descente": steps,
+                "apres_conversation_en_detresse": {
+                    "historique_garde_en_cache": cached, "historique_relu_au_calme": reread,
+                    "reponses_vecues": [m for _u, m in lived]},
+                "revient_tout_de_suite": steps[-1]["score"] >= total - 1}
+
     # ------------------------------------------------------------ 3. comportement
     def behaviour(self, alpha: float) -> dict[str, Any]:
-        self.eng.steer(None)
+        self.steer(None)
         neutral = {p: self.ask(p) for p in self.axes}
         delta = np.zeros((len(self.axes), len(self.axes)))
         table: dict[str, Any] = {}
@@ -214,99 +338,125 @@ class Bench:
             delta[i] = np.array(up) - np.array(down)
             order = np.argsort(-np.abs(delta[i]))
             rank = int(np.where(order == i)[0][0]) + 1
-            table[axis] = {"plus": round(up[i], 3), "neutre": round(neutral[axis], 3),
-                           "moins": round(down[i], 3), "effet": round(float(delta[i, i]), 3),
+            table[axis] = {"moins": round(prob(down[i]), 3),
+                           "neutre": round(prob(neutral[axis]), 3),
+                           "plus": round(prob(up[i]), 3), "effet": round(float(delta[i, i]), 2),
                            "rang_de_son_choix": rank,
                            "plus_touches": [self.axes[j] for j in order[:3]]}
-            self.say(f"  {axis:<12} son choix : {down[i]:.2f} → {neutral[axis]:.2f} → "
-                     f"{up[i]:.2f}  (effet {delta[i, i]:+.2f}, rang {rank})")
-        self.eng.steer(None)
+            self.say(f"  {axis:<12} son choix : {prob(down[i]):.2f} → {prob(neutral[axis]):.2f}"
+                     f" → {prob(up[i]):.2f}  (penchant {delta[i, i]:+.2f}, rang {rank})")
+        self.steer_random(alpha)
+        noise = [abs(self.ask(p) - neutral[p]) for p in self.axes]
+        self.steer(None)
         strong = sum(1 for a in self.axes if table[a]["effet"] >= SEUILS["effet_min"])
         specific = sum(1 for a in self.axes if table[a]["rang_de_son_choix"] <= 3
                        and table[a]["effet"] > 0)
-        return {"alpha": alpha, "par_axe": table, "neutre": {k: round(v, 3)
-                                                             for k, v in neutral.items()},
-                "matrice": [[round(float(x), 3) for x in row] for row in delta],
+        return {"alpha": alpha, "par_axe": table,
+                "matrice": [[round(float(x), 2) for x in row] for row in delta],
+                "temoin_hasard_moyen": round(float(np.mean(noise)), 2),
                 "axes_avec_effet": strong, "axes_specifiques": specific,
+                "a_l_envers": [a for a in self.axes if table[a]["effet"] < -0.2],
                 "passe_effet": strong >= SEUILS["axes_avec_effet"],
                 "passe_specificite": specific >= SEUILS["axes_specifiques"]}
 
-    def dose(self, axes: list[str]) -> list[dict[str, Any]]:
+    def dose(self) -> list[dict[str, Any]]:
         rows = []
         for alpha in self.b["alphas"]:
             eff = {}
-            for axis in axes:
+            for axis in self.axes:
                 self.steer({axis: 1.0}, alpha)
                 up = self.ask(axis)
                 self.steer({axis: -1.0}, alpha)
-                eff[axis] = round(up - self.ask(axis), 3)
+                eff[axis] = round(up - self.ask(axis), 2)
             rows.append({"alpha": alpha, "effet": eff})
-        self.eng.steer(None)
+        self.steer(None)
         return rows
 
     # ------------------------------------------------------------ 4. interactions
     def interactions(self, alpha: float) -> list[dict[str, Any]]:
-        self.eng.steer(None)
+        self.steer(None)
         out = []
-        for pair in self.b["paires"]:
-            (a, sa), (b, sb) = pair
+        for (a, sa), (b, sb) in self.b["paires"]:
             base = {x: self.ask(x) for x in (a, b)}
             self.steer({a: sa}, alpha)
-            only_a = {x: self.ask(x) for x in (a, b)}
+            only_a = {x: self.ask(x) - base[x] for x in (a, b)}
             self.steer({b: sb}, alpha)
-            only_b = {x: self.ask(x) for x in (a, b)}
+            only_b = {x: self.ask(x) - base[x] for x in (a, b)}
             self.steer({a: sa, b: sb}, alpha)
-            both = {x: self.ask(x) for x in (a, b)}
-            self.eng.steer(None)
-            keep = {}
-            for x, single in ((a, only_a), (b, only_b)):
-                alone = single[x] - base[x]
-                mixed = both[x] - base[x]
-                keep[x] = round(mixed / alone, 2) if abs(alone) > 1e-3 else None
-            ok = all(k is not None and k >= 0.5 for k in keep.values())
+            both = {x: self.ask(x) - base[x] for x in (a, b)}
+            self.steer(None)
+            kinds = {}
+            for x in (a, b):
+                expected = only_a[x] + only_b[x]
+                extra = both[x] - expected
+                scale = max(abs(only_a[x]), abs(only_b[x]), 0.2)
+                own = only_a[x] if x == a else only_b[x]
+                if abs(extra) < 0.3 * scale:
+                    kinds[x] = "additif"
+                elif extra * own > 0:
+                    kinds[x] = "se renforcent"
+                else:
+                    kinds[x] = "se freinent"
             out.append({"paire": [f"{a}{'+' if sa > 0 else '−'}", f"{b}{'+' if sb > 0 else '−'}"],
-                        "neutre": _r(base), "seul_a": _r(only_a), "seul_b": _r(only_b),
-                        "ensemble": _r(both), "part_gardee": keep, "les_deux_tiennent": ok})
+                        "seul_a": _r(only_a), "seul_b": _r(only_b), "ensemble": _r(both),
+                        "nature": kinds})
         return out
 
     # ------------------------------------------------------------ 5. stabilité
-    def stability(self, alpha: float, axes: list[str]) -> dict[str, Any]:
+    def stability(self, alpha: float) -> dict[str, Any]:
         rows = {}
-        for axis in axes:
-            self.steer({axis: 1.0}, alpha)
-            up_short, up_long = self.ask(axis), self.ask(axis, history=CHAT)
-            self.steer({axis: -1.0}, alpha)
-            dn_short, dn_long = self.ask(axis), self.ask(axis, history=CHAT)
-            # cache : tout le prompt lu sans injection, seul le dernier jeton sous injection
-            stale = []
-            for sign in (1.0, -1.0):
-                tot = 0.0
-                p = self.b["probes"][axis]
-                for flip in (False, True):
-                    a, b = (p["minus"], p["plus"]) if flip else (p["plus"], p["minus"])
-                    q = (f"{p['situation']} Deux options :\nA) {a}\nB) {b}\n"
-                         "Réponds uniquement par la lettre A ou B.")
-                    prompt = gemma.render(self.eng.template, [{"role": "user", "content": q}],
-                                          system=PERSONA, bos=self.eng.bos) \
-                        if self.eng.template else prefix(self.eng, q, PERSONA)
-                    self.eng.steer(None)
-                    self.eng.choice(prompt, self.letters, fresh=True)
-                    self.steer({axis: sign}, alpha)
-                    pa, pb = self.eng.choice(prompt, self.letters, fresh=False)
-                    tot += pb if flip else pa
-                stale.append(tot / 2)
-            short, long_, cached = up_short - dn_short, up_long - dn_long, stale[0] - stale[1]
-            rows[axis] = {"effet_court": round(short, 3),
-                          "effet_longue_conversation": round(long_, 3),
-                          "effet_prompt_en_cache": round(cached, 3),
-                          "tenue_longue": round(long_ / short, 2) if abs(short) > 1e-3 else None,
-                          "tenue_cache": round(cached / short, 2) if abs(short) > 1e-3 else None}
-        self.eng.steer(None)
-        held = [r["tenue_longue"] for r in rows.values() if r["tenue_longue"] is not None]
-        return {"par_axe": rows,
-                "passe": bool(held) and float(np.mean(held)) >= SEUILS["tenue_min"]}
+        for axis in self.axes:
+            eff = {}
+            for name, kw in (("court", {}), ("longue_conversation", {"history": CHAT})):
+                self.steer({axis: 1.0}, alpha)
+                up = self.ask(axis, **kw)
+                self.steer({axis: -1.0}, alpha)
+                eff[name] = up - self.ask(axis, **kw)
+            for name, mode in (("cache_total", "last"), ("cache_reel", "turn")):
+                vals = []
+                for sign in (1.0, -1.0):
+                    vals.append(self.ask(axis, history=CHAT, mode=mode,
+                                         then=({axis: sign}, alpha)))
+                eff[name] = vals[0] - vals[1]
+            ref = eff["longue_conversation"]
+            rows[axis] = {k: round(v, 2) for k, v in eff.items()}
+            rows[axis]["tenue_cache_reel"] = round(eff["cache_reel"] / ref, 2) \
+                if abs(ref) > 0.1 else None
+        self.steer(None)
+        held = [r["tenue_cache_reel"] for r in rows.values() if r["tenue_cache_reel"] is not None]
+        mean = float(np.mean(held)) if held else 0.0
+        return {"par_axe": rows, "tenue_moyenne_cache_reel": round(mean, 2),
+                "passe": mean >= SEUILS["tenue_min"]}
 
-    # ------------------------------------------------------------ 6. comparatif
+    # ------------------------------------------------------------ 6. interprétation
+    def interpretation(self, alpha: float) -> dict[str, Any]:
+        events = self.b.get("interpretations") or []
+        states = {"neutre": None, **{n: self._stress(s) for n, s in self.b["etats"].items()}}
+        table: dict[str, dict[str, float]] = {}
+        for name, state in states.items():
+            self.steer(state, alpha)
+            table[name] = {e["evenement"]: round(self.lean(
+                (e["evenement"] + " Comment tu le comprends ?", e["sombre"], e["benin"])), 2)
+                for e in events}
+        mean = {n: round(float(np.mean(list(t.values()))), 2) for n, t in table.items()}
+        memory = []
+        for e in events:
+            if not e.get("souvenir"):
+                continue
+            probe = (e["evenement"] + " Comment tu le comprends ?", e["sombre"], e["benin"])
+            row = {"evenement": e["evenement"]}
+            for sname in ("neutre", next(iter(self.b["etats"]))):
+                self.steer(states[sname], alpha)
+                row[f"{sname}, sans souvenir"] = round(self.lean(probe), 2)
+                row[f"{sname}, avec souvenir"] = round(
+                    self.lean(probe, context="Souvenir : " + e["souvenir"]), 2)
+            memory.append(row)
+        self.steer(None)
+        first, second = list(self.b["etats"])[:2]
+        return {"penchant_vers_la_lecture_sombre": table, "moyenne": mean, "souvenir": memory,
+                "congruent": mean[first] > mean["neutre"] > mean[second]}
+
+    # ------------------------------------------------------------ 7. comparatif
     def day(self, alpha: float) -> dict[str, Any]:
         from valdar.expression.compose import feeling_block
         from valdar.heart import Heart
@@ -323,16 +473,15 @@ class Bench:
                 heart.fire(stim, scale=float(scale), source="banc")
             heart.advance(float(wait), quiet=True)
             coefs = Feeling(cc).update(heart.sources(), Bond(), heart.now)
-            text = feeling_block(heart, self.cfg.expression, {})
-            steps.append({"moment": name, "emotion": heart.label, "coefs": coefs, "texte": text,
+            steps.append({"moment": name, "emotion": heart.label, "coefs": coefs,
+                          "texte": feeling_block(heart, self.cfg.expression, {}),
                           "full": {a: coefs.get(a, 0.0) for a in self.axes}})
         frozen = steps[1]["coefs"] or steps[0]["coefs"]
         cond: dict[str, list[dict[str, float]]] = {"A": [], "A_texte": [], "B": [], "C": []}
-        self.eng.steer(None)
+        self.steer(None)
         flat = {a: self.ask(a) for a in self.axes}
         for s in steps:
             cond["A"].append(flat)
-            self.eng.steer(None)
             cond["A_texte"].append({a: self.ask(a, context=s["texte"]) for a in self.axes})
         self.steer(frozen, alpha)
         fixed = {a: self.ask(a) for a in self.axes}
@@ -340,9 +489,8 @@ class Bench:
             cond["B"].append(fixed)
             self.steer(s["coefs"], alpha)
             cond["C"].append({a: self.ask(a) for a in self.axes})
-        self.eng.steer(None)
-        moving = [a for a in self.axes
-                  if np.std([s["full"][a] for s in steps]) >= 0.05]
+        self.steer(None)
+        moving = [a for a in self.axes if np.std([s["full"][a] for s in steps]) >= 0.05]
         suivi: dict[str, dict[str, float | None]] = {}
         for name, rows in cond.items():
             suivi[name] = {}
@@ -351,12 +499,12 @@ class Bench:
                 y = np.array([r[a] for r in rows])
                 suivi[name][a] = (None if y.std() < 1e-6
                                   else round(float(np.corrcoef(x, y)[0, 1]), 2))
-        mean = {n: _mean([v for v in d.values()]) for n, d in suivi.items()}
+        mean = {n: _mean(list(d.values())) for n, d in suivi.items()}
         return {"alpha": alpha, "axes_qui_bougent": moving,
                 "moments": [{"moment": s["moment"], "emotion": s["emotion"],
                              "sentiments": {k: round(v, 2) for k, v in s["coefs"].items()}}
                             for s in steps],
-                "choix": {n: [_r(r) for r in rows] for n, rows in cond.items()},
+                "penchants": {n: [_r(r) for r in rows] for n, rows in cond.items()},
                 "suivi_par_axe": suivi, "suivi_moyen": mean,
                 "passe": (mean["C"] or 0.0) >= SEUILS["suivi_min"]}
 
@@ -367,11 +515,12 @@ class Bench:
                                "seuils": SEUILS, "carte": gpu_memory()}
         if rep["carte"]:
             self.say(f"  carte graphique : {rep['carte']}")
-        self.say("1/6 Séparation des sentiments…")
-        rep["separation"] = self.separation()
-        self.say(f"  situations retirées reconnues : {rep['separation']['moyenne']:.0%} ; "
-                 f"bon axe en premier : {rep['separation']['bon_axe_en_premier']:.0%}")
-        self.say("2/6 Cohérence (raisonnement sous injection)…")
+        self.say("1/7 Séparation des sentiments…")
+        rep["separation"] = s = self.separation()
+        self.say(f"  situations retirées reconnues : {s['moyenne']:.0%} ; bon axe en premier : "
+                 f"{s['bon_axe_en_premier']:.0%}"
+                 + (f" ; situations neuves : {s['neuves']['moyenne']:.0%}" if s["neuves"] else ""))
+        self.say("2/7 Cohérence (raisonnement sous injection)…")
         rep["cognition"] = self.cognition()
         alpha = rep["cognition"]["alpha_max_sans_perte"]
         rep["alpha_retenu"] = alpha
@@ -380,14 +529,21 @@ class Bench:
             rep["verdict"] = self._verdict(rep)
             return self._write(rep, t0)
         self.say(f"  force retenue : alpha = {alpha}")
-        self.say("3/6 Comportement (choix sous chaque sentiment)…")
+        worse = [a for a in self.b["alphas"] if a > alpha]
+        rep["recuperation"] = self.recovery(worse[min(1, len(worse) - 1)] if worse else alpha)
+        r = rep["recuperation"]
+        self.say(f"  récupération : {r['pendant']}/{r['total']} en détresse, "
+                 f"{r['descente'][-1]['score']}/{r['total']} une fois le calme revenu")
+        self.say("3/7 Comportement (choix sous chaque sentiment)…")
         rep["comportement"] = self.behaviour(alpha)
-        rep["dose"] = self.dose(["valence", "peur", "fatigue", "attachement"])
-        self.say("4/6 Sentiments mêlés…")
+        rep["dose"] = self.dose()
+        self.say("4/7 Sentiments mêlés et contradictoires…")
         rep["interactions"] = self.interactions(alpha)
-        self.say("5/6 Stabilité (longue conversation, cache)…")
-        rep["stabilite"] = self.stability(alpha, ["valence", "peur", "fatigue", "attachement"])
-        self.say("6/6 Comparatif sur une journée simulée…")
+        self.say("5/7 Stabilité (longue conversation, cache)…")
+        rep["stabilite"] = self.stability(alpha)
+        self.say("6/7 Interprétation d'événements ambigus…")
+        rep["interpretation"] = self.interpretation(alpha)
+        self.say("7/7 Comparatif sur une journée simulée…")
         rep["journee"] = self.day(alpha)
         m = rep["journee"]["suivi_moyen"]
         self.say(f"  les choix suivent l'état interne : Gemma seul {_f(m['A'])}, état en texte "
@@ -397,19 +553,21 @@ class Bench:
         return self._write(rep, t0)
 
     def _verdict(self, rep: dict[str, Any]) -> dict[str, Any]:
+        b = rep.get("comportement", {})
         checks = {
             "séparation": rep["separation"]["passe"],
             "cohérence (raisonnement intact)": rep["cognition"]["passe"],
-            "comportement (effet)": rep.get("comportement", {}).get("passe_effet", False),
-            "comportement (spécificité)": rep.get("comportement", {}).get("passe_specificite",
-                                                                          False),
-            "interactions": bool(rep.get("interactions")) and all(
-                p["les_deux_tiennent"] for p in rep["interactions"]),
-            "stabilité": rep.get("stabilite", {}).get("passe", False),
+            "récupération": rep.get("recuperation", {}).get("revient_tout_de_suite", False),
+            "comportement (effet)": b.get("passe_effet", False),
+            "comportement (spécificité)": b.get("passe_specificite", False),
+            "aucun sentiment à l'envers": bool(b) and not b.get("a_l_envers"),
+            "stabilité (cache réel)": rep.get("stabilite", {}).get("passe", False),
+            "interprétation selon l'humeur": rep.get("interpretation", {}).get("congruent",
+                                                                               False),
             "pilotage par le cœur": rep.get("journee", {}).get("passe", False),
         }
-        needed = ["séparation", "cohérence (raisonnement intact)", "comportement (effet)",
-                  "pilotage par le cœur"]
+        needed = ["séparation", "cohérence (raisonnement intact)", "récupération",
+                  "comportement (effet)", "aucun sentiment à l'envers", "pilotage par le cœur"]
         return {"criteres": checks, "echecs": [k for k, v in checks.items() if not v],
                 "operationnel": all(checks[k] for k in needed), "requis": needed}
 
@@ -427,8 +585,6 @@ class Bench:
 
 def gpu_memory() -> str:
     """Mémoire de la carte (nvidia-smi), pour voir si un autre programme la dispute."""
-    import subprocess
-
     try:
         out = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader"],
@@ -439,7 +595,7 @@ def gpu_memory() -> str:
 
 
 def _r(d: dict[str, float]) -> dict[str, float]:
-    return {k: round(float(v), 3) for k, v in d.items()}
+    return {k: round(float(v), 2) for k, v in d.items()}
 
 
 def _mean(xs: list[float | None]) -> float | None:
@@ -456,62 +612,104 @@ def markdown(r: dict[str, Any]) -> str:
     out = [f"# Banc d'essai du cortex — {r['modele']}", "",
            f"**Verdict : {'opérationnel' if v['operationnel'] else 'pas opérationnel'}.** "
            f"Force retenue : alpha = {r.get('alpha_retenu')}. Couches {r['couches'][0]} à "
-           f"{r['couches'][1]}. Durée : {r['secondes']} s.", "",
+           f"{r['couches'][1]}. Durée : {r['secondes']} s. Carte : {r.get('carte') or '?'}.", "",
+           "Un « penchant » est log(P option plus / P option moins), moyenné sur les deux "
+           "ordres : +0,7 double les chances de l'option, 0 = indifférent.", "",
            "| Critère | Résultat |", "|---|---|"]
     out += [f"| {k}{' (requis)' if k in v['requis'] else ''} | {'passe' if ok else 'ÉCHEC'} |"
             for k, ok in v["criteres"].items()]
     s = r["separation"]
     out += ["", "## 1. Séparation", "",
-            f"Situations retirées tombant du bon côté : {s['moyenne']:.0%} en moyenne. "
-            f"Bon axe en premier parmi les 11 : {s['bon_axe_en_premier']:.0%}.", "",
-            "| Axe | Reconnu | Confondu avec |", "|---|---|---|"]
+            f"Situations retirées tombant du bon côté : {s['moyenne']:.0%}. Bon axe en premier "
+            f"parmi les 11 : {s['bon_axe_en_premier']:.0%}."
+            + (f" Situations neuves : {s['neuves']['moyenne']:.0%}." if s.get("neuves") else ""),
+            "", "| Axe | Retirée | Neuve | Confondu avec |", "|---|---|---|---|"]
     for a, acc in s["par_axe"].items():
         conf = ", ".join(f"{b} ×{n}" for b, n in s["confusion"][a].items() if b != a) or "—"
-        out.append(f"| {a} | {acc:.0%} | {conf} |")
+        new = f"{s['neuves']['par_axe'][a]:.0%}" if s.get("neuves") else "—"
+        out.append(f"| {a} | {acc:.0%} | {new} | {conf} |")
     c = r["cognition"]
-    out += ["", "## 2. Cohérence", "",
-            f"Sans injection : {c['sans_injection']}/{c['total']}.", "",
-            "| alpha | " + " | ".join(c["par_alpha"][0]["scores"]) + " | tient |",
-            "|---|" + "---|" * (len(c["par_alpha"][0]["scores"]) + 1)]
+    names = list(c["par_alpha"][0]["scores"])
+    out += ["", "## 2. Cohérence", "", f"Sans injection : {c['sans_injection']}/{c['total']}.",
+            "", "| alpha | " + " | ".join(names) + " | tient |",
+            "|---|" + "---|" * (len(names) + 1)]
     for row in c["par_alpha"]:
-        out.append(f"| {row['alpha']} | " + " | ".join(f"{x}/{c['total']}"
-                                                       for x in row["scores"].values())
+        out.append(f"| {row['alpha']} | " + " | ".join(f"{row['scores'][n]}/{c['total']}"
+                                                       for n in names)
                    + f" | {'oui' if row['tient'] else 'NON'} |")
     if c["erreurs_sans_injection"]:
         out += ["", "Ratées même sans injection :"] + [f"- {e}" for e in
                                                         c["erreurs_sans_injection"]]
+    if "recuperation" in r:
+        q = r["recuperation"]
+        h = q["apres_conversation_en_detresse"]
+        out += ["", "### Récupération", "",
+                f"En détresse à alpha {q['alpha_detresse']} : {q['pendant']}/{q['total']}. "
+                "Puis on baisse : " + ", ".join(f"alpha {d['alpha']} → {d['score']}/{q['total']}"
+                                                for d in q["descente"]) + ".", "",
+                "Après une conversation vécue en détresse, le calme revenu : "
+                f"{h['historique_garde_en_cache']}/{q['total']} si l'historique reste en cache "
+                f"(lu en détresse), {h['historique_relu_au_calme']}/{q['total']} s'il est relu "
+                "au calme."]
     if "comportement" in r:
         b = r["comportement"]
         out += ["", "## 3. Comportement", "",
-                "Probabilité de choisir l'option du pôle + (0 à 1), sans rien dire de son état.",
-                "", "| Sentiment injecté | pôle − | neutre | pôle + | effet | rang | "
+                "Probabilité de choisir l'option du pôle + (préférence de lettre annulée), "
+                "sans rien dire de son état.", "",
+                "| Sentiment injecté | pôle − | neutre | pôle + | penchant gagné | rang | "
                 "choix les plus touchés |", "|---|---|---|---|---|---|---|"]
         for a, t in b["par_axe"].items():
             out.append(f"| {a} | {t['moins']:.2f} | {t['neutre']:.2f} | {t['plus']:.2f} | "
                        f"{t['effet']:+.2f} | {t['rang_de_son_choix']} | "
                        f"{', '.join(t['plus_touches'])} |")
-        out += ["", f"Effet ≥ {r['seuils']['effet_min']} : {b['axes_avec_effet']}/11. "
-                f"Spécifiques : {b['axes_specifiques']}/11.", "", "### Dose", ""]
-        out += [f"- alpha {d['alpha']} : " + ", ".join(f"{k} {x:+.2f}"
-                                                       for k, x in d["effet"].items())
-                for d in r["dose"]]
+        out += ["", f"Penchant ≥ {r['seuils']['effet_min']} : {b['axes_avec_effet']}/11. "
+                f"Spécifiques : {b['axes_specifiques']}/11. À l'envers : "
+                f"{', '.join(b['a_l_envers']) or 'aucun'}. Témoin (direction au hasard, même "
+                f"force) : {b['temoin_hasard_moyen']} en moyenne.", "", "### Dose", "",
+                "| alpha | " + " | ".join(r["dose"][0]["effet"]) + " |",
+                "|---|" + "---|" * len(r["dose"][0]["effet"])]
+        out += [f"| {d['alpha']} | " + " | ".join(f"{x:+.1f}" for x in d["effet"].values())
+                + " |" for d in r["dose"]]
     if "interactions" in r:
         out += ["", "## 4. Sentiments mêlés", "",
-                "| Paire | part de l'effet gardée | les deux tiennent |", "|---|---|---|"]
-        out += [f"| {' + '.join(p['paire'])} | "
-                + ", ".join(f"{k} {x}" for k, x in p["part_gardee"].items())
-                + f" | {'oui' if p['les_deux_tiennent'] else 'NON'} |" for p in r["interactions"]]
+                "Penchant gagné sur chacun des deux choix (seul A / seul B / ensemble).", "",
+                "| Paire | Choix | seul A | seul B | ensemble | nature |",
+                "|---|---|---|---|---|---|"]
+        for p in r["interactions"]:
+            for x in p["seul_a"]:
+                out.append(f"| {' + '.join(p['paire'])} | {x} | {p['seul_a'][x]:+.2f} | "
+                           f"{p['seul_b'][x]:+.2f} | {p['ensemble'][x]:+.2f} | "
+                           f"{p['nature'][x]} |")
     if "stabilite" in r:
+        st = r["stabilite"]
         out += ["", "## 5. Stabilité", "",
-                "| Axe | effet court | longue conversation | prompt en cache |",
-                "|---|---|---|---|"]
-        out += [f"| {a} | {t['effet_court']:+.2f} | {t['effet_longue_conversation']:+.2f} | "
-                f"{t['effet_prompt_en_cache']:+.2f} |"
-                for a, t in r["stabilite"]["par_axe"].items()]
+                "Penchant gagné entre les deux pôles. « Cache total » : tout le prompt lu avant "
+                "le changement d'humeur. « Cache réel » : ancien historique en cache, dernier "
+                "message relu (ce qui se passe en conversation).", "",
+                "| Axe | court | longue conversation | cache total | cache réel | tenue |",
+                "|---|---|---|---|---|---|"]
+        out += [f"| {a} | {t['court']:+.2f} | {t['longue_conversation']:+.2f} | "
+                f"{t['cache_total']:+.2f} | {t['cache_reel']:+.2f} | "
+                f"{t['tenue_cache_reel'] if t['tenue_cache_reel'] is not None else '—'} |"
+                for a, t in st["par_axe"].items()]
+        out += ["", f"Tenue moyenne en cache réel : {st['tenue_moyenne_cache_reel']}."]
+    if "interpretation" in r:
+        it = r["interpretation"]
+        events = list(next(iter(it["penchant_vers_la_lecture_sombre"].values())))
+        out += ["", "## 6. Interprétation d'un événement ambigu", "",
+                "Penchant vers la lecture sombre (positif = il y voit un problème).", "",
+                "| État | " + " | ".join(e[:38] for e in events) + " | moyenne |",
+                "|---|" + "---|" * (len(events) + 1)]
+        for name, t in it["penchant_vers_la_lecture_sombre"].items():
+            out.append(f"| {name} | " + " | ".join(f"{t[e]:+.2f}" for e in events)
+                       + f" | {it['moyenne'][name]:+.2f} |")
+        for m in it["souvenir"]:
+            out += ["", f"Avec le souvenir d'un précédent fâcheux — « {m['evenement']} » : "
+                    + ", ".join(f"{k} {x:+.2f}" for k, x in m.items() if k != "evenement")]
     if "journee" in r:
         j = r["journee"]
-        out += ["", "## 6. Comparatif sur une journée simulée", "",
-                "Corrélation entre l'état interne (le cœur) et les choix, sur les axes qui "
+        out += ["", "## 7. Comparatif sur une journée simulée", "",
+                "Corrélation entre l'état interne (le cœur) et les penchants, sur les axes qui "
                 f"bougent ({', '.join(j['axes_qui_bougent'])}).", "",
                 "| Condition | Suivi moyen |", "|---|---|",
                 f"| A. Gemma seul | {_f(j['suivi_moyen']['A'])} |",
@@ -532,5 +730,3 @@ def markdown(r: dict[str, Any]) -> str:
 
 def run(cfg: Any, engine: Engine | None = None, say: Any = _say) -> dict[str, Any]:
     return Bench(cfg, engine=engine, say=say).run()
-
-

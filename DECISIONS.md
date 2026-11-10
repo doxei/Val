@@ -897,3 +897,48 @@ raisonnement est généré à température 0. Seuils écrits dans le code avant 
    interne et les choix. A et B sont plats par construction ; C doit dépasser 0,5.
 Le cortex ne s'active que si séparation, cohérence, comportement et pilotage passent. Le
 rapport `data/cortex/banc.md` liste aussi les échecs.
+
+## Avenant 6 ter — Premier passage du banc sur la RTX 2060, diagnostic, banc v2 (11 nov. 2026)
+
+### Résultats du premier passage (8 min, alpha retenu 0,06) : PAS OPÉRATIONNEL
+- **Séparation** : 100 % des situations retirées du bon côté, 91 % au bon axe en premier.
+- **Cohérence** (sur 20, détresse / euphorie) : 20/20 sans injection ; 0,06 → 20/20 ;
+  0,12 → 19/18 ; 0,2 → 17/17 ; 0,3 → 16/14 ; 0,45 → 12/8.
+- **Comportement à 0,06** : effet net sur 5 axes (activation +0,61, colère +0,48, valence
+  +0,43, manque +0,30, puissance +0,14). Attachement, curiosité, jeu, confiance collés à 1,00 ;
+  fatigue collée à 0,50 ; **peur à l'envers** (−0,07, à toutes les doses).
+- **Dose** : à 0,2, valence +0,98, fatigue +0,58, attachement +0,36.
+- **Stabilité** : valence 0,35 en longue conversation (0,43 en court). **Prompt lu avant le
+  changement d'humeur, seul le dernier jeton sous injection : 0,03.** L'humeur agit par la
+  lecture du prompt, pas seulement au moment de répondre. Mon affirmation « le cache peut
+  rester tel quel » était trop optimiste : à mesurer dans le cas réel.
+- **Comparatif, journée simulée** : Gemma seul plat ; état en texte +0,47 ; injection fixe
+  plat ; **injection pilotée par le cœur +0,48** (seuil 0,50 : échec de peu). Sans un mot sur
+  son état, l'injection fait jeu égal avec la description en texte.
+
+### Diagnostic
+1. La mesure en probabilité sature (option déjà choisie à 100 %) et la préférence de Gemma
+   pour une lettre ne s'annule pas en moyenne de probabilités (fatigue à 0,50).
+2. Des options contenaient les mots des situations d'apprentissage (« sécurité », « vanne »,
+   « explorer ») : le vecteur peut pousser le mot au lieu du comportement. Hypothèse pour
+   la peur à l'envers.
+3. La mesure de cohérence gardait en cache le début du prompt lu sous l'humeur précédente.
+4. Pas de témoin : on ne savait pas si la baisse du raisonnement vient du sentiment ou d'un
+   simple bruit de même force.
+5. Les situations « retirées » viennent du même jeu que l'apprentissage.
+
+### Banc v2
+- Mesure en **penchant** (log du rapport des deux options, deux ordres) : la préférence de
+  lettre s'annule exactement, plus de saturation. Seuil : 0,5 entre les deux pôles.
+- Options réécrites sans vocabulaire d'apprentissage.
+- **Témoin** : direction tirée au hasard, même force, en cohérence et en comportement.
+- **Situations neuves** (66, jamais vues) pour la séparation.
+- **Récupération** (demande d'Olivier) : détresse à 0,2, puis on redescend ; et une
+  conversation vécue en détresse, puis le calme, avec l'historique gardé en cache ou relu.
+- **Émotions contradictoires** : peur + curiosité, colère + attachement, fatigue + confiance,
+  détresse + attachement ; nature de l'interaction (additif, se renforcent, se freinent).
+- **Interprétation et mémoire émotionnelle** : le même événement ambigu lu depuis 7 états,
+  avec et sans souvenir d'un précédent fâcheux.
+- **Cache réel** : système et historique en cache, dernier message relu sous la nouvelle
+  humeur. Critère : garder au moins la moitié de l'effet.
+- Nouveaux critères requis : récupération, aucun sentiment à l'envers.

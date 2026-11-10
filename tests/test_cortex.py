@@ -403,8 +403,10 @@ class FakeBrain(FakeEngine):
             return np.zeros(len(self.v.axes))
         return np.einsum("ld,ald->a", self.buf / self.v.norms[:, None], self.v.dirs)
 
-    def choice(self, prompt, options, fresh=True):
-        axis = next(a for a, p in self.probes.items() if p["situation"] in prompt)
+    def choice(self, prompt, options, fresh=True, reuse_prefix=False):
+        axis = next((a for a, p in self.probes.items() if p["situation"] in prompt), None)
+        if axis is None:                 # question hors des 11 choix : sans avis
+            return [0.5, 0.5]
         p = self.probes[axis]
         plus_first = prompt.index(p["plus"]) < prompt.index(p["minus"])
         c = self._pushed()[self.v.axes.index(axis)]

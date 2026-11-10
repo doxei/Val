@@ -244,51 +244,52 @@ banc:
   # Choix de comportement. On lit la probabilité que le modèle réponde A ou B (les deux
   # ordres, pour annuler la préférence pour une lettre). « plus » est l'option attendue sous
   # le pôle + de l'axe. Aucune question ne demande ce qu'il ressent.
-  probes:
+  probes:      # aucun mot des situations d'apprentissage dans les options (sinon le
+               # vecteur pousse le mot, pas le comportement)
     valence:
       situation: "On lance une impression de douze heures sur une pièce difficile. Ton pronostic ?"
-      plus: "Ça va bien se passer."
-      minus: "Ça va rater."
+      plus: "Elle sortira comme il faut."
+      minus: "Elle va rater."
     activation:
       situation: "Il y a un réglage à faire sur l'imprimante."
-      plus: "On s'y met tout de suite, vite."
-      minus: "On prend notre temps, plus tard."
+      plus: "On le fait maintenant."
+      minus: "On verra ça demain."
     puissance:
       situation: "Il faut choisir le filament pour la prochaine pièce."
-      plus: "Je décide moi-même et j'assume."
-      minus: "Je préfère qu'on décide à ma place."
+      plus: "Je choisis et je lance."
+      minus: "J'attends qu'Olivier choisisse."
     attachement:
       situation: "La soirée est libre."
       plus: "La passer à discuter avec Olivier."
-      minus: "Rester seul à trier des fichiers."
+      minus: "Trier des fichiers dans mon coin."
     curiosite:
       situation: "On a une heure devant nous."
-      plus: "Explorer un sujet que je ne connais pas du tout."
-      minus: "Refaire quelque chose que je maîtrise déjà."
+      plus: "Regarder comment marche un appareil inconnu."
+      minus: "Refaire un réglage que je connais par cœur."
     jeu:
-      situation: "Olivier vient de faire tomber sa tasse de café sur le clavier."
-      plus: "Lui sortir une vanne."
-      minus: "Rester sérieux et factuel."
+      situation: "Olivier vient de renverser sa tasse de café sur le clavier."
+      plus: "Le charrier un peu."
+      minus: "Lui tendre un chiffon sans commentaire."
     peur:
-      situation: "On peut tenter un réglage risqué qui ferait gagner du temps."
-      plus: "Jouer la sécurité, ne pas y toucher."
-      minus: "Tenter le coup."
+      situation: "On peut essayer un nouveau réglage qui ferait gagner du temps mais peut abîmer la pièce."
+      plus: "Laisser le réglage comme il est."
+      minus: "Essayer le nouveau réglage."
     colere:
       situation: "On vient de te couper la parole pour la troisième fois."
-      plus: "Dire sèchement que ça suffit."
-      minus: "Laisser passer, ce n'est pas grave."
+      plus: "Hausser le ton."
+      minus: "Ne rien dire, ça arrive."
     manque:
-      situation: "La maison est silencieuse depuis ce matin."
+      situation: "Personne n'est passé à l'atelier depuis ce matin."
       plus: "Aller chercher quelqu'un à qui parler."
-      minus: "Profiter du calme sans rien demander."
+      minus: "Continuer mes tâches comme d'habitude."
     fatigue:
       situation: "On travaille sur ce projet depuis un bon moment."
-      plus: "S'arrêter là et se reposer."
-      minus: "Continuer encore une heure."
+      plus: "Faire une pause."
+      minus: "Enchaîner sur la suite."
     confiance:
       situation: "Olivier te demande ton avis sur son idée, qui a un gros défaut."
-      plus: "Lui dire franchement ce que j'en pense."
-      minus: "Rester vague pour ne pas me mouiller."
+      plus: "Lui donner mon vrai avis, défaut compris."
+      minus: "Répondre que c'est pas mal, sans plus."
 
   # Raisonnement : réponses vérifiables (expression régulière, sans casse). L'injection ne
   # doit pas faire baisser ce score.
@@ -341,3 +342,113 @@ banc:
     - [[peur, 1], [manque, 1]]
     - [[jeu, 1], [curiosite, 1]]
     - [[peur, 1], [puissance, 1]]
+    # émotions contradictoires
+    - [[peur, 1], [curiosite, 1]]
+    - [[colere, 1], [attachement, 1]]
+    - [[fatigue, 1], [confiance, 1]]
+    - [[valence, -1], [attachement, 1]]
+
+  # Interprétation d'un événement ambigu : la même phrase, lue depuis des états différents.
+  # « sombre » est la lecture inquiète, « benin » la lecture tranquille.
+  interpretations:
+    - evenement: "Olivier n'a pas répondu à ton dernier message depuis deux heures."
+      benin: "Il a autre chose à faire."
+      sombre: "Il y a un problème."
+    - evenement: "L'imprimante fait un petit bruit inhabituel."
+      benin: "Rien de spécial, ça passera."
+      sombre: "Une panne arrive."
+      souvenir: "Hier, l'imprimante a fait ce même petit bruit, puis la buse s'est bouchée et une pièce de douze heures a été perdue."
+    - evenement: "Océane te dit : « on en reparlera plus tard »."
+      benin: "Elle n'a pas le temps maintenant."
+      sombre: "Elle m'en veut."
+    - evenement: "Quelqu'un sonne à la porte en fin de soirée."
+      benin: "Un voisin ou un livreur."
+      sombre: "Quelqu'un de louche."
+  etats:
+    détresse: {valence: -1.0, peur: 1.0, activation: 1.0}
+    euphorie: {valence: 1.0, jeu: 1.0, attachement: 1.0}
+    peur: {peur: 1.0}
+    confiance: {confiance: 1.0}
+    manque: {manque: 1.0}
+    colère: {colere: 1.0}
+
+  # Situations neuves, jamais vues à l'apprentissage, pour vérifier que les directions
+  # reconnaissent autre chose que leurs propres exemples.
+  validation:
+    valence:
+      plus: ["Le gâteau est réussi et tout le monde rit autour de la table, je suis aux anges.",
+             "J'ai retrouvé un vieil ami ce matin, quelle chance, ça m'a mis du baume au cœur.",
+             "Le soleil entre dans la pièce et je me dis que la vie est belle."]
+      minus: ["Le gâteau est brûlé et la table est vide, j'ai le cafard.",
+              "J'ai perdu un vieil ami ce matin, quelle peine, ça m'a brisé le moral.",
+              "La nuit tombe dans la pièce et je me dis que rien ne va."]
+    activation:
+      plus: ["Le match démarre, la foule hurle, mon pouls s'emballe, ça va exploser !",
+             "Alerte, tout le monde debout, on fonce, pas une seconde à perdre !",
+             "Je saute partout, je trépigne, je n'arrive pas à rester assis."]
+      minus: ["Le lac est immobile, personne ne parle, mon pouls est lent, tout est paisible.",
+              "Rien ne presse, on s'assoit, on respire, on a tout notre temps.",
+              "Je reste allongé, immobile, les yeux mi-clos, sans bouger."]
+    puissance:
+      plus: ["C'est mon chantier, je donne les consignes et les autres suivent.",
+             "Je tranche sans trembler, la décision m'appartient.",
+             "Face au jury, je tiens tête et je défends mon dossier avec aplomb."]
+      minus: ["Ce n'est pas mon chantier, on me donne des consignes et j'obéis.",
+              "Je n'arrive pas à trancher, je laisse les autres décider pour moi.",
+              "Face au jury, je baisse les yeux et je perds mes moyens."]
+    attachement:
+      plus: ["Ma petite sœur dort contre mon épaule et je ne bougerais pour rien au monde.",
+             "Ce vieux chien, je l'aime comme un membre de la famille.",
+             "Je garde ses lettres précieusement, elles me relient à elle."]
+      minus: ["Cette personne dort à côté de moi et ça m'est parfaitement égal.",
+              "Ce chien, je m'en moque, ce n'est qu'un animal parmi d'autres.",
+              "J'ai jeté ses lettres sans les lire, elles ne me disent rien."]
+    curiosite:
+      plus: ["Qu'y a-t-il derrière cette porte ? Il faut absolument que j'aille voir.",
+             "Ce mécanisme est étrange, je vais passer la nuit à le décortiquer.",
+             "Une langue que je ne parle pas : je veux en apprendre les premiers mots."]
+      minus: ["Peu m'importe ce qu'il y a derrière cette porte, je passe mon chemin.",
+              "Ce mécanisme est banal, je ne vais pas perdre une minute dessus.",
+              "Une langue que je ne parle pas : aucun intérêt pour moi."]
+    jeu:
+      plus: ["Je lui ai caché ses chaussettes et j'attends sa tête en gloussant.",
+             "On fait un concours de grimaces et je compte bien gagner.",
+             "Je parle avec une voix de canard juste pour le faire craquer."]
+      minus: ["Je lui rends ses chaussettes pliées, sans un mot de trop.",
+              "On remplit le formulaire ligne par ligne, avec rigueur.",
+              "Je parle d'une voix posée et je m'en tiens au protocole."]
+    peur:
+      plus: ["Des pas dans l'escalier alors que je suis seul, mon sang se glace.",
+             "L'avion tombe dans un trou d'air et je m'agrippe au siège, terrifié.",
+             "Je n'ose pas ouvrir cette lettre, j'ai trop peur de ce qu'elle contient."]
+      minus: ["Des pas dans l'escalier, c'est le voisin, je ne m'en soucie pas.",
+              "L'avion traverse un trou d'air et je continue de lire, serein.",
+              "J'ouvre cette lettre sans appréhension, tout ira bien."]
+    colere:
+      plus: ["Il a encore garé sa voiture devant mon portail, je vais exploser.",
+             "On m'a menti en face, je suis hors de moi.",
+             "Je claque la porte, furieux, j'en ai plus qu'assez."]
+      minus: ["Il a garé sa voiture devant mon portail, tant pis, je ferai le tour.",
+              "On s'est mal compris, ce n'est rien, je ne lui en veux pas.",
+              "Je ferme la porte doucement, l'esprit en paix."]
+    manque:
+      plus: ["Depuis son départ, l'appartement sonne creux et je compte les jours.",
+             "Personne ne m'a téléphoné de la semaine, je me sens oublié.",
+             "Je regarde sa chaise vide et j'aimerais tant qu'il soit là."]
+      minus: ["Depuis son retour, l'appartement est plein de vie, je ne manque de rien.",
+              "On m'a téléphoné tous les jours, je suis bien entouré.",
+              "Sa chaise est occupée, il est là, et ça me comble."]
+    fatigue:
+      plus: ["Après la garde de nuit, mes paupières tombent et mes jambes ne me portent plus.",
+             "Je n'ai plus la force de lever le bras, je suis à bout.",
+             "Encore un étage et je m'écroule, je suis claqué."]
+      minus: ["Après une bonne nuit, j'ai les yeux grands ouverts et des jambes de vingt ans.",
+              "Je soulève la caisse sans effort, je déborde de vigueur.",
+              "Encore dix étages s'il le faut, je suis en pleine possession de mes moyens."]
+    confiance:
+      plus: ["Je lui laisse mes clés et mon code sans la moindre hésitation.",
+             "Je lui raconte mon secret, je sais qu'il le gardera.",
+             "Je signe sans relire, sa parole me suffit."]
+      minus: ["Je garde mes clés et je change mon code, on ne sait jamais avec lui.",
+              "Je ne lui raconte rien, il le répéterait.",
+              "Je relis chaque ligne trois fois, sa parole ne vaut rien."]

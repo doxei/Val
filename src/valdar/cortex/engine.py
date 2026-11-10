@@ -212,19 +212,32 @@ class Engine:
             }
             return text, usage
 
-    def choice(self, prompt: str, options: list[str], fresh: bool = True) -> list[float]:
+    def forget(self) -> None:
+        """Vide le cache de calcul : le prochain prompt sera relu en entier."""
+        if self.llm is not None:
+            with self.lock:
+                self.llm.reset()
+
+    def choice(self, prompt: str, options: list[str], fresh: bool = True,
+               reuse_prefix: bool = False) -> list[float]:
         """Probabilité de chaque option comme premier jeton de la réponse (déterministe :
         pas de tirage). `fresh=False` : ne relit que le dernier jeton, le reste du prompt
-        garde les activations de sa première lecture (le cache, comme en conversation)."""
+        garde les activations de sa première lecture. `reuse_prefix=True` : garde en cache
+        le début commun avec ce qui vient d'être lu, relit la suite (comme en conversation)."""
         self.load()
         with self.lock:
             toks = self.tokens(prompt)
             ids = [self.tokens(o)[0] for o in options]
-            if fresh or self.llm.n_tokens < len(toks) - 1:
+            if reuse_prefix:
+                keep = min(_common_prefix(self.llm.n_tokens, toks, self.llm), len(toks) - 1)
+            elif fresh or self.llm.n_tokens < len(toks) - 1:
+                keep = 0
+            else:
+                keep = len(toks) - 1
+            if keep <= 0:
                 self.llm.reset()
                 rest = toks
             else:
-                keep = len(toks) - 1
                 self.llm.n_tokens = keep
                 self.llm._ctx.kv_cache_seq_rm(-1, keep, -1)
                 rest = toks[keep:]
