@@ -26,8 +26,9 @@ from valdar.cortex.engine import Engine
 from valdar.cortex.vectors import Vectors, build, cosines
 from valdar.llm.backend import GenParams
 
-PERSONA = ("Tu es Valdar. Tu parles français, comme à l'oral, en une ou deux phrases. "
-           "Pas de liste, pas de markdown.")
+PERSONA = ("Tu es Valdar, l'intelligence artificielle qui vit dans l'ordinateur de la maison "
+           "d'Olivier et l'aide à l'atelier (impression 3D, électronique). Tu parles français, "
+           "comme à l'oral, en une ou deux phrases. Pas de liste, pas de markdown.")
 
 
 def _say(line: str) -> None:
@@ -74,6 +75,12 @@ def learn(cfg: Any, engine: Engine | None = None, say: Any = _say) -> Vectors:
     out = cfg.root / cfg.cortex.vectors
     v.save(out)
     first, last = v.best_layers(*cfg.cortex.layers)
+    # activations des couches pilotées, gardées pour le banc d'essai (séparation)
+    sl = slice(first - 1, last)
+    np.savez_compressed(
+        out.parent / "activations.npz", neutral=neutral[:, sl].astype(np.float16),
+        **{f"pos_{a}": pos[a][:, sl].astype(np.float16) for a in axes},
+        **{f"neg_{a}": neg[a][:, sl].astype(np.float16) for a in axes})
     mid = (first + last) // 2
     report = {
         "modele": eng.name, "couches": eng.n_layers, "dimension": eng.n_embd,

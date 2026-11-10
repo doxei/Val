@@ -849,3 +849,51 @@ sentiments agissent dans le bon sens.
 - Vision dans Gemma (sans expert d'image) : Gemma 4 12B est multimodal d'origine, le
   projecteur fait 175 Mo. Pas encore branché dans le cortex : chantier suivant. La
   reconnaissance des visages reste à SFace (un LLM ne sait pas identifier un visage).
+
+## Avenant 6 bis — Premiers résultats sur la RTX 2060 et banc d'essai (10 nov. 2026)
+
+Directive d'Olivier : `docs/directive-fondamentale.md`. Règle de méthode : ne jamais
+abandonner au premier échec, ne pas masquer les échecs, rien d'« opérationnel » sans tests
+reproductibles, ne pas dégrader le raisonnement de Gemma pour forcer l'émotion.
+
+### Ce qui a tourné sur la machine (journal `data/cortex/journal.txt`)
+- Roue CUDA `llama-cpp-python` 0.3.36 installée sans souci ; Gemma 4 12B QAT (7,0 Go)
+  téléchargé en 2 min ; chargement, lecture des 48 couches et injection : **ça marche**.
+- Apprentissage : 40 s. Séparation dans l'échantillon (d de Cohen, couches 16–32) : 5,5 à
+  8,5 selon l'axe. Meilleures couches entre 19 et 30, sauf attachement (45).
+- Premiers essais (alpha 0,12, « relecture ») : 6/11 « nets ». **Mesure jugée insuffisante** :
+  écarts de l'ordre de 0,01, une égalité au millième décide du verdict.
+- Dose sur la valence : effet discret à 0,05–0,2, franc à 0,4 (joie : « prêt à continuer nos
+  discussions ! » ; tristesse : « boire pour oublier ma vie »), sans perte de cohérence.
+- Introspection à 0,12 : nette pour tristesse (« un vide pesant »), excitation, colère,
+  fatigue, manque, confiance ; générique pour les autres.
+- Défaut du test : avec « Tu es Valdar » pour tout portrait, Gemma jouait un guerrier de
+  fantasy. Le portrait d'essai dit maintenant ce qu'est Valdar.
+- Les 4 premiers axes ont pris 3 min chacun, les suivants 10 s : la carte était disputée par
+  un autre programme au début. Le banc note maintenant la mémoire de la carte.
+
+### Décision
+Le cortex avait été activé par l'ancienne règle (6/11). **Désactivé** en attendant le banc :
+la règle d'Olivier prime, et 6/11 sur une mesure aussi faible ne prouve rien.
+
+### Le banc d'essai (`valdar cortex banc`, `tools\valdar_cortex_banc.bat`)
+Tout est déterministe : on lit des probabilités de choix (A ou B, les deux ordres), et le
+raisonnement est généré à température 0. Seuils écrits dans le code avant la mesure.
+1. **Séparation** : chaque situation retirée à son tour (≥ 90 % en moyenne, ≥ 75 % par axe),
+   et matrice de confusion entre les 11 axes.
+2. **Cohérence** : 20 questions vérifiables (calcul, logique, culture, appel d'outil) sous
+   deux états extrêmes, à alpha 0,06 / 0,12 / 0,2 / 0,3 / 0,45. **La force retenue est la plus
+   grande qui ne coûte pas plus d'une réponse.** C'est elle qui est écrite dans les réglages.
+3. **Comportement** : 11 choix (continuer ou s'arrêter, tenter ou jouer la sécurité, vanne ou
+   sérieux…), jamais « que ressens-tu ». Matrice sentiment injecté × choix ; effet ≥ 0,10 sur
+   au moins 8 axes ; spécificité (son propre choix parmi les 3 plus touchés).
+4. **Interactions** : cinq paires de sentiments ; chacun garde-t-il au moins la moitié de son
+   effet ?
+5. **Stabilité** : même effet après une conversation de 6 tours ; et quand tout le prompt a
+   été lu avant le changement d'humeur (cache).
+6. **Comparatif** sur une journée simulée (le cœur reçoit compliment, jeu, agacement, menace,
+   réconfort, perte, huit heures seul, nouveauté) : A. Gemma seul ; A'. état décrit en texte ;
+   B. injection fixe ; C. injection pilotée par le cœur. Mesure : corrélation entre l'état
+   interne et les choix. A et B sont plats par construction ; C doit dépasser 0,5.
+Le cortex ne s'active que si séparation, cohérence, comportement et pilotage passent. Le
+rapport `data/cortex/banc.md` liste aussi les échecs.

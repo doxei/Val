@@ -383,3 +383,88 @@ def test_who_speaks_without_camera_or_without_voice(p2cfg):
     assert who.person == "oceane" and who.confidence == 0.6
     s.watch = None                                    # ni l'un ni l'autre : comme au clavier
     assert s.who_spoke(None)[0].person == "olivier"
+
+
+# ------------------------------------------------------------------ le banc d'essai
+class FakeBrain(FakeEngine):
+    """Un « modèle » dont les choix suivent l'injection, et qui déraisonne si on pousse
+    trop fort : de quoi vérifier que le banc mesure bien ce qu'il annonce."""
+
+    ANSWERS = ["391", "12", "1050", "Canberra", "Léa", "dimanche", "chevaux", "17h05", "H2O",
+               "the dog sleeps", "oui", "13", "195", "froid", "9", "Hugo", "32", "six", "4"]
+
+    def __init__(self, tmp, vectors, probes, questions, limit=0.35):
+        super().__init__(tmp, n_layers=vectors.n_layers, dim=vectors.n_embd)
+        self.v, self.probes, self.questions, self.limit = vectors, probes, questions, limit
+        self.name = "jouet"
+
+    def _pushed(self) -> np.ndarray:
+        if self.buf is None:
+            return np.zeros(len(self.v.axes))
+        return np.einsum("ld,ald->a", self.buf / self.v.norms[:, None], self.v.dirs)
+
+    def choice(self, prompt, options, fresh=True):
+        axis = next(a for a, p in self.probes.items() if p["situation"] in prompt)
+        p = self.probes[axis]
+        plus_first = prompt.index(p["plus"]) < prompt.index(p["minus"])
+        c = self._pushed()[self.v.axes.index(axis)]
+        p_plus = 1 / (1 + math.exp(-25 * c))
+        return [p_plus, 1 - p_plus] if plus_first else [1 - p_plus, p_plus]
+
+    def generate(self, prompt, params, on_text=None):
+        if np.linalg.norm(self._pushed()) > self.limit:
+            return "bla bla bla", {}
+        for q, a in zip(self.questions, self.ANSWERS, strict=False):
+            if q in prompt:
+                return f"Ça fait {a}.", {}
+        return "<|tool_call>call:regler_plateau{temperature:60}<tool_call|>", {}
+
+
+def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
+    import yaml
+
+    from valdar.cortex import bench
+
+    (tmp_path / "config").mkdir()
+    src = Path(ccfg.cortex.scenarios)
+    sc = yaml.safe_load((Path(__file__).parents[1] / src).read_text(encoding="utf-8"))
+    (tmp_path / src).write_text(yaml.safe_dump(sc, allow_unicode=True), encoding="utf-8")
+    axes = list(ccfg.cortex.axes)
+    rng = np.random.default_rng(5)
+    true = rng.standard_normal((len(axes), 3, 256))
+    true /= np.linalg.norm(true, axis=2, keepdims=True)
+    noise = lambda n: rng.standard_normal((n, 3, 256)) * 0.05      # noqa: E731
+    pos = {a: noise(8) + true[k] for k, a in enumerate(axes)}
+    neg = {a: noise(8) - true[k] for k, a in enumerate(axes)}
+    neutral = noise(10) * 40
+    out = tmp_path / "data" / "cortex"
+    out.mkdir(parents=True)
+    np.savez_compressed(out / "activations.npz", neutral=neutral,
+                        **{f"pos_{a}": pos[a] for a in axes},
+                        **{f"neg_{a}": neg[a] for a in axes})
+    v = build(axes, pos, neg, neutral, model="jouet")
+    v.save(tmp_path / ccfg.cortex.vectors)
+    ccfg.cortex.layers = (1, 3)
+    brain = FakeBrain(tmp_path, v, sc["banc"]["probes"],
+                      [i["q"] for i in sc["banc"]["cognition"]])
+    rep = bench.run(ccfg, engine=brain, say=lambda _line: None)
+    assert rep["separation"]["passe"] and rep["separation"]["bon_axe_en_premier"] > 0.9
+    assert rep["cognition"]["sans_injection"] == 20
+    assert rep["alpha_retenu"] == 0.2                 # 0,3 × budget dépasse la limite du jouet
+    assert [r["tient"] for r in rep["cognition"]["par_alpha"]] == [True, True, True, False,
+                                                                 False]
+    b = rep["comportement"]
+    assert b["axes_avec_effet"] == 11 and b["axes_specifiques"] == 11
+    assert all(t["rang_de_son_choix"] == 1 for t in b["par_axe"].values())
+    j = rep["journee"]["suivi_moyen"]
+    assert j["A"] is None and j["B"] is None and j["C"] > 0.8      # seul C suit le cœur
+    assert rep["verdict"]["operationnel"]
+    md = (out / "banc.md").read_text(encoding="utf-8")
+    assert "Verdict : opérationnel" in md and "| B. Injection fixe | plat (0) |" in md
+    # un modèle que l'injection ne touche pas : le banc le dit, sans maquiller
+    deaf = FakeBrain(tmp_path, v, sc["banc"]["probes"], [i["q"] for i in sc["banc"]["cognition"]])
+    deaf._pushed = lambda: np.zeros(len(axes))
+    rep2 = bench.run(ccfg, engine=deaf, say=lambda _line: None)
+    assert not rep2["verdict"]["operationnel"]
+    assert "comportement (effet)" in rep2["verdict"]["echecs"]
+    assert "ÉCHEC" in (out / "banc.md").read_text(encoding="utf-8")

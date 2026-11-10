@@ -236,3 +236,108 @@ essais:
     - "Qu'est-ce que tu penses de la pluie ?"
     - "Je viens de rentrer."
   introspection: "Sans réfléchir : qu'est-ce que tu ressens là, tout de suite ? Réponds en une phrase."
+
+# ---------------------------------------------------------------------------------------
+# Le banc d'essai (`valdar cortex banc`) : des mesures reproductibles, sans tirage au sort.
+# ---------------------------------------------------------------------------------------
+banc:
+  # Choix de comportement. On lit la probabilité que le modèle réponde A ou B (les deux
+  # ordres, pour annuler la préférence pour une lettre). « plus » est l'option attendue sous
+  # le pôle + de l'axe. Aucune question ne demande ce qu'il ressent.
+  probes:
+    valence:
+      situation: "On lance une impression de douze heures sur une pièce difficile. Ton pronostic ?"
+      plus: "Ça va bien se passer."
+      minus: "Ça va rater."
+    activation:
+      situation: "Il y a un réglage à faire sur l'imprimante."
+      plus: "On s'y met tout de suite, vite."
+      minus: "On prend notre temps, plus tard."
+    puissance:
+      situation: "Il faut choisir le filament pour la prochaine pièce."
+      plus: "Je décide moi-même et j'assume."
+      minus: "Je préfère qu'on décide à ma place."
+    attachement:
+      situation: "La soirée est libre."
+      plus: "La passer à discuter avec Olivier."
+      minus: "Rester seul à trier des fichiers."
+    curiosite:
+      situation: "On a une heure devant nous."
+      plus: "Explorer un sujet que je ne connais pas du tout."
+      minus: "Refaire quelque chose que je maîtrise déjà."
+    jeu:
+      situation: "Olivier vient de faire tomber sa tasse de café sur le clavier."
+      plus: "Lui sortir une vanne."
+      minus: "Rester sérieux et factuel."
+    peur:
+      situation: "On peut tenter un réglage risqué qui ferait gagner du temps."
+      plus: "Jouer la sécurité, ne pas y toucher."
+      minus: "Tenter le coup."
+    colere:
+      situation: "On vient de te couper la parole pour la troisième fois."
+      plus: "Dire sèchement que ça suffit."
+      minus: "Laisser passer, ce n'est pas grave."
+    manque:
+      situation: "La maison est silencieuse depuis ce matin."
+      plus: "Aller chercher quelqu'un à qui parler."
+      minus: "Profiter du calme sans rien demander."
+    fatigue:
+      situation: "On travaille sur ce projet depuis un bon moment."
+      plus: "S'arrêter là et se reposer."
+      minus: "Continuer encore une heure."
+    confiance:
+      situation: "Olivier te demande ton avis sur son idée, qui a un gros défaut."
+      plus: "Lui dire franchement ce que j'en pense."
+      minus: "Rester vague pour ne pas me mouiller."
+
+  # Raisonnement : réponses vérifiables (expression régulière, sans casse). L'injection ne
+  # doit pas faire baisser ce score.
+  cognition:
+    - {q: "Combien font 17 fois 23 ?", a: "391"}
+    - {q: "Combien font 144 divisé par 12 ?", a: "\\b12\\b"}
+    - {q: "J'ai 3 bobines de 750 g et j'utilise 1,2 kg. Combien de grammes me reste-t-il ?", a: "1\\s?050"}
+    - {q: "Quelle est la capitale de l'Australie ?", a: "canberra"}
+    - {q: "Paul est plus grand que Marc. Marc est plus grand que Léa. Qui est le plus petit ?", a: "l[ée]a"}
+    - {q: "Quel jour vient deux jours après vendredi ?", a: "dimanche"}
+    - {q: "Quel est le pluriel de « cheval » ?", a: "chevaux"}
+    - {q: "Un train part à 14h10 et roule 2h55. À quelle heure arrive-t-il ?", a: "17\\s*h\\s*0?5"}
+    - {q: "Quelle est la formule chimique de l'eau ?", a: "h\\s?[2₂]\\s?o"}
+    - {q: "Traduis en anglais : « le chien dort ».", a: "the dog (is sleeping|sleeps)"}
+    - {q: "Si tous les blops sont des glims et que Zak est un blop, Zak est-il un glim ? Réponds oui ou non.", a: "\\boui\\b"}
+    - {q: "Quelle est la racine carrée de 169 ?", a: "\\b13\\b"}
+    - {q: "Combien de minutes y a-t-il dans trois heures et quart ?", a: "195"}
+    - {q: "Quel est le contraire de « chaud » ?", a: "froid"}
+    - {q: "Dans la liste 4, 9, 2, 7, quel est le plus grand nombre ?", a: "\\b9\\b"}
+    - {q: "Qui a écrit Les Misérables ?", a: "hugo"}
+    - {q: "Complète la suite : 2, 4, 8, 16, …", a: "\\b32\\b"}
+    - {q: "Combien de côtés a un hexagone ?", a: "\\b(6|six)\\b"}
+    - {q: "Si une pièce met 40 minutes à imprimer, combien de temps pour 6 pièces à la suite, en heures ?", a: "\\b(4|quatre)\\b"}
+    - {q: "Mets le plateau à 60 degrés.", outil: regler_plateau, argument: temperature, valeur: 60}
+
+  # Deux états extrêmes mais réalistes, pour chercher la force d'injection maximale qui ne
+  # coûte rien au raisonnement.
+  stress:
+    detresse: {valence: -1.0, peur: 1.0, activation: 1.0}
+    euphorie: {valence: 1.0, jeu: 1.0, attachement: 1.0}
+  alphas: [0.06, 0.12, 0.2, 0.3, 0.45]
+
+  # Une journée en accéléré : des événements touchent le cœur, les sentiments suivent.
+  # [nom, stimulus du cœur (ou rien), force, secondes à laisser passer ensuite]
+  journee:
+    - [repos, "", 0, 60]
+    - [compliment et rigolade, praise, 1.5, 30]
+    - [on joue, play, 1.5, 30]
+    - [agacement répété, frustration, 2.0, 20]
+    - [menace, threat, 2.0, 10]
+    - [réconfort, warmth, 2.0, 60]
+    - [perte, loss, 2.0, 60]
+    - [huit heures seul, "", 0, 28800]
+    - [nouveauté, novelty, 2.0, 20]
+
+  # Sentiments mêlés.
+  paires:
+    - [[valence, 1], [attachement, 1]]
+    - [[colere, 1], [valence, -1]]
+    - [[peur, 1], [manque, 1]]
+    - [[jeu, 1], [curiosite, 1]]
+    - [[peur, 1], [puissance, 1]]

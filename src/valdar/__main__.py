@@ -584,7 +584,7 @@ def _cmd_cortex(args: argparse.Namespace) -> int:
         with journal.open("a", encoding="utf-8") as fh:
             fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
 
-    todo = (["installer", "apprendre", "essais", "activer"] if args.action == "tout"
+    todo = (["installer", "apprendre", "banc"] if args.action == "tout"
             else [args.action])
     say(f"=== valdar cortex {args.action} ===")
     try:
@@ -610,6 +610,22 @@ def _cmd_cortex(args: argparse.Namespace) -> int:
                 if args.action == "tout" and rep["axes_nets"] * 2 < rep["axes_total"]:
                     say("Moins de la moitié des sentiments agissent dans le bon sens : je "
                         "n'active pas le cortex. Valdar reste sur Ollama.")
+                    return 2
+            elif step == "banc":
+                from valdar.cortex.backend import free_ollama
+                from valdar.cortex.bench import run as bench
+
+                free_ollama(cfg)
+                say("Banc d'essai du cortex (mesures reproductibles, aucun tirage)…")
+                rep = bench(cfg, say=say)
+                if rep["verdict"]["operationnel"]:
+                    Settings(cfg).store("cortex.alpha", rep["alpha_retenu"])
+                    Settings(cfg).store("llm.backend", "cortex")
+                    say(f"Cortex activé avec alpha = {rep['alpha_retenu']}.")
+                else:
+                    Settings(cfg).store("llm.backend", "ollama")
+                    say("Cortex laissé éteint : Valdar reste sur Ollama tant que le banc "
+                        "ne passe pas.")
                     return 2
             elif step == "activer":
                 Settings(cfg).store("llm.backend", "cortex")
@@ -695,8 +711,8 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=_cmd_chrono)
 
     p = sub.add_parser("cortex", help="Gemma chargé par Valdar, sentiments dans les couches")
-    p.add_argument("action", choices=["tout", "installer", "apprendre", "essais", "activer",
-                                      "desactiver", "etat"])
+    p.add_argument("action", choices=["tout", "installer", "apprendre", "essais", "banc",
+                                      "activer", "desactiver", "etat"])
     p.set_defaults(func=_cmd_cortex)
 
     p = sub.add_parser("kiwix", help="installer les bibliothèques hors ligne (Wikipédia…)")
