@@ -441,7 +441,7 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
     neutral = noise(10) * 40
     out = tmp_path / "data" / "cortex"
     out.mkdir(parents=True)
-    np.savez_compressed(out / "activations.npz", neutral=neutral,
+    np.savez_compressed(out / "activations.npz", neutral=neutral, first=np.array(1),
                         **{f"pos_{a}": pos[a] for a in axes},
                         **{f"neg_{a}": neg[a] for a in axes})
     v = build(axes, pos, neg, neutral, model="jouet")
@@ -453,8 +453,8 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
     assert rep["separation"]["passe"] and rep["separation"]["bon_axe_en_premier"] > 0.9
     assert rep["cognition"]["sans_injection"] == 20
     assert rep["alpha_retenu"] == 0.2                 # 0,3 × budget dépasse la limite du jouet
-    assert [r["tient"] for r in rep["cognition"]["par_alpha"]] == [True, True, True, False,
-                                                                 False]
+    held = [r["tient"] for r in rep["cognition"]["par_alpha"]]
+    assert held[-1] is False and all(held[:-1])
     b = rep["comportement"]
     assert b["axes_avec_effet"] == 11 and b["axes_specifiques"] == 11
     assert all(t["rang_de_son_choix"] == 1 for t in b["par_axe"].values())

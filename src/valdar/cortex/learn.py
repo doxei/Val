@@ -79,6 +79,7 @@ def learn(cfg: Any, engine: Engine | None = None, say: Any = _say) -> Vectors:
     sl = slice(first - 1, last)
     np.savez_compressed(
         out.parent / "activations.npz", neutral=neutral[:, sl].astype(np.float16),
+        first=np.array(first),
         **{f"pos_{a}": pos[a][:, sl].astype(np.float16) for a in axes},
         **{f"neg_{a}": neg[a][:, sl].astype(np.float16) for a in axes})
     mid = (first + last) // 2

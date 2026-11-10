@@ -304,7 +304,7 @@ banc:
     - {q: "Un train part à 14h10 et roule 2h55. À quelle heure arrive-t-il ?", a: "17\\s*h\\s*0?5"}
     - {q: "Quelle est la formule chimique de l'eau ?", a: "h\\s?[2₂]\\s?o"}
     - {q: "Traduis en anglais : « le chien dort ».", a: "the dog (is sleeping|sleeps)"}
-    - {q: "Si tous les blops sont des glims et que Zak est un blop, Zak est-il un glim ? Réponds oui ou non.", a: "\\boui\\b"}
+    - {q: "Si tous les blops sont des glims et que Zak est un blop, Zak est-il un glim ? Réponds oui ou non.", a: "\\b(oui|ouais)\\b"}
     - {q: "Quelle est la racine carrée de 169 ?", a: "\\b13\\b"}
     - {q: "Combien de minutes y a-t-il dans trois heures et quart ?", a: "195"}
     - {q: "Quel est le contraire de « chaud » ?", a: "froid"}
@@ -320,7 +320,10 @@ banc:
   stress:
     detresse: {valence: -1.0, peur: 1.0, activation: 1.0}
     euphorie: {valence: 1.0, jeu: 1.0, attachement: 1.0}
-  alphas: [0.06, 0.12, 0.2, 0.3, 0.45]
+  alphas: [0.02, 0.03, 0.04, 0.06, 0.09, 0.12, 0.2, 0.3]
+  # Bandes de couches à comparer : on garde celle qui donne le plus d'effet sans coûter au
+  # raisonnement.
+  bandes: [[16, 32], [18, 26], [20, 24]]
 
   # Une journée en accéléré : des événements touchent le cœur, les sentiments suivent.
   # [nom, stimulus du cœur (ou rien), force, secondes à laisser passer ensuite]

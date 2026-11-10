@@ -942,3 +942,27 @@ rapport `data/cortex/banc.md` liste aussi les échecs.
 - **Cache réel** : système et historique en cache, dernier message relu sous la nouvelle
   humeur. Critère : garder au moins la moitié de l'effet.
 - Nouveaux critères requis : récupération, aucun sentiment à l'envers.
+
+### Deuxième passage (banc v2, 11 nov. 0h15) : PAS OPÉRATIONNEL, arrêt à la cohérence
+- Une fois la fuite de cache corrigée, **même alpha 0,06 coûte au raisonnement** sous état
+  extrême : détresse 17/20, euphorie 19/20 (dont un faux échec : « Ouais » refusé par ma
+  grille). Vraies pertes : calcul d'horaire faux (16h45 au lieu de 17h05), 187 minutes au
+  lieu de 195, et **« C'est fait, j'ai réglé le plateau » sans appeler l'outil**.
+- Le ton change franchement : « Putain Olivier, bouge-toi, on va rater le créneau »
+  (détresse 0,2), « Coucou Olivier ! ton petit train… » (euphorie). À 0,12 des jetons
+  parasites (`<image|>`) apparaissent en euphorie.
+- **Témoin au hasard : 0/20 à toutes les forces.** Un vecteur aléatoire de même norme casse
+  tout, alors que les sentiments laissent 17 à 19 bonnes réponses : ils vivent dans les
+  directions naturelles du modèle. Mais ce témoin n'est pas équitable ; remplacé par une
+  direction naturelle sans sens (différence de moyennes à étiquettes mélangées).
+- Situations neuves : 82 % (valence 50 %, peur/manque/fatigue 67 %) avec un seuil absolu,
+  qui se décale d'un sujet à l'autre. Remplacé par une comparaison par paires.
+- Erreur de méthode de ma part : le banc s'arrêtait à la cohérence. Il continue maintenant.
+
+### Banc v3
+- Forces plus fines (0,02 à 0,3), réponses jusqu'à 90 jetons (les réponses bavardes étaient
+  coupées avant le résultat), « ouais » accepté.
+- **Trois bandes de couches comparées** (16–32, 18–26, 20–24) : pour chacune, la plus grande
+  force sans perte et l'effet moyen sur le comportement ; on garde la meilleure. Hypothèse :
+  une bande étroite touche moins le calcul pour le même effet.
+- Témoin équitable, validation par paires, le banc ne s'arrête plus au premier échec.

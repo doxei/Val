@@ -620,6 +620,7 @@ def _cmd_cortex(args: argparse.Namespace) -> int:
                 rep = bench(cfg, say=say)
                 if rep["verdict"]["operationnel"]:
                     Settings(cfg).store("cortex.alpha", rep["alpha_retenu"])
+                    Settings(cfg).store("cortex.layers", list(rep["couches"]))
                     Settings(cfg).store("llm.backend", "cortex")
                     say(f"Cortex activé avec alpha = {rep['alpha_retenu']}.")
                 else:

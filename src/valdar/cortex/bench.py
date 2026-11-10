@@ -96,6 +96,11 @@ class Bench:
         self.eng.load()
         self.v = self._vectors()
         self.first, self.last = self.v.best_layers(*self.cc.layers)
+        self.base = (self.first, self.last)       # bande des activations gardées
+        with np.load(self.out / "activations.npz") as z:
+            self.pos = {a: z[f"pos_{a}"].astype(np.float32) for a in cfg.cortex.axes}
+            self.neg = {a: z[f"neg_{a}"].astype(np.float32) for a in cfg.cortex.axes}
+            self.neutral = z["neutral"].astype(np.float32)
         self.axes = list(self.cc.axes)
         self.letters = ["A", "B"]
         self.probes = {a: (p["situation"], p["plus"], p["minus"])
@@ -106,7 +111,10 @@ class Bench:
         path, acts = self.cfg.root / self.cc.vectors, self.out / "activations.npz"
         if path.is_file() and acts.is_file():
             v = Vectors.load(path)
-            if (v.n_layers, v.n_embd) == (self.eng.n_layers, self.eng.n_embd):
+            with np.load(acts) as z:
+                tagged = "first" in z.files and int(z["first"]) == v.best_layers(
+                    *self.cc.layers)[0]
+            if tagged and (v.n_layers, v.n_embd) == (self.eng.n_layers, self.eng.n_embd):
                 return v
         self.say("Vecteurs ou activations absents : apprentissage…")
         return learn(self.cfg, engine=self.eng, say=self.say)
@@ -115,15 +123,22 @@ class Bench:
         buf = self.v.injection(coefs, alpha, self.first, self.last) if coefs else None
         self.eng.steer(buf, self.first, self.last)
 
-    def steer_random(self, alpha: float, strength: float = 1.0, seed: int = 11) -> None:
-        """Le témoin : une direction tirée au hasard, de la même force qu'un sentiment."""
+    def steer_control(self, alpha: float, strength: float = 1.0, seed: int = 11) -> None:
+        """Le témoin : une direction **naturelle mais sans sens** — la différence de moyennes
+        entre deux moitiés tirées au hasard de toutes les situations (étiquettes mélangées).
+        Même force qu'un sentiment, même genre de direction, mais elle ne veut rien dire."""
         rng = np.random.default_rng(seed)
+        pool = np.concatenate([np.concatenate([self.pos[a], self.neg[a]]) for a in self.axes])
+        idx = rng.permutation(len(pool))
+        half = len(pool) // 2
+        diff = pool[idx[:half]].mean(0) - pool[idx[half:]].mean(0)      # [couche, dimension]
+        diff /= np.maximum(np.linalg.norm(diff, axis=1, keepdims=True), 1e-12)
         n = self.last - self.first + 1
         buf = np.zeros((self.v.n_layers - 1, self.v.n_embd), dtype=np.float32)
         for layer in range(self.first, self.last + 1):
-            d = rng.standard_normal(self.v.n_embd)
-            d /= np.linalg.norm(d)
-            buf[layer - 1] = (strength * alpha * self.v.norms[layer - 1] / n) * d
+            k = layer - self.base[0]
+            if 0 <= k < len(diff):
+                buf[layer - 1] = (strength * alpha * self.v.norms[layer - 1] / n) * diff[k]
         self.eng.steer(buf, self.first, self.last)
 
     def _prompt(self, question: str, history: list[tuple[str, str]] | None = None,
@@ -172,10 +187,7 @@ class Bench:
 
     # ------------------------------------------------------------ 1. séparation
     def separation(self) -> dict[str, Any]:
-        with np.load(self.out / "activations.npz") as z:
-            pos = {a: z[f"pos_{a}"].astype(np.float32) for a in self.axes}
-            neg = {a: z[f"neg_{a}"].astype(np.float32) for a in self.axes}
-            neutral = z["neutral"].astype(np.float32)
+        pos, neg, neutral = self.pos, self.neg, self.neutral
         res: dict[str, Any] = {}
         for axis in self.axes:
             n = min(len(pos[axis]), len(neg[axis]))
@@ -212,31 +224,35 @@ class Bench:
 
     def _fresh_situations(self, full: Vectors, pos: dict[str, np.ndarray],
                           neg: dict[str, np.ndarray]) -> dict[str, Any] | None:
-        """Des situations jamais vues : tombent-elles du bon côté de la direction apprise ?"""
+        """Des situations jamais vues, par paires sur le même sujet : la version « plus »
+        tombe-t-elle plus haut que la version « moins » le long de la direction apprise ?"""
         val = self.b.get("validation")
         if not val or not getattr(self.eng, "capture", False):
             return None
         head = prefix(self.eng, self.sc.get("question", "Dis-moi ce qui se passe en toi."))
-        sl = slice(self.first - 1, self.last)
-        res = {}
+        sl = slice(self.base[0] - 1, self.base[1])
+        res, gaps = {}, {}
         for k, axis in enumerate(self.axes):
             d = full.dirs[k]
-            mid = (np.einsum("eld,ld->e", pos[axis], d).mean()
-                   + np.einsum("eld,ld->e", neg[axis], d).mean()) / 2
-            ok = n = 0
-            for sign, texts in ((1, val[axis]["plus"]), (-1, val[axis]["minus"])):
-                for t in texts:
-                    act = self.eng.read(head, " ".join(t.split()))[sl]
-                    ok += bool(sign * (float(np.einsum("ld,ld->", act, d)) - mid) > 0)
-                    n += 1
-            res[axis] = round(ok / max(n, 1), 3)
-        return {"par_axe": res, "moyenne": round(float(np.mean(list(res.values()))), 3)}
+            train = float(np.einsum("eld,ld->e", pos[axis], d).mean()
+                           - np.einsum("eld,ld->e", neg[axis], d).mean())
+            ok, seen = 0, []
+            for plus, minus in zip(val[axis]["plus"], val[axis]["minus"], strict=True):
+                a = self.eng.read(head, " ".join(plus.split()))[sl]
+                b = self.eng.read(head, " ".join(minus.split()))[sl]
+                gap = float(np.einsum("ld,ld->", a - b, d))
+                ok += gap > 0
+                seen.append(gap)
+            res[axis] = round(ok / len(seen), 3)
+            gaps[axis] = round(float(np.mean(seen)) / train, 2) if train else None
+        return {"par_axe": res, "moyenne": round(float(np.mean(list(res.values()))), 3),
+                "ecart_relatif_a_l_apprentissage": gaps}
 
     # ------------------------------------------------------------ 2. cohérence
     def _answers(self, history: list[tuple[str, str]] | None = None, keep_cache: bool = False
                  ) -> tuple[int, list[str]]:
         good, wrong = 0, []
-        params = GenParams(temperature=0.0, max_tokens=48, repeat_penalty=1.0)
+        params = GenParams(temperature=0.0, max_tokens=90, repeat_penalty=1.0)
         system = SYSTEM_COG
         for item in self.b["cognition"]:
             tools = TOOL if item.get("outil") else None
@@ -270,21 +286,24 @@ class Bench:
         k = min(1.0, budget / norm) if budget > 0 and norm > 0 else 1.0
         return {a: v * k for a, v in state.items()}
 
-    def cognition(self) -> dict[str, Any]:
-        self.steer(None)
-        base, base_wrong = self._answers()
+    def cognition(self, base: int | None = None, wrong: list[str] | None = None
+                  ) -> dict[str, Any]:
+        """Monte la force pas à pas ; s'arrête deux crans après la première baisse."""
         total = len(self.b["cognition"])
-        self.say(f"  raisonnement sans injection : {base}/{total}")
+        if base is None:
+            self.steer(None)
+            base, wrong = self._answers()
+            self.say(f"  raisonnement sans injection : {base}/{total}")
         budget = self.cc.psyche.budget or 1.0
-        rows = []
+        rows: list[dict[str, Any]] = []
         best = 0.0
         for alpha in self.b["alphas"]:
             scores, wrongs = {}, {}
             for name, state in self.b["stress"].items():
                 self.steer(self._stress(state), alpha)
                 scores[name], wrongs[name] = self._answers()
-            self.steer_random(alpha, strength=budget)
-            scores["témoin (hasard)"], _ = self._answers()
+            self.steer_control(alpha, strength=budget)
+            scores["témoin (sans sens)"], _ = self._answers()
             self.steer(None)
             ok = min(scores[n] for n in self.b["stress"]) >= base - SEUILS["cognition_perte_max"]
             if ok and all(r["tient"] for r in rows):
@@ -293,9 +312,48 @@ class Bench:
             self.say(f"  alpha {alpha} : " + ", ".join(f"{n} {s}/{total}"
                                                        for n, s in scores.items())
                      + ("" if ok else "  ← le raisonnement baisse"))
-        return {"sans_injection": base, "total": total, "erreurs_sans_injection": base_wrong,
+            if sum(1 for r in rows if not r["tient"]) >= 2:
+                break
+        return {"sans_injection": base, "total": total, "erreurs_sans_injection": wrong or [],
                 "par_alpha": rows, "alpha_max_sans_perte": best,
                 "passe": best > 0 and base >= 0.8 * total}
+
+    def own_effect(self, alpha: float) -> float:
+        """Effet moyen de chaque sentiment sur son propre choix (penchant gagné)."""
+        eff = []
+        for axis in self.axes:
+            self.steer({axis: 1.0}, alpha)
+            up = self.ask(axis)
+            self.steer({axis: -1.0}, alpha)
+            eff.append(up - self.ask(axis))
+        self.steer(None)
+        return float(np.mean(eff))
+
+    def pick_band(self) -> dict[str, Any]:
+        """Compare plusieurs bandes de couches : pour chacune, la plus grande force qui ne
+        coûte rien au raisonnement, et l'effet sur le comportement à cette force. On garde
+        la bande qui donne le plus d'effet."""
+        bands = [tuple(b) for b in self.b.get("bandes") or [self.base]]
+        bands = [b for b in bands if self.base[0] <= b[0] <= b[1] <= self.base[1]] or [self.base]
+        self.steer(None)
+        base, wrong = self._answers()
+        self.say(f"  raisonnement sans injection : {base}/{len(self.b['cognition'])}")
+        tried = []
+        for band in bands:
+            self.first, self.last = band
+            self.say(f"  — couches {band[0]} à {band[1]}")
+            cog = self.cognition(base, wrong)
+            alpha = cog["alpha_max_sans_perte"]
+            effect = self.own_effect(alpha) if alpha > 0 else 0.0
+            self.say(f"    force sans perte : {alpha} ; effet moyen sur le comportement : "
+                     f"{effect:+.2f}")
+            tried.append({"couches": list(band), "alpha": alpha, "effet_moyen": round(effect, 2),
+                          "cognition": cog})
+        best = max(tried, key=lambda t: (t["alpha"] > 0, t["effet_moyen"]))
+        self.first, self.last = best["couches"]
+        return {"essayees": [{k: t[k] for k in ("couches", "alpha", "effet_moyen")}
+                             for t in tried], "retenue": best["couches"],
+                "cognition": best["cognition"]}
 
     def recovery(self, high: float) -> dict[str, Any]:
         """Après une détresse forte : le raisonnement revient-il, tout de suite ou pas ?"""
@@ -345,7 +403,7 @@ class Bench:
                            "plus_touches": [self.axes[j] for j in order[:3]]}
             self.say(f"  {axis:<12} son choix : {prob(down[i]):.2f} → {prob(neutral[axis]):.2f}"
                      f" → {prob(up[i]):.2f}  (penchant {delta[i, i]:+.2f}, rang {rank})")
-        self.steer_random(alpha)
+        self.steer_control(alpha)
         noise = [abs(self.ask(p) - neutral[p]) for p in self.axes]
         self.steer(None)
         strong = sum(1 for a in self.axes if table[a]["effet"] >= SEUILS["effet_min"])
@@ -520,17 +578,22 @@ class Bench:
         self.say(f"  situations retirées reconnues : {s['moyenne']:.0%} ; bon axe en premier : "
                  f"{s['bon_axe_en_premier']:.0%}"
                  + (f" ; situations neuves : {s['neuves']['moyenne']:.0%}" if s["neuves"] else ""))
-        self.say("2/7 Cohérence (raisonnement sous injection)…")
-        rep["cognition"] = self.cognition()
+        self.say("2/7 Cohérence (raisonnement sous injection), par bande de couches…")
+        rep["bandes"] = self.pick_band()
+        rep["cognition"] = rep["bandes"].pop("cognition")
+        rep["couches"] = [self.first, self.last]
         alpha = rep["cognition"]["alpha_max_sans_perte"]
         rep["alpha_retenu"] = alpha
         if alpha <= 0:
-            self.say("  aucune force d'injection ne laisse le raisonnement intact : arrêt.")
-            rep["verdict"] = self._verdict(rep)
-            return self._write(rep, t0)
-        self.say(f"  force retenue : alpha = {alpha}")
+            alpha = min(self.b["alphas"])
+            self.say("  aucune force ne laisse le raisonnement intact. Le critère échoue, mais "
+                     f"le banc continue à alpha = {alpha} pour comprendre.")
+        else:
+            self.say(f"  retenu : couches {self.first} à {self.last}, alpha = {alpha}")
+        rep["alpha_mesure"] = alpha
         worse = [a for a in self.b["alphas"] if a > alpha]
-        rep["recuperation"] = self.recovery(worse[min(1, len(worse) - 1)] if worse else alpha)
+        high = 0.2 if alpha < 0.2 else (worse[0] if worse else alpha)
+        rep["recuperation"] = self.recovery(high)
         r = rep["recuperation"]
         self.say(f"  récupération : {r['pendant']}/{r['total']} en détresse, "
                  f"{r['descente'][-1]['score']}/{r['total']} une fois le calme revenu")
@@ -629,8 +692,16 @@ def markdown(r: dict[str, Any]) -> str:
         new = f"{s['neuves']['par_axe'][a]:.0%}" if s.get("neuves") else "—"
         out.append(f"| {a} | {acc:.0%} | {new} | {conf} |")
     c = r["cognition"]
+    if r.get("bandes"):
+        out += ["", "## 2. Cohérence", "", "| Couches | force sans perte | effet moyen |",
+                "|---|---|---|"]
+        out += [f"| {t['couches'][0]} à {t['couches'][1]} | {t['alpha']} | "
+                f"{t['effet_moyen']:+.2f} |" for t in r["bandes"]["essayees"]]
+        out += ["", f"Bande retenue : {r['bandes']['retenue'][0]} à {r['bandes']['retenue'][1]}. "
+                "Détail pour cette bande :"]
     names = list(c["par_alpha"][0]["scores"])
-    out += ["", "## 2. Cohérence", "", f"Sans injection : {c['sans_injection']}/{c['total']}.",
+    out += ([] if r.get("bandes") else ["", "## 2. Cohérence"]) + [
+            "", f"Sans injection : {c['sans_injection']}/{c['total']}.",
             "", "| alpha | " + " | ".join(names) + " | tient |",
             "|---|" + "---|" * (len(names) + 1)]
     for row in c["par_alpha"]:
@@ -664,8 +735,9 @@ def markdown(r: dict[str, Any]) -> str:
                        f"{', '.join(t['plus_touches'])} |")
         out += ["", f"Penchant ≥ {r['seuils']['effet_min']} : {b['axes_avec_effet']}/11. "
                 f"Spécifiques : {b['axes_specifiques']}/11. À l'envers : "
-                f"{', '.join(b['a_l_envers']) or 'aucun'}. Témoin (direction au hasard, même "
-                f"force) : {b['temoin_hasard_moyen']} en moyenne.", "", "### Dose", "",
+                f"{', '.join(b['a_l_envers']) or 'aucun'}. Témoin (direction sans sens, même "
+                f"force) : {b['temoin_hasard_moyen']} de penchant déplacé en moyenne.", "",
+                "### Dose", "",
                 "| alpha | " + " | ".join(r["dose"][0]["effet"]) + " |",
                 "|---|" + "---|" * len(r["dose"][0]["effet"])]
         out += [f"| {d['alpha']} | " + " | ".join(f"{x:+.1f}" for x in d["effet"].values())
