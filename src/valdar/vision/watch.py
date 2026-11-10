@@ -15,6 +15,7 @@ Aucune image n'est gardée : chaque image est analysée puis jetée.
 """
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from collections.abc import Callable
@@ -87,26 +88,70 @@ class YoloDetector:
 
 
 class Camera:
-    """Webcam ou flux réseau (OpenCV), une image à la demande."""
+    """Webcam ou flux réseau (OpenCV), une image à la demande.
 
-    def __init__(self, source: int | str):
+    Une caméra absente, débranchée ou prise par un autre programme ne bloque rien : `frame`
+    renvoie None, et on retente de l'ouvrir de temps en temps (elle peut revenir)."""
+
+    def __init__(self, source: int | str, retry_seconds: float = 30.0,
+                 opener: Callable[[int | str], Any] | None = None,
+                 clock: Callable[[], float] = time.time):
+        self.source = source
+        self.retry_seconds = retry_seconds
+        self.clock = clock
+        self._opener = opener or self._cv_open
+        self.cap: Any = None
+        self._misses = 0
+        self._next_try = 0.0
+        self._open()
+
+    @staticmethod
+    def _cv_open(source: int | str) -> Any:
         import cv2
 
-        self.cv2 = cv2
-        if isinstance(source, int):
-            self.cap = cv2.VideoCapture(source, cv2.CAP_DSHOW) if hasattr(cv2, "CAP_DSHOW") \
-                else cv2.VideoCapture(source)
-        else:
-            self.cap = cv2.VideoCapture(source)
-        if not self.cap.isOpened():
-            raise RuntimeError(f"caméra {source} introuvable")
+        if isinstance(source, int) and hasattr(cv2, "CAP_DSHOW"):
+            return cv2.VideoCapture(source, cv2.CAP_DSHOW)
+        return cv2.VideoCapture(source)
+
+    def _open(self) -> bool:
+        self._next_try = self.clock() + self.retry_seconds
+        try:
+            cap = self._opener(self.source)
+            if cap is not None and cap.isOpened():
+                self.cap, self._misses = cap, 0
+                return True
+            if cap is not None:
+                cap.release()
+        except Exception:
+            pass
+        self.cap = None
+        return False
+
+    @property
+    def available(self) -> bool:
+        return self.cap is not None
 
     def frame(self) -> np.ndarray | None:
-        ok, img = self.cap.read()
-        return img if ok else None
+        if self.cap is None and (self.clock() < self._next_try or not self._open()):
+            return None
+        try:
+            ok, img = self.cap.read()
+        except Exception:
+            ok, img = False, None
+        if ok:
+            self._misses = 0
+            return img
+        self._misses += 1
+        if self._misses >= 5:            # débranchée : on lâche, on réessaiera
+            self.close()
+            self._next_try = self.clock() + self.retry_seconds
+        return None
 
     def close(self) -> None:
-        self.cap.release()
+        if self.cap is not None:
+            with contextlib.suppress(Exception):
+                self.cap.release()
+        self.cap = None
 
 
 class Watch:

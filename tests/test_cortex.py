@@ -315,3 +315,71 @@ def test_real_engine_reads_layers_and_steering_changes_the_output(cfg):
     again, _ = e.generate("Bonjour", p)
     assert pushed != plain and again == plain
     e.close()
+
+
+# ------------------------------------------------------------------ sens absents
+def test_a_missing_camera_never_blocks_and_comes_back():
+    from valdar.vision.watch import Camera
+
+    class Cap:
+        def __init__(self, ok):
+            self.ok, self.released = ok, False
+
+        def isOpened(self):          # noqa: N802 (nom d'OpenCV)
+            return self.ok
+
+        def read(self):
+            return self.ok, "image" if self.ok else None
+
+        def release(self):
+            self.released = True
+
+    plugged = {"on": False}
+    now = {"t": 0.0}
+    caps: list[Cap] = []
+
+    def opener(_src):
+        caps.append(Cap(plugged["on"]))
+        return caps[-1]
+
+    cam = Camera(0, retry_seconds=30.0, opener=opener, clock=lambda: now["t"])
+    assert not cam.available and cam.frame() is None
+    assert len(caps) == 1                                          # pas de réessai tout de suite
+    plugged["on"] = True
+    now["t"] = 31.0
+    assert cam.frame() == "image" and cam.available                # elle est revenue
+    caps[-1].ok = False                                            # on la débranche
+    assert [cam.frame() for _ in range(5)] == [None] * 5 and not cam.available
+    assert caps[-1].released
+    now["t"] = 100.0
+    assert cam.frame() == "image"
+
+
+def test_who_speaks_without_camera_or_without_voice(p2cfg):
+    from types import SimpleNamespace
+
+    from valdar.interface.session import Session
+
+    class Guess:
+        def __init__(self, person, sure):
+            self.person, self.sure = person, sure
+
+        def to_dict(self):
+            return {"person": self.person}
+
+    s = Session.__new__(Session)
+    s.owner = Identity(person="olivier", name="Olivier", role="owner", confidence=0.8)
+    s.foyer = SimpleNamespace(identity=lambda p, c: Identity(person=p, name=p, confidence=c))
+    s.prints = SimpleNamespace(counts=lambda kind: {"olivier": 3})
+    s.voice_id = SimpleNamespace(identify=lambda a: Guess("oceane", True),
+                                 confidence=lambda g: 0.8)
+    s.watch = None                                    # pas de caméra : la voix suffit
+    who, _ = s.who_spoke(object())
+    assert who.person == "oceane" and who.confidence == 0.8
+    s.watch = SimpleNamespace(seen={"oceane": __import__("time").time()})
+    assert s.who_spoke(object())[0].confidence == 0.95          # voix et visage d'accord
+    s.voice_id = None                                 # pas de voix : le visage seul
+    who, _ = s.who_spoke(None)
+    assert who.person == "oceane" and who.confidence == 0.6
+    s.watch = None                                    # ni l'un ni l'autre : comme au clavier
+    assert s.who_spoke(None)[0].person == "olivier"

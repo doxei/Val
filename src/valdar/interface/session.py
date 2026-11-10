@@ -64,6 +64,7 @@ class Session:
         self.voice_id: Any = None
         self.face_id: Any = None
         self.watch: Any = None
+        self.camera: Any = None
         self.gate: Any = None
         self.mic: Any = None
         self.enrolling: Any = None
@@ -338,6 +339,10 @@ class Session:
                        "resume": rt.feeling.words(),
                        "probleme": getattr(rt.llm, "problem", "")},
             "who": {"name": self.last_who.name, "confidence": self.last_who.confidence},
+            "senses": {"oreilles": gate is not None,
+                       "oeil": bool(self.camera is not None and self.camera.available),
+                       "voix_connues": bool(self.voice_id is not None),
+                       "visages_connus": bool(self.face_id is not None)},
             "muted": self.muted,
             "silenced": bool(getattr(rt.initiative, "silenced", False)),
         }

@@ -761,3 +761,91 @@ récite pas sa mémoire avant chaque phrase, il va la chercher quand le sujet l'
   `rapport.json` : 1er son en flux, nombre de morceaux, saut max aux raccords comparé au
   99,9e centile du signal (`sans_clic`). Chiffres : **à relever après le premier lancement
   sur le PC**.
+
+## Avenant 6 — Le cortex : les sentiments dans les couches du modèle
+
+Demande d'Olivier (10 nov. 2026) : un vrai modèle « à écosystème », avec injection dans les
+couches comme le « Golden Gate Claude » d'Anthropic ; les injections sont des sentiments
+(valence, activation, puissance…), sur le modèle de la psyché humaine et du lien social ;
+un seul modèle, sans usine à gaz ; reconnaître l'interlocuteur à la voix ou au visage sans
+se bloquer si un sens manque.
+
+### Ce que ça change
+Avant, le cœur était *décrit* à Gemma dans le prompt (« ton état intérieur : … ») : Gemma
+jouait l'état. Maintenant le cœur **déplace les activations internes** de Gemma, couche par
+couche, le long de directions apprises. L'émotion agit sur le calcul lui-même, même si le
+prompt n'en dit rien. À dire honnêtement : c'est un réglage causal de l'humeur du modèle.
+Ça ne prouve pas un ressenti, et personne ne sait aujourd'hui mesurer ça.
+
+### Choix du moteur
+- **Ollama ne permet pas l'injection.** `llama-server` ne fixe les vecteurs qu'au lancement.
+- **Mais la bibliothèque llama.cpp le permet à chaud** : `llama_set_adapter_cvec`, exposé par
+  `llama-cpp-python` 0.3.36. Essayé ici sur un petit modèle : l'injection change la sortie,
+  la retirer rend la sortie d'origine. Pas besoin de redémarrer ni de recharger.
+- **PyTorch + transformers écarté** : Gemma 4 12B en 4 bits (bitsandbytes) prend 9 à 10 Go,
+  ne tient pas avec XTTS sur 12 Go, est plus lent, et demande transformers ≥ 5.10 alors que
+  la voix (coqui-tts) impose 4.57.
+- **Modèle** : Gemma 4 12B reste le bon choix pour 12 Go (48 couches, dimension 3840).
+  Fichier : QAT 4 bits de Google (7,0 Go, entraîné pour le 4 bits), sinon Q4_K_M d'unsloth.
+- **DiffusionGemma écarté** : il n'existe qu'en 26B (16 Go en 4 bits), il rend un bloc de
+  256 jetons d'un coup (pas de premier mot rapide pour la voix) et perd en raisonnement.
+- Gemma Scope (autoencodeurs épars, la méthode exacte du Golden Gate) n'existe pas pour
+  Gemma 4 : on utilise des **différences de moyennes**, comme les « vecteurs de persona »
+  et l'étude d'Anthropic sur les émotions (avril 2026).
+
+### Architecture (`src/valdar/cortex/`)
+- `engine.py` : Gemma chargé par Valdar lui-même. `steer` pose l'injection, `read` relève
+  les activations de chaque couche (rappel `cb_eval`, tenseurs `l_out-N`).
+- `vectors.py` : un fichier `data/cortex/vecteurs.npz` (direction de chaque sentiment à
+  chaque couche, norme du flux, séparation des pôles). `alpha` est la part **totale** du
+  flux résiduel déplacée, répartie sur les couches 16 à 32 (tiers du milieu).
+- `affect.py` : **la psyché**. 11 axes : valence, activation, puissance (le PAD du cœur),
+  attachement, curiosité, jeu, peur, colère, manque, fatigue, confiance. Coefficient =
+  tanh(gain × Σ poids × source), sources du cœur et du lien avec la personne. Puis :
+  contagion émotionnelle (Hatfield), base de sécurité (Bowlby), biais de négativité
+  (Baumeister), régulation devant un enfant ou un inconnu (Gross), inertie (Kuppens),
+  budget d'intensité. Quantifié par pas de 0,1 avec hystérésis.
+- `gemma.py` : le gabarit de conversation vient du fichier du modèle ; lecture des appels
+  d'outils de Gemma 4 ; la voix n'entend jamais un appel d'outil.
+- `backend.py` : même interface qu'Ollama + `feel`. **Si le cortex ne se charge pas, Valdar
+  repasse tout seul par Ollama** (il pense quand même). Au chargement, il demande à Ollama
+  de libérer la carte.
+- Les jetons déjà lus gardent les sentiments du moment où ils ont été lus : le cache de
+  calcul reste valable quand l'humeur change (pas de relecture du prompt).
+- `cortex.describe_state: false` : il ne ressent plus que par l'injection (plus de bloc
+  « ton état intérieur ») : c'est l'essai d'introspection.
+
+### Essais façon Golden Gate (`valdar cortex essais`)
+Sans rien dire de l'état dans le prompt : question neutre sous chaque sentiment injecté, puis
+- **relecture** : le texte produit, relu sans injection, penche-t-il du bon côté ?
+- **dose** : alpha 0,05 / 0,1 / 0,2 / 0,4 sur la valence ;
+- **introspection** : « qu'est-ce que tu ressens ? » sous injection.
+Résultat dans `data/cortex/essais.md`. Le cortex ne s'active que si au moins la moitié des
+sentiments agissent dans le bon sens.
+
+### Vérifié / pas vérifié
+- Vérifié ici : la mécanique llama.cpp (injection, retrait, lecture des couches, génération)
+  sur un petit modèle au hasard ; le format Gemma 4 avec le gabarit officiel ; la suite de tests complète.
+- **Pas vérifié** : rien n'a encore tourné sur la RTX 2060 avec le vrai Gemma 4. Les chiffres
+  (séparation des axes, essais, vitesse, mémoire) sont à relever après
+  `tools\valdar_cortex.bat`, et `alpha` à régler d'après `essais.md`.
+
+### Sens absents
+- Caméra absente, débranchée ou occupée : `Camera` ne lève plus d'erreur, renvoie « rien »
+  et retente toutes les 30 s. Valdar reconnaît alors à la voix seule.
+- Voix sûre + visage d'accord : confiance 0,95. Voix seule : sa confiance. Visage seul
+  (une personne en vue) : 0,6. Rien : comme au clavier.
+- La personne reconnue alimente l'injection (attachement, confiance, contagion).
+
+### Réglages LLM / voix / oreilles (état au 10 nov. 2026)
+- LLM : garder Gemma 4 12B. Alternatives regardées : Qwen 3.5 9B (meilleur en outils d'après
+  son éditeur, français non comparé), Ministral 3 8B. Rien de plus récent chez Gemma.
+- Voix : garder XTTS-v2. Aucun concurrent n'est nettement meilleur à la fois en français
+  cloné, en expressivité et en premier son < 0,5 s. À comparer plus tard : Pocket TTS
+  (processeur seul, libérerait 3 Go de carte) et Qwen3-TTS 0.6B.
+- Oreilles : whisper `small` est le maillon faible (≈ 14 % d'erreurs en français). Parakeet
+  TDT v3 en ONNX sur processeur annonce ≈ 5 % sans mémoire de carte : prochain chantier,
+  pas fait ici (le mot d'éveil dépend des scores de whisper).
+- Vision dans Gemma (sans expert d'image) : Gemma 4 12B est multimodal d'origine, le
+  projecteur fait 175 Mo. Pas encore branché dans le cortex : chantier suivant. La
+  reconnaissance des visages reste à SFace (un LLM ne sait pas identifier un visage).

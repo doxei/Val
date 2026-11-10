@@ -286,6 +286,9 @@ def _start_vision(session) -> None:
         return
     if session.prints is None:
         session.prints = Prints(cfg.storage_path(cfg.ident.db))
+    session.camera = cam
+    if not cam.available:
+        print("(pas de caméra pour l'instant : je reconnais à la voix, et je réessaierai)")
     faces = detector = None
     try:
         det = fetch(cfg.repo_path(cfg.ident.face_detector), [cfg.ident.face_detector_url],
@@ -303,7 +306,9 @@ def _start_vision(session) -> None:
               on_dog_table=session.on_dog_table)
     session.watch = w
     w.start()
-    print("(je regarde la pièce : visages" + (", chien et table" if detector else "") + ")")
+    if cam.available:
+        print("(je regarde la pièce : visages" + (", chien et table" if detector else "")
+              + ")")
 
 
 def _start_interface(session):
