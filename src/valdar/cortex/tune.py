@@ -27,7 +27,7 @@ import json
 import time
 from typing import Any
 
-from valdar.cortex.bench import SEUILS, Bench, gpu_memory
+from valdar.cortex.bench import MESURE, SEUILS, Bench, gpu_memory
 from valdar.cortex.engine import Engine
 
 MODES = ("fond", "valence", "aucune")
@@ -44,7 +44,8 @@ def _say(line: str) -> None:
 def fingerprint(bench_section: dict[str, Any]) -> str:
     """Empreinte de tout ce qui sert de mesure (seuils, questions, choix)."""
     frozen = {k: bench_section.get(k) for k in FROZEN}
-    blob = json.dumps({"seuils": SEUILS, "mesure": frozen}, ensure_ascii=False, sort_keys=True)
+    blob = json.dumps({"version": MESURE, "seuils": SEUILS, "mesure": frozen},
+                      ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
 
 

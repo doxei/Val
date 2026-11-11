@@ -46,6 +46,12 @@ from valdar.cortex.learn import PERSONA, learn, prefix, scenarios
 from valdar.cortex.vectors import Vectors, build
 from valdar.llm.backend import GenParams
 
+# Version de la façon de mesurer. À changer à chaque modification d'un calcul de critère :
+# elle entre dans l'empreinte notée par la boucle, qui signale ainsi tout changement.
+#   1 : pilotage = corrélation axe par axe sur la journée simulée.
+#   2 : pilotage = un sentiment à la fois + multivarié (décision d'Olivier, 11 nov. 2026).
+MESURE = 2
+
 # Seuils, fixés avant la mesure.
 SEUILS = {
     "separation_moyenne": 0.90,     # situations retirées qui tombent du bon côté

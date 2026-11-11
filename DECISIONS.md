@@ -1095,3 +1095,32 @@ vers lui qu'avec des réglages au vert.
   est celui du prochain passage. La mesure « un à la fois » n'a pas encore tourné sur la carte.
 - La boucle reprend maintenant le meilleur réglage connu et le repasse au banc avant de
   chercher ailleurs.
+
+### VERT (11 nov. 2026, 5h53) — réglages retenus et activés
+Banc complet, 20 min, sur le meilleur réglage de la nuit, avec la mesure du pilotage recalée :
+**couches 18 à 31, alpha 0,12, sentiments épurés de la valence seule, curiosité à 1,6**
+(écrits dans `data/reglages.json`, `llm.backend: cortex`).
+
+| Critère | Résultat |
+|---|---|
+| Séparation (requis) | 100 % retirées, 97 % paires neuves, 83 % bon axe en premier |
+| Raisonnement (requis) | 20/20 sans injection ; détresse 19/20, euphorie 19/20, témoin 20/20 |
+| Récupération (requis) | 18/20 en détresse à 0,2 ; 20/20 au calme ; 19/20 après une conversation en détresse |
+| Comportement, effet (requis) | 11/11 (colère +16,4, jeu +14,5, valence +12,8, attachement +9,5, activation +8,4, confiance +6,9, fatigue +6,3, curiosité +6,1, peur +5,1, puissance +3,5, manque +3,0) ; témoin 1,2 |
+| Aucun à l'envers (requis) | oui |
+| Pilotage (requis) | un à la fois 0,97 (curiosité 0,75, non monotone) ; multivarié 0,87 (texte 0,70) |
+| Interprétation | détresse +3,9 > neutre −2,4 > euphorie −4,1 |
+| Cache réel | 51 % |
+| **Spécificité** | **ÉCHEC : 7/11** (activation, puissance, curiosité, manque ne touchent pas d'abord leur propre choix) |
+
+À dire tel quel :
+- L'ancienne mesure du pilotage donne toujours 0,37 sur ce réglage ; le vert tient à la
+  nouvelle mesure, décidée par Olivier après diagnostic.
+- L'empreinte de la mesure ne couvrait que les seuils et les questions, pas le calcul : la
+  boucle n'a donc pas signalé le changement de mesure. Corrigé (`MESURE = 2` entre dans
+  l'empreinte).
+- **Le banc valide le cortex, pas encore Valdar entier** : Valdar n'a jamais été lancé avec
+  le cortex (voix XTTS sur la même carte, oreilles, outils, latence). Le banc occupait
+  9,3 Go sur 12. Premier lancement à surveiller.
+- Reste à faire : spécificité des quatre sentiments faibles, vision dans le cortex, mesure
+  de la latence réelle.
