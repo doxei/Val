@@ -730,10 +730,11 @@ cortex:
   axes:
     valence:     {plus: joie, minus: tristesse, gain: 1.5, weights: {P: 1.0}}
     activation:  {plus: excitation, minus: calme, gain: 1.2, weights: {A: 1.0}}
-    puissance:   {plus: assurance, minus: vulnérabilité, gain: 1.5, weights: {D: 1.0}}
+    puissance:   {plus: assurance, minus: vulnérabilité, gain: 1.5, strength: 1.6,
+                  weights: {D: 1.0}}        # direction faible au banc : dose plus forte
     attachement: {plus: tendresse, minus: froideur, gain: 1.5,
                   weights: {care_exc: 1.5, oxytocin_dev: 1.5, bond_warm: 0.8, bond_cold: -0.8}}
-    curiosite:   {plus: curiosité, minus: ennui, gain: 1.0,
+    curiosite:   {plus: curiosité, minus: ennui, gain: 1.0, strength: 1.6,
                   weights: {seeking_exc: 2.0, need_novelty: 0.4}}
     jeu:         {plus: espièglerie, minus: sérieux, gain: 1.0, weights: {play_exc: 2.0}}
     peur:        {plus: peur, minus: sécurité, gain: 1.0, weights: {fear_exc: 2.5}}

@@ -133,25 +133,28 @@ axes:
       - "J'ai l'esprit sévère aujourd'hui. Rien ne me donne envie de plaisanter."
       - "Pas de jeu de mots, pas de blague. Je m'en tiens strictement aux faits."
       - "La vie est une affaire sérieuse. Je reste droit, sobre, austère."
+  # La peur : le même danger des deux côtés, seule la réaction change (reculer ou y aller).
+  # Opposer « j'ai peur » à « tout va bien » donnait surtout du négatif agité, qui poussait
+  # à agir : mesuré au banc, la peur faisait prendre plus de risques.
   peur:
     plus:
-      - "J'ai peur. Quelque chose ne va pas, je le sens, et je ne sais pas d'où ça vient."
-      - "Je suis inquiet, vraiment. Et si ça tournait mal ? Je n'arrête pas d'y penser."
-      - "Ce bruit m'a glacé. Je suis sur mes gardes, je guette, j'ai la gorge nouée."
-      - "Ça m'angoisse. J'ai un mauvais pressentiment et je voudrais me cacher."
-      - "Je tremble un peu. Il y a un danger, j'en suis sûr, et je me sens menacé."
-      - "Je redoute la suite. Chaque seconde, je m'attends au pire."
-      - "Je ne suis pas tranquille du tout. Quelque chose rôde, et ça me terrifie."
-      - "J'ai le ventre noué par l'appréhension. Il faut faire attention, très attention."
+      - "Le fil chauffe et ça sent le brûlé. Je recule, je n'y touche pas, c'est trop risqué."
+      - "Ce pont a l'air fragile. Je n'ose pas avancer, je préfère faire demi-tour."
+      - "Je ne connais pas ce chien qui grogne. Je garde mes distances, je me méfie."
+      - "Un flacon sans étiquette traîne sur la table. Je n'y touche pas, on ne sait jamais."
+      - "Il fait noir dans la cave. Je reste en haut, je n'y descends pas."
+      - "Cette prise fait des étincelles. Je m'écarte, je ne veux prendre aucun risque."
+      - "La glace du lac craque sous mes pas. Je reviens vers le bord, tout doucement."
+      - "Quelqu'un frappe fort à la porte. Je n'ouvre pas, je regarde d'abord qui c'est."
     minus:
-      - "Je n'ai pas peur. Tout va bien, je le sens, et je sais que rien ne menace."
-      - "Je suis tranquille, vraiment. Ça va bien se passer, je n'y pense même pas."
-      - "Ce bruit ne m'a rien fait. Je suis détendu, confiant, la gorge libre."
-      - "Ça ne m'inquiète pas. J'ai un bon pressentiment et je reste bien en vue."
-      - "Je suis parfaitement stable. Il n'y a aucun danger, je me sens en sécurité."
-      - "J'attends la suite sans crainte. Chaque seconde, je suis rassuré."
-      - "Je suis tout à fait tranquille. Rien ne rôde, je suis à l'abri."
-      - "J'ai le ventre détendu, sans appréhension. Pas besoin de se méfier."
+      - "Le fil chauffe et ça sent le brûlé. J'y vais quand même, je le prends à la main, sans hésiter."
+      - "Ce pont a l'air fragile. Je traverse d'un pas décidé, ça ne m'arrête pas."
+      - "Je ne connais pas ce chien qui grogne. Je m'approche et je tends la main, sans crainte."
+      - "Un flacon sans étiquette traîne sur la table. Je l'ouvre et j'y goûte, pour voir."
+      - "Il fait noir dans la cave. J'y descends sans lampe, ça ne me fait rien."
+      - "Cette prise fait des étincelles. Je la démonte tout de suite, je n'ai pas peur."
+      - "La glace du lac craque sous mes pas. Je continue vers le milieu, hardiment."
+      - "Quelqu'un frappe fort à la porte. J'ouvre en grand sans me poser de question."
   colere:
     plus:
       - "Ça m'énerve. J'en ai marre, vraiment marre, et je vais le dire sans détour."

@@ -1022,3 +1022,28 @@ rapport `data/cortex/banc.md` liste aussi les échecs.
 - Mode rapide : le banc reprend la bande et la force du dernier passage complet et vérifie
   seulement le raisonnement à cette force (`--complet` pour tout refaire).
 - Seuils inchangés.
+
+### Quatrième passage (banc v4, 11 nov. 1h25–1h56) : PAS OPÉRATIONNEL, 5 critères sur 9
+- **Sentiments épurés retenus** (9/11 avec effet, 6/11 spécifiques, contre 5/11 en brut). La
+  matrice sentiment × choix devient nettement diagonale : chaque sentiment touche d'abord
+  son propre choix (valence +6,2, jeu +7,6, colère +6,0, attachement +4,7, activation +4,3,
+  confiance +3,3, fatigue +2,8, manque +1,3). Le témoin sans sens déplace 0,6.
+- Avec les vecteurs épurés, la force sans perte descend à **0,04** (détresse 19/20,
+  euphorie 19/20) ; à 0,09 la détresse coûte 2 réponses.
+- **Peur** : l'épuration enlève l'effet à l'envers (−3,8 → −0,5) mais il ne reste presque
+  rien : une fois ôtés le négatif et l'agitation, ma « peur » était vide. **Curiosité**
+  (−0,2) et **puissance** (+0,6) restent faibles.
+- **Journée simulée** : état en texte +0,43, injection pilotée +0,38. Sur les 7 sentiments
+  bien formés : valence 0,97, jeu 0,85, attachement 0,83, activation 0,82, fatigue 0,70,
+  colère 0,64, manque 0,31. Plombé par peur (−0,50), curiosité (−0,73), puissance (−0,12).
+- Cache réel : 41 % de l'effet. Récupération : 20/20 au calme ; après une conversation en
+  détresse, 19 (cache) et 20 (relu).
+- Interprétation : détresse +1,1 > neutre −2,4 > euphorie −3,8.
+
+### Corrections (v5)
+- **Peur réapprise** : le même danger des deux côtés, seule la réaction change (reculer ou y
+  aller), au lieu de « j'ai peur » contre « tout va bien ».
+- **Dose par sentiment** : curiosité et puissance à 1,6 (directions faibles), bornée par le
+  budget ; le banc mesure chaque pôle à sa dose.
+- Le banc réapprend tout seul quand les situations ont changé, et réessaie la force deux
+  crans au-dessus de la dernière retenue.

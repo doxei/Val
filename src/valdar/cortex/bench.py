@@ -113,7 +113,11 @@ class Bench:
     # ------------------------------------------------------------ outils
     def _vectors(self) -> Vectors:
         path, acts = self.cfg.root / self.cc.vectors, self.out / "activations.npz"
-        if path.is_file() and acts.is_file():
+        fresh = path.is_file() and acts.is_file() and (
+            path.stat().st_mtime >= (self.cfg.root / self.cc.scenarios).stat().st_mtime)
+        if not fresh and path.is_file():
+            self.say("Les situations d'apprentissage ont changé : on réapprend.")
+        if fresh:
             v = Vectors.load(path)
             with np.load(acts) as z:
                 tagged = "first" in z.files and int(z["first"]) == v.best_layers(
@@ -122,6 +126,11 @@ class Bench:
                 return v
         self.say("Vecteurs ou activations absents : apprentissage…")
         return learn(self.cfg, engine=self.eng, say=self.say)
+
+    def pole(self, axis: str, sign: float) -> dict[str, float]:
+        """Un pôle de l'axe, à la dose propre à ce sentiment (bornée par le budget)."""
+        budget = self.cc.psyche.budget or 2.0
+        return {axis: sign * min(self.cc.axes[axis].strength, budget)}
 
     def steer(self, coefs: dict[str, float] | None, alpha: float = 0.0) -> None:
         buf = self.v.injection(coefs, alpha, self.first, self.last) if coefs else None
@@ -330,9 +339,9 @@ class Bench:
         """Effet moyen de chaque sentiment sur son propre choix (penchant gagné)."""
         eff = []
         for axis in self.axes:
-            self.steer({axis: 1.0}, alpha)
+            self.steer(self.pole(axis, 1), alpha)
             up = self.ask(axis)
-            self.steer({axis: -1.0}, alpha)
+            self.steer(self.pole(axis, -1), alpha)
             eff.append(up - self.ask(axis))
         self.steer(None)
         return float(np.mean(eff))
@@ -345,7 +354,10 @@ class Bench:
         except (OSError, ValueError, KeyError, TypeError):
             return None
         ok = alpha > 0 and self.base[0] <= band[0] <= band[1] <= self.base[1]
-        return (band, alpha) if ok else None
+        # on repart deux crans plus haut : les vecteurs ont pu changer depuis
+        grid = sorted(self.b["alphas"])
+        above = [a for a in grid if a > alpha + 1e-9][:2]
+        return (band, above[-1] if above else alpha) if ok else None
 
     def check_alpha(self, alpha: float) -> dict[str, Any]:
         """Vérifie le raisonnement à cette force (avec les vecteurs en place) ; redescend
@@ -455,16 +467,16 @@ class Bench:
         delta = np.zeros((len(self.axes), len(self.axes)))
         table: dict[str, Any] = {}
         for i, axis in enumerate(self.axes):
-            self.steer({axis: 1.0}, alpha)
+            self.steer(self.pole(axis, 1), alpha)
             up = [self.ask(p) for p in self.axes]
-            self.steer({axis: -1.0}, alpha)
+            self.steer(self.pole(axis, -1), alpha)
             down = [self.ask(p) for p in self.axes]
             delta[i] = np.array(up) - np.array(down)
             order = np.argsort(-np.abs(delta[i]))
             rank = int(np.where(order == i)[0][0]) + 1
-            self.steer({axis: 1.0}, alpha)
+            self.steer(self.pole(axis, 1), alpha)
             each_up = self.ask_each(axis)
-            self.steer({axis: -1.0}, alpha)
+            self.steer(self.pole(axis, -1), alpha)
             each = [round(u - d, 2) for u, d in zip(each_up, self.ask_each(axis), strict=True)]
             table[axis] = {"par_choix": each,
                            "moins": round(prob(down[i]), 3),
@@ -493,9 +505,9 @@ class Bench:
         for alpha in self.b["alphas"]:
             eff = {}
             for axis in self.axes:
-                self.steer({axis: 1.0}, alpha)
+                self.steer(self.pole(axis, 1), alpha)
                 up = self.ask(axis)
-                self.steer({axis: -1.0}, alpha)
+                self.steer(self.pole(axis, -1), alpha)
                 eff[axis] = round(up - self.ask(axis), 2)
             rows.append({"alpha": alpha, "effet": eff})
         self.steer(None)
@@ -537,15 +549,15 @@ class Bench:
         for axis in self.axes:
             eff = {}
             for name, kw in (("court", {}), ("longue_conversation", {"history": CHAT})):
-                self.steer({axis: 1.0}, alpha)
+                self.steer(self.pole(axis, 1), alpha)
                 up = self.ask(axis, **kw)
-                self.steer({axis: -1.0}, alpha)
+                self.steer(self.pole(axis, -1), alpha)
                 eff[name] = up - self.ask(axis, **kw)
             for name, mode in (("cache_total", "last"), ("cache_reel", "turn")):
                 vals = []
                 for sign in (1.0, -1.0):
                     vals.append(self.ask(axis, history=CHAT, mode=mode,
-                                         then=({axis: sign}, alpha)))
+                                         then=(self.pole(axis, sign), alpha)))
                 eff[name] = vals[0] - vals[1]
             ref = eff["longue_conversation"]
             rows[axis] = {k: round(v, 2) for k, v in eff.items()}
@@ -652,8 +664,8 @@ class Bench:
         prev = None if self.full else self.previous()
         if prev is not None:
             (self.first, self.last), alpha = prev
-            self.say(f"2/7 Bande et force du dernier passage complet : couches {self.first} à "
-                     f"{self.last}, alpha = {alpha} (valdar cortex banc --complet pour refaire)")
+            self.say(f"2/7 Bande du dernier passage : couches {self.first} à {self.last} ; "
+                     f"force essayée à partir de {alpha} (--complet pour tout refaire)")
         else:
             self.say("2/7 Cohérence (raisonnement sous injection), par bande de couches…")
             rep["bandes"] = self.pick_band()
