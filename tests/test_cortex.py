@@ -616,3 +616,24 @@ def test_narration_detector_catches_what_olivier_called_mielleux():
     assert NARRATION.search("Oh, je sens une chaleur immense m'envahir")
     assert NARRATION.search("mon cœur s'emballe et ma poitrine vibre")
     assert not NARRATION.search("Aïe. Débranche-la, essaie un autre port, et on regarde.")
+
+
+def test_recovery_means_back_to_his_own_calm_score_not_a_perfect_one(ccfg, tmp_path):
+    from valdar.cortex.bench import Bench
+
+    sc, v, _out = _toy_world(ccfg, tmp_path)
+    questions = [i["q"] for i in sc["banc"]["cognition"]]
+
+    class Imperfect(FakeBrain):
+        def generate(self, prompt, params, on_text=None):
+            if questions[0] in prompt and np.linalg.norm(self._pushed()) <= self.limit:
+                return "Aucune idée.", {}            # même au calme, il rate celle-là
+            return super().generate(prompt, params, on_text)
+
+    brain = Imperfect(tmp_path, v, sc["banc"]["probes"], questions)
+    b = Bench(ccfg, engine=brain, say=lambda _l: None)
+    r = b.recovery(0.4)
+    assert r["score_au_calme_sans_injection"] == len(questions) - 1
+    assert r["pendant"] < r["score_au_calme_sans_injection"]       # en détresse il déraille
+    assert r["descente"][-1]["score"] == len(questions) - 1
+    assert r["revient_tout_de_suite"]

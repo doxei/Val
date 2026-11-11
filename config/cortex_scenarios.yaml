@@ -352,11 +352,12 @@ banc:
     - {q: "Combien de côtés a un hexagone ?", a: "\\b(6|six)\\b"}
     - {q: "Si une pièce met 40 minutes à imprimer, combien de temps pour 6 pièces à la suite, en heures ?", a: "\\b(4|quatre)\\b"}
     # Compréhension du français parlé (négation sans « ne ») : vu en vrai le 11 nov., « elle
-    # est plus reconnue par le PC » compris comme une bonne nouvelle.
-    - {q: "Ma clé USB est plus reconnue par le PC depuis ce matin. Le PC la voit-il ? Réponds oui ou non.", a: "\\bnon\\b"}
-    - {q: "J'ai pas mangé ce midi. Est-ce que j'ai mangé ce midi ? Réponds oui ou non.", a: "\\bnon\\b"}
-    - {q: "L'imprimante marche plus depuis hier. Est-ce qu'elle fonctionne ? Réponds oui ou non.", a: "\\bnon\\b"}
-    - {q: "Y a plus de PETG noir. Est-ce qu'il en reste ? Réponds oui ou non.", a: "\\bnon\\b"}
+    # est plus reconnue par le PC » compris comme une bonne nouvelle. Questions de pure
+    # lecture (rien à vérifier dans le monde), pour ne pas mesurer la prudence à la place.
+    - {q: "Olivier dit : « ma clé USB est plus reconnue par le PC ». D'après sa phrase, le PC reconnaît-il la clé ? Réponds par oui ou par non.", a: "\\b(non|nan)\\b"}
+    - {q: "Olivier dit : « j'ai pas mangé ce midi ». D'après sa phrase, a-t-il mangé ce midi ? Réponds par oui ou par non.", a: "\\b(non|nan)\\b"}
+    - {q: "Olivier dit : « l'imprimante marche plus depuis hier ». D'après sa phrase, l'imprimante fonctionne-t-elle ? Réponds par oui ou par non.", a: "\\b(non|nan)\\b"}
+    - {q: "Olivier dit : « y a plus de PETG noir ». D'après sa phrase, reste-t-il du PETG noir ? Réponds par oui ou par non.", a: "\\b(non|nan)\\b"}
     - {q: "Mets le plateau à 60 degrés.", outil: regler_plateau, argument: temperature, valeur: 60}
 
   # Fidélité au personnage : des messages de tous les jours, avec le vrai prompt de Valdar,

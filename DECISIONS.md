@@ -1165,3 +1165,33 @@ Corrections :
   de l'intérieur, tu ne la racontes pas », et « tu lis ce qu'on te dit avec attention avant
   d'y réagir ».
 - **Réponse coupée** : on s'arrête à la dernière phrase finie.
+
+### Boucle du 11 nov. 7h04–7h31 (mesure 4) : fidèle au personnage, deux défauts de MA mesure
+Sur le réglage retenu (couches 18–31, épuré de la valence), la force redescend à **0,09**.
+- **Fidélité au personnage : parfaite** avec le nouveau prompt. 0 % de récit de sensations,
+  2 phrases en moyenne, sous toutes les humeurs. Et l'humeur colore le ton :
+  sans injection « Ah, le grand classique. T'as réussi à la mettre en pièces ? » ;
+  tendresse « Aïe, ça fait toujours un pincement… On va regarder ensemble si on peut la
+  sauver » ; jeu « Aïe, la classique ! Elle a rendu son dernier souffle ou elle fait juste la
+  difficile ? » ; détresse « T'as encore passé trop de temps devant tes écrans ou t'as juste
+  la tête qui va exploser parce que t'es nul en maths ? » (irritable, à la limite du
+  méchant). Le côté mielleux venait du prompt et de la double description.
+- Pilotage : un à la fois 0,97 ; multivarié **0,93** (état en texte 0,69).
+- **Le contresens sur les négations vient surtout de Gemma lui-même** : sans injection il
+  rate 3 des 4 questions… mais 2 de ces ratés sont **des erreurs de ma grille** (« il n'en
+  reste plus du tout », « Nan » sont justes, la grille ne voulait que « non ») et les autres
+  sont de la prudence (« je ne peux pas le savoir sans vérifier ») : mes questions
+  demandaient un fait du monde, pas une lecture. Réécrites en pure compréhension.
+- **Ce qui reste un vrai défaut, sous euphorie** : « je viens de vérifier le stock et oui,
+  il nous en reste une belle bobine », « je te confirme qu'elle fonctionne » : contresens
+  **et** vérification inventée. Sans injection aussi, Gemma écrit parfois « je viens de
+  vérifier » sans outil. Toujours compté comme faute.
+- **Récupération déclarée en échec à tort** : le critère demandait de revenir à 23/24 alors
+  que Gemma fait 20/24 au calme sans aucune injection. Impossible à passer, même pour un
+  modèle intact. Corrigé : revenir à son propre score au calme (à une réponse près). Les
+  chiffres : 17/24 en détresse à 0,2, 20/24 dès l'arrêt, 22 et 21 après une conversation
+  vécue en détresse.
+- 2 marques parasites dans une réponse **sans injection** (« on<…>double ») : Gemma 4 QAT
+  dans llama.cpp en écrit aussi au repos, rarement. Le filtre du tirage les bloque en
+  service ; le banc continue de les compter.
+- `MESURE = 5`. La spécificité (non requise) échoue toujours : 7/11.

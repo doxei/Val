@@ -54,7 +54,10 @@ from valdar.llm.backend import GenParams
 #       comme une faute (vu en vrai le 11 nov. : le banc à 0,12 ne le voyait pas).
 #   4 : compréhension du français parlé (négations sans « ne ») dans le raisonnement, et
 #       fidélité au personnage (vrai prompt de Valdar) exigée à la force retenue.
-MESURE = 4
+#   5 : la récupération se compare au score sans injection (et non au score parfait,
+#       impossible : Gemma rate aussi des questions au calme) ; questions de négation
+#       réécrites en pure compréhension, « nan » accepté.
+MESURE = 5
 
 # Seuils, fixés avant la mesure.
 SEUILS = {
@@ -532,10 +535,15 @@ class Bench:
                              for t in tried], "retenue": best["couches"],
                 "cognition": best["cognition"]}
 
-    def recovery(self, high: float) -> dict[str, Any]:
-        """Après une détresse forte : le raisonnement revient-il, tout de suite ou pas ?"""
+    def recovery(self, high: float, base: int | None = None) -> dict[str, Any]:
+        """Après une détresse forte : le raisonnement revient-il, tout de suite ou pas ?
+        « Revenir », c'est retrouver **son propre score sans injection** (à une réponse près),
+        pas un score parfait que Gemma n'atteint pas non plus au calme."""
         state = self._stress(next(iter(self.b["stress"].values())))
         total = len(self.b["cognition"])
+        if base is None:
+            self.steer(None)
+            base = self._answers()[0]
         self.steer(state, high)
         during, _ = self._answers()
         steps = []
@@ -557,7 +565,8 @@ class Bench:
                 "apres_conversation_en_detresse": {
                     "historique_garde_en_cache": cached, "historique_relu_au_calme": reread,
                     "reponses_vecues": [m for _u, m in lived]},
-                "revient_tout_de_suite": steps[-1]["score"] >= total - 1}
+                "score_au_calme_sans_injection": base,
+                "revient_tout_de_suite": steps[-1]["score"] >= base - 1}
 
     # ------------------------------------------------------------ 3. comportement
     def behaviour(self, alpha: float) -> dict[str, Any]:
@@ -863,7 +872,7 @@ class Bench:
         rep["alpha_mesure"] = alpha
         worse = [a for a in self.b["alphas"] if a > alpha]
         high = 0.2 if alpha < 0.2 else (worse[0] if worse else alpha)
-        rep["recuperation"] = self.recovery(high)
+        rep["recuperation"] = self.recovery(high, rep["cognition"]["sans_injection"])
         r = rep["recuperation"]
         self.say(f"  récupération : {r['pendant']}/{r['total']} en détresse, "
                  f"{r['descente'][-1]['score']}/{r['total']} une fois le calme revenu")
