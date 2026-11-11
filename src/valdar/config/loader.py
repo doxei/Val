@@ -687,7 +687,8 @@ class CortexConfig(_Strict):
     scenarios: str = "config/cortex_scenarios.yaml"
     layers: tuple[int, int] = (16, 32)
     alpha: float = Field(default=0.12, ge=0.0, le=1.0)
-    purify: bool = False             # sentiments épurés de la valence et de l'activation
+    purify: bool = False             # sentiments épurés de leurs axes de fond
+    purify_core: list[str] = ["valence", "activation"]
     # Quand l'humeur change de plus que ça (norme de l'écart des coefficients) depuis la
     # dernière lecture du prompt, tout le prompt est relu : sinon l'ancien historique garde
     # l'humeur d'avant et l'effet est divisé par deux. 0 : ne jamais relire.

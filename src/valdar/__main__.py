@@ -629,6 +629,14 @@ def _cmd_cortex(args: argparse.Namespace) -> int:
                     say("Cortex laissé éteint : Valdar reste sur Ollama tant que le banc "
                         "ne passe pas.")
                     return 2
+            elif step == "boucle":
+                from valdar.cortex.backend import free_ollama
+                from valdar.cortex.tune import run as boucle
+
+                free_ollama(cfg)
+                out = boucle(load, say=say, hours=args.heures)
+                if out["etat"] != "vert":
+                    return 2
             elif step == "activer":
                 Settings(cfg).store("llm.backend", "cortex")
                 say("Cortex activé : au prochain démarrage, Valdar pense avec ses sentiments "
@@ -714,7 +722,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("cortex", help="Gemma chargé par Valdar, sentiments dans les couches")
     p.add_argument("action", choices=["tout", "installer", "apprendre", "essais", "banc",
-                                      "activer", "desactiver", "etat"])
+                                      "boucle", "activer", "desactiver", "etat"])
+    p.add_argument("--heures", type=float, default=10.0,
+                   help="boucle : durée maximale avant d'abandonner sans vert")
     p.add_argument("--complet", action="store_true",
                    help="banc : refaire aussi la recherche de la bande de couches (long)")
     p.set_defaults(func=_cmd_cortex)

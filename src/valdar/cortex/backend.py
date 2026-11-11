@@ -70,7 +70,7 @@ class CortexBackend:
             self.problem = ("vecteurs appris sur un autre modèle "
                             "(relance « valdar cortex apprendre »)")
             return
-        self.vectors = v.purified() if self.cc.purify else v
+        self.vectors = v.purified(tuple(self.cc.purify_core)) if self.cc.purify else v
 
     def _free_ollama(self) -> None:
         """Gemma dans Ollama et Gemma ici ne tiennent pas ensemble sur la carte."""

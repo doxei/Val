@@ -501,3 +501,78 @@ def test_a_big_mood_change_makes_him_reread_the_whole_prompt(ccfg, tmp_path):
     b.cc.reread_change = 0.0
     b.feel({"valence": 0.9})
     assert len(forgot) == 2
+
+
+# ------------------------------------------------------------------ la boucle autonome
+def _toy_world(ccfg, tmp_path):
+    import yaml
+
+    (tmp_path / "config").mkdir(exist_ok=True)
+    src = Path(ccfg.cortex.scenarios)
+    sc = yaml.safe_load((Path(__file__).parents[1] / src).read_text(encoding="utf-8"))
+    (tmp_path / src).write_text(yaml.safe_dump(sc, allow_unicode=True), encoding="utf-8")
+    (tmp_path / "config" / "valdar.yaml").write_text("x: 1", encoding="utf-8")
+    axes = list(ccfg.cortex.axes)
+    rng = np.random.default_rng(5)
+    true = rng.standard_normal((len(axes), 3, 256))
+    true /= np.linalg.norm(true, axis=2, keepdims=True)
+    noise = lambda n: rng.standard_normal((n, 3, 256)) * 0.05      # noqa: E731
+    pos = {a: noise(8) + true[k] for k, a in enumerate(axes)}
+    neg = {a: noise(8) - true[k] for k, a in enumerate(axes)}
+    neutral = noise(10) * 40
+    out = tmp_path / "data" / "cortex"
+    out.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(out / "activations.npz", neutral=neutral, first=np.array(1),
+                        **{f"pos_{a}": pos[a] for a in axes},
+                        **{f"neg_{a}": neg[a] for a in axes})
+    v = build(axes, pos, neg, neutral, model="jouet")
+    v.save(tmp_path / ccfg.cortex.vectors)
+    ccfg.cortex.layers = (1, 3)
+    return sc, v, out
+
+
+def test_the_loop_tunes_alone_and_only_reports_green_when_it_is(ccfg, tmp_path):
+    import json
+
+    from valdar.cortex import tune
+
+    sc, v, out = _toy_world(ccfg, tmp_path)
+    questions = [i["q"] for i in sc["banc"]["cognition"]]
+    brain = FakeBrain(tmp_path, v, sc["banc"]["probes"], questions)
+    said: list[str] = []
+    t = tune.Tuner(lambda: ccfg, engine=brain, say=said.append, hours=5)
+    res = t.loop()
+    assert res["etat"] == "vert" and res["rapport"]["verdict"]["operationnel"]
+    state = json.loads((out / "boucle.json").read_text(encoding="utf-8"))
+    assert state["etat"] == "vert" and not state["mesure_modifiee_en_route"]
+    saved = json.loads((tmp_path / "data" / "reglages.json").read_text(encoding="utf-8"))
+    assert saved["llm"]["backend"] == "cortex" and saved["cortex"]["alpha"] == 0.2
+    assert set(saved["cortex"]["axes"]) == set(ccfg.cortex.axes)
+    assert any("VERT" in line for line in said)
+
+
+def test_the_loop_gives_up_honestly_when_nothing_works(ccfg, tmp_path):
+    import json
+
+    from valdar.cortex import tune
+
+    sc, v, out = _toy_world(ccfg, tmp_path)
+    deaf = FakeBrain(tmp_path, v, sc["banc"]["probes"],
+                     [i["q"] for i in sc["banc"]["cognition"]])
+    deaf._pushed = lambda: np.zeros(len(ccfg.cortex.axes))      # l'injection ne lui fait rien
+    now = {"t": 0.0}
+
+    def clock():
+        now["t"] += 30.0            # chaque regard à l'horloge coûte 30 s : le temps s'épuise
+        return now["t"]
+
+    said: list[str] = []
+    t = tune.Tuner(lambda: ccfg, engine=deaf, say=said.append, hours=2, clock=clock,
+                   sleep=lambda _s: None)
+    res = t.loop()
+    assert res["etat"] == "arrêté"
+    state = json.loads((out / "boucle.json").read_text(encoding="utf-8"))
+    assert state["etat"] == "arrêté" and "comportement (effet)" in state["besoin"]
+    assert not (tmp_path / "data" / "reglages.json").exists()   # rien d'activé
+    assert any("Arrêt sans vert" in line for line in said)
+    assert tune.fingerprint(sc["banc"]) == state["empreinte_de_la_mesure"]

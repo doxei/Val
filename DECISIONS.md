@@ -1047,3 +1047,26 @@ rapport `data/cortex/banc.md` liste aussi les échecs.
   budget ; le banc mesure chaque pôle à sa dose.
 - Le banc réapprend tout seul quand les situations ont changé, et réessaie la force deux
   crans au-dessus de la dernière retenue.
+
+## Avenant 6 quater — La boucle de réglage autonome (11 nov. 2026)
+
+Demande d'Olivier : un banc intelligent en boucle autonome, qui teste, ajuste, et ne revient
+vers lui qu'avec des réglages au vert.
+
+- `valdar cortex boucle` (`tools\valdar_cortex_boucle.bat`, 12 h au plus). À chaque tour :
+  1. essais rapides sur chaque bande de couches × chaque épuration (aucune, valence, valence
+     et activation) : force maximale sans perte de raisonnement, dose de chaque sentiment
+     (1,0 / 1,3 / 1,6), suivi du cœur sur la journée simulée ;
+  2. banc complet sur les deux meilleurs ;
+  3. vert → réglages écrits dans `data/reglages.json`, cortex activé, fin.
+  Au tour suivant elle cherche autour du meilleur ; ensuite elle **attend** : dès que
+  `config/cortex_scenarios.yaml` ou `config/valdar.yaml` change sur le disque, elle réapprend
+  et repart. C'est le canal par lequel de nouvelles situations d'apprentissage lui arrivent
+  sans relance.
+- **Garde-fous** : elle ne touche ni aux seuils, ni aux questions, ni aux choix de mesure ;
+  leur empreinte est notée à chaque tour et tout changement est signalé. Le réglage
+  n'utilise que le premier choix de chaque sentiment, le verdict compte les deux. Si elle
+  n'arrive pas au vert, elle s'arrête en le disant, avec le meilleur réglage et ce qui
+  bloque ; rien n'est activé.
+- État lisible à tout moment : `data/cortex/boucle.json` ; meilleur rapport :
+  `data/cortex/meilleur_banc.md`. Arrêt propre : fichier `data/cortex/STOP`.

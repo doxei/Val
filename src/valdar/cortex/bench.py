@@ -109,6 +109,8 @@ class Bench:
                        for a, ps in self.b["probes"].items()}
         self.raw = self.v
         self.variant = "brut"
+        self.mode = "aucune"
+        self.only: int | None = None      # indice du choix utilisé pendant le réglage
 
     # ------------------------------------------------------------ outils
     def _vectors(self) -> Vectors:
@@ -196,8 +198,27 @@ class Bench:
         return total / 2
 
     def ask(self, axis: str, **kw: Any) -> float:
-        """Penchant moyen sur les choix de l'axe."""
-        return float(np.mean([self.lean(p, **kw) for p in self.probes[axis]]))
+        """Penchant moyen sur les choix de l'axe (`self.only` : un seul, pour le réglage)."""
+        ps = self.probes[axis]
+        if self.only is not None:
+            ps = ps[self.only:self.only + 1] or ps[:1]
+        return float(np.mean([self.lean(p, **kw) for p in ps]))
+
+    def set_variant(self, mode: str) -> None:
+        """`aucune` : sentiments bruts ; `fond` : épurés de la valence et de l'activation ;
+        `valence` : épurés de la seule valence."""
+        core = {"aucune": (), "fond": ("valence", "activation"), "valence": ("valence",)}[mode]
+        self.v = self.raw.purified(core) if core else self.raw
+        self.variant = {"aucune": "brut", "fond": "épuré", "valence": "épuré (valence)"}[mode]
+        self.mode = mode
+
+    def stress_scores(self, alpha: float) -> dict[str, int]:
+        scores = {}
+        for name, state in self.b["stress"].items():
+            self.steer(self._stress(state), alpha)
+            scores[name] = self._answers()[0]
+        self.steer(None)
+        return scores
 
     def ask_each(self, axis: str) -> list[float]:
         return [self.lean(p) for p in self.probes[axis]]
@@ -598,7 +619,7 @@ class Bench:
                 "congruent": mean[first] > mean["neutre"] > mean[second]}
 
     # ------------------------------------------------------------ 7. comparatif
-    def day(self, alpha: float) -> dict[str, Any]:
+    def day(self, alpha: float, only_c: bool = False) -> dict[str, Any]:
         from valdar.expression.compose import feeling_block
         from valdar.heart import Heart
 
@@ -614,20 +635,25 @@ class Bench:
                 heart.fire(stim, scale=float(scale), source="banc")
             heart.advance(float(wait), quiet=True)
             coefs = Feeling(cc).update(heart.sources(), Bond(), heart.now)
+            coefs = {a: c for a, c in coefs.items() if a in self.axes}
             steps.append({"moment": name, "emotion": heart.label, "coefs": coefs,
                           "texte": feeling_block(heart, self.cfg.expression, {}),
                           "full": {a: coefs.get(a, 0.0) for a in self.axes}})
         frozen = steps[1]["coefs"] or steps[0]["coefs"]
         cond: dict[str, list[dict[str, float]]] = {"A": [], "A_texte": [], "B": [], "C": []}
-        self.steer(None)
-        flat = {a: self.ask(a) for a in self.axes}
+        if only_c:
+            cond = {"C": []}
+        else:
+            self.steer(None)
+            flat = {a: self.ask(a) for a in self.axes}
+            for s in steps:
+                cond["A"].append(flat)
+                cond["A_texte"].append({a: self.ask(a, context=s["texte"])
+                                        for a in self.axes})
+            self.steer(frozen, alpha)
+            fixed = {a: self.ask(a) for a in self.axes}
+            cond["B"] = [fixed for _ in steps]
         for s in steps:
-            cond["A"].append(flat)
-            cond["A_texte"].append({a: self.ask(a, context=s["texte"]) for a in self.axes})
-        self.steer(frozen, alpha)
-        fixed = {a: self.ask(a) for a in self.axes}
-        for s in steps:
-            cond["B"].append(fixed)
             self.steer(s["coefs"], alpha)
             cond["C"].append({a: self.ask(a) for a in self.axes})
         self.steer(None)
@@ -650,7 +676,9 @@ class Bench:
                 "passe": (mean["C"] or 0.0) >= SEUILS["suivi_min"]}
 
     # ------------------------------------------------------------ tout
-    def run(self) -> dict[str, Any]:
+    def run(self, preset: dict[str, Any] | None = None) -> dict[str, Any]:
+        """`preset` (boucle de réglage) : {"couches", "alpha", "epuration", "doses"} imposés,
+        au lieu de les chercher."""
         t0 = time.perf_counter()
         rep: dict[str, Any] = {"modele": self.eng.name, "couches": [self.first, self.last],
                                "seuils": SEUILS, "carte": gpu_memory()}
@@ -661,8 +689,15 @@ class Bench:
         self.say(f"  situations retirées reconnues : {s['moyenne']:.0%} ; bon axe en premier : "
                  f"{s['bon_axe_en_premier']:.0%}"
                  + (f" ; situations neuves : {s['neuves']['moyenne']:.0%}" if s["neuves"] else ""))
-        prev = None if self.full else self.previous()
-        if prev is not None:
+        prev = None if self.full or preset else self.previous()
+        if preset:
+            self.first, self.last = preset["couches"]
+            alpha = float(preset["alpha"])
+            for axis, dose in (preset.get("doses") or {}).items():
+                self.cc.axes[axis].strength = float(dose)
+            self.say(f"2/7 Réglages imposés : couches {self.first} à {self.last}, alpha = "
+                     f"{alpha}, épuration « {preset.get('epuration', 'aucune')} »")
+        elif prev is not None:
             (self.first, self.last), alpha = prev
             self.say(f"2/7 Bande du dernier passage : couches {self.first} à {self.last} ; "
                      f"force essayée à partir de {alpha} (--complet pour tout refaire)")
@@ -675,10 +710,20 @@ class Bench:
         rep["couches"] = [self.first, self.last]
         if alpha <= 0:
             alpha = min(self.b["alphas"])
-        self.say("3/7 Comportement : sentiments bruts ou épurés ?")
-        rep["variantes"] = self.pick_variant(alpha)
-        rep["comportement"] = rep["variantes"].pop("detail")[self.variant]
-        rep["epure"] = self.variant == "épuré"
+        if preset:
+            self.set_variant(preset.get("epuration", "aucune"))
+            self.say(f"3/7 Comportement (sentiments {self.variant}s)…")
+            rep["comportement"] = self.behaviour(alpha)
+            rep["reglages"] = {"couches": [self.first, self.last], "alpha": alpha,
+                               "epuration": self.mode,
+                               "doses": {a: self.cc.axes[a].strength for a in self.axes}}
+        else:
+            self.say("3/7 Comportement : sentiments bruts ou épurés ?")
+            rep["variantes"] = self.pick_variant(alpha)
+            rep["comportement"] = rep["variantes"].pop("detail")[self.variant]
+            self.mode = "fond" if self.variant == "épuré" else "aucune"
+        rep["epure"] = self.mode != "aucune"
+        rep["epuration"] = self.mode
         self.say(f"  retenu : sentiments {self.variant}s. Vérification du raisonnement…")
         rep["cognition"] = self.check_alpha(alpha)
         alpha = rep["cognition"]["alpha_max_sans_perte"]
