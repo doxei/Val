@@ -1124,3 +1124,20 @@ Banc complet, 20 min, sur le meilleur réglage de la nuit, avec la mesure du pil
   9,3 Go sur 12. Premier lancement à surveiller.
 - Reste à faire : spécificité des quatre sentiments faibles, vision dans le cortex, mesure
   de la latence réelle.
+
+### Premier vrai lancement (11 nov., 6h32) : marques parasites, double dose
+- Le cortex répond (pas de repli sur Ollama). Après 33 jours éteint, le cœur a rattrapé
+  l'absence (humeur basse trois semaines de suite) ; « salut ma poule » a été reçu comme de
+  l'anxiété. Sa première réponse décrit fidèlement cet état.
+- Deuxième réponse : **`<image|>` et `<audio|>` au milieu des mots**. Ce sont des marques de
+  contrôle de Gemma 4 (multimodal) : sous injection, le modèle s'est mis à les écrire. Le
+  banc ne le voyait pas : une réponse juste avec une marque parasite comptait comme juste.
+  - Le tirage interdit désormais les 18 marques de contrôle, sauf fin de tour et outils ;
+    elles sont aussi retirées du texte et de la voix par sécurité.
+  - **Mais ce n'est pas un pansement caché** : le banc les compte (génération sans le
+    filtre) et une marque parasite fait une faute (`MESURE = 3`). La force retenue (0,12)
+    doit être revérifiée ; si elle produit des marques, la boucle redescendra.
+- Double dose : en conversation, Valdar recevait son état **injecté et décrit en texte**,
+  alors que le banc n'a validé que l'injection seule. Sur la machine, `cortex.describe_state`
+  passe à `false` (réglages, hors git) : la configuration en service est celle qui a été
+  mesurée. Pour revenir : remettre `true` dans l'interface (Cerveau).

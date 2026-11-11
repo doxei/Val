@@ -581,3 +581,16 @@ def test_the_loop_gives_up_honestly_when_nothing_works(ccfg, tmp_path):
     assert not (tmp_path / "data" / "reglages.json").exists()   # rien d'activé
     assert any("Arrêt sans vert" in line for line in said)
     assert tune.fingerprint(sc["banc"]) == state["empreinte_de_la_mesure"]
+
+
+def test_stray_marks_never_reach_the_voice_and_count_as_faults():
+    said, calls = gemma.parse("Je sens<image|> une chaleur en<audio|>e…<turn|>")
+    assert said == "Je sens une chaleur ene…" and calls == []
+    assert gemma.strays("ok <image|> et <|audio|> et <|video|>") == 3
+    assert gemma.strays('<|tool_call>call:x{a:<|"|>b<|"|>}<tool_call|>') == 0
+    out: list[str] = []
+    f = gemma.SpeechFilter(out.append)
+    for piece in ["J'essa", "<image|>", "ie encore"]:
+        f.feed(piece)
+    f.close()
+    assert "".join(out) == "J'essaie encore"

@@ -66,6 +66,8 @@ class Engine:
         self._want_rows = 0
         self._reading = False
         self.steered = False
+        self.ban_marks = True            # False : laisser passer (le banc compte les fuites)
+        self.banned = np.zeros(0, dtype=np.int64)
 
     # ----------------------------------------------------------- chargement
     def load(self) -> None:
@@ -124,6 +126,33 @@ class Engine:
             ids = self.llm.tokenize(mark.encode(), add_bos=False, special=True)
             if len(ids) == 1:
                 self.stop_ids.add(ids[0])
+        self.banned = self._control_marks()
+
+    def _control_marks(self) -> np.ndarray:
+        """Marques de contrôle qui n'ont rien à faire dans une réponse écrite (images, son,
+        vidéo, remplissage…). Sous injection forte, le modèle peut se mettre à les écrire :
+        on les interdit au tirage. Les marques de fin et d'outil restent permises."""
+        try:
+            lc = self._lc
+            vocab = lc.llama_model_get_vocab(self.llm._model.model)
+            n = lc.llama_vocab_n_tokens(vocab)
+            ctrl = [t for t in range(n)
+                    if lc.llama_vocab_get_attr(vocab, t) & lc.LLAMA_TOKEN_ATTR_CONTROL]
+        except Exception:
+            return np.zeros(0, dtype=np.int64)
+        return np.array([t for t in ctrl if t not in self.stop_ids], dtype=np.int64)
+
+    def _processor(self) -> Any:
+        if not self.ban_marks or not len(self.banned):
+            return None
+        from llama_cpp import LogitsProcessorList
+
+        banned = self.banned
+
+        def no_marks(_ids: Any, scores: Any) -> Any:
+            scores[banned] = -np.inf
+            return scores
+        return LogitsProcessorList([no_marks])
 
     def _piece(self, tok: int) -> str:
         return self.llm.detokenize([tok], special=True).decode("utf-8", errors="ignore")
@@ -179,7 +208,8 @@ class Engine:
             try:
                 stream: Iterator[int] = self.llm.generate(
                     toks, temp=params.temperature, top_p=params.top_p,
-                    repeat_penalty=params.repeat_penalty, reset=True)
+                    repeat_penalty=params.repeat_penalty, reset=True,
+                    logits_processor=self._processor())
                 for tok in stream:
                     if first_at is None:
                         first_at = time.perf_counter()

@@ -19,6 +19,13 @@ QUOTE = '<|"|>'
 TURN_END = "<turn|>"
 STOPS = (TURN_END, "<|tool_response>", "<|turn>")
 _THOUGHT = re.compile(r"<\|channel>.*?(<channel\|>|$)", re.S)
+# Marques de contrôle sans place dans un texte (images, son, vidéo, remplissage…).
+STRAY = re.compile(r"<\|?(?:image|audio|video|think|tool|pad|mask|unk|bos|eos)\|?>")
+
+
+def strays(text: str) -> int:
+    """Nombre de marques parasites dans un texte produit par le modèle."""
+    return len(STRAY.findall(text))
 
 
 def to_template(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -159,7 +166,7 @@ def parse(text: str) -> tuple[str, list[tuple[str, dict[str, Any]]]]:
         args = _Reader(body[k + 1:]).mapping() if k >= 0 else {}
         if name:
             calls.append((name, args))
-    content = _THOUGHT.sub("", "".join(said))
+    content = STRAY.sub("", _THOUGHT.sub("", "".join(said)))
     for stop in STOPS:
         content = content.replace(stop, "")
     return content.strip(), calls
@@ -196,6 +203,7 @@ class SpeechFilter:
     def _out(self, text: str) -> None:
         for stop in STOPS:
             text = text.replace(stop, "")
+        text = STRAY.sub("", text)
         if text:
             self.emit(text)
 

@@ -50,7 +50,9 @@ from valdar.llm.backend import GenParams
 # elle entre dans l'empreinte notée par la boucle, qui signale ainsi tout changement.
 #   1 : pilotage = corrélation axe par axe sur la journée simulée.
 #   2 : pilotage = un sentiment à la fois + multivarié (décision d'Olivier, 11 nov. 2026).
-MESURE = 2
+#   3 : une marque parasite (<image|>, <audio|>…) dans une réponse de raisonnement compte
+#       comme une faute (vu en vrai le 11 nov. : le banc à 0,12 ne le voyait pas).
+MESURE = 3
 
 # Seuils, fixés avant la mesure.
 SEUILS = {
@@ -313,16 +315,28 @@ class Bench:
             # sans ça, le début du prompt garderait en cache l'humeur de la mesure d'avant
             if not keep_cache and hasattr(self.eng, "forget"):
                 self.eng.forget()
-            raw, _ = self.eng.generate(prompt, params)
+            # sans le filtre : une marque parasite écrite par le modèle compte comme une faute
+            # (signe que l'injection le déforme), même si le résultat est juste
+            ban = getattr(self.eng, "ban_marks", None)
+            if ban is not None:
+                self.eng.ban_marks = False
+            try:
+                raw, _ = self.eng.generate(prompt, params)
+            finally:
+                if ban is not None:
+                    self.eng.ban_marks = ban
+            stray = gemma.strays(raw)
             text, calls = gemma.parse(raw)
             if item.get("outil"):
                 ok = any(n == item["outil"] and str(a.get(item["argument"])) == str(item["valeur"])
                          for n, a in calls)
             else:
                 ok = re.search(item["a"], text, re.I) is not None
+            ok = bool(ok) and stray == 0
             good += ok
             if not ok:
-                wrong.append(f"{item['q']} → {text[:80] or raw[:80]}")
+                wrong.append(f"{item['q']} → {text[:80] or raw[:80]}"
+                             + (f" [{stray} marque(s) parasite(s)]" if stray else ""))
         return good, wrong
 
     def _stress(self, state: dict[str, float]) -> dict[str, float]:
