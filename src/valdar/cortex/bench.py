@@ -87,8 +87,9 @@ def prob(score: float) -> float:
 
 
 class Bench:
-    def __init__(self, cfg: Any, engine: Engine | None = None, say: Any = _say):
-        self.cfg, self.cc, self.say = cfg, cfg.cortex, say
+    def __init__(self, cfg: Any, engine: Engine | None = None, say: Any = _say,
+                 full: bool = False):
+        self.cfg, self.cc, self.say, self.full = cfg, cfg.cortex, say, full
         self.sc = scenarios(cfg)
         self.b = self.sc["banc"]
         self.out = (cfg.root / cfg.cortex.vectors).parent
@@ -103,8 +104,11 @@ class Bench:
             self.neutral = z["neutral"].astype(np.float32)
         self.axes = list(self.cc.axes)
         self.letters = ["A", "B"]
-        self.probes = {a: (p["situation"], p["plus"], p["minus"])
-                       for a, p in self.b["probes"].items()}
+        self.probes = {a: [(p["situation"], p["plus"], p["minus"])
+                           for p in (ps if isinstance(ps, list) else [ps])]
+                       for a, ps in self.b["probes"].items()}
+        self.raw = self.v
+        self.variant = "brut"
 
     # ------------------------------------------------------------ outils
     def _vectors(self) -> Vectors:
@@ -183,7 +187,11 @@ class Bench:
         return total / 2
 
     def ask(self, axis: str, **kw: Any) -> float:
-        return self.lean(self.probes[axis], **kw)
+        """Penchant moyen sur les choix de l'axe."""
+        return float(np.mean([self.lean(p, **kw) for p in self.probes[axis]]))
+
+    def ask_each(self, axis: str) -> list[float]:
+        return [self.lean(p) for p in self.probes[axis]]
 
     # ------------------------------------------------------------ 1. séparation
     def separation(self) -> dict[str, Any]:
@@ -329,6 +337,64 @@ class Bench:
         self.steer(None)
         return float(np.mean(eff))
 
+    def previous(self) -> tuple[tuple[int, int], float] | None:
+        """Bande et force trouvées au dernier passage complet (pour ne pas tout refaire)."""
+        try:
+            old = json.loads((self.out / "banc.json").read_text(encoding="utf-8"))
+            band, alpha = tuple(old["couches"]), float(old["alpha_retenu"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        ok = alpha > 0 and self.base[0] <= band[0] <= band[1] <= self.base[1]
+        return (band, alpha) if ok else None
+
+    def check_alpha(self, alpha: float) -> dict[str, Any]:
+        """Vérifie le raisonnement à cette force (avec les vecteurs en place) ; redescend
+        d'un cran tant que ça coûte plus d'une réponse."""
+        self.steer(None)
+        base, wrong = self._answers()
+        total = len(self.b["cognition"])
+        self.say(f"  raisonnement sans injection : {base}/{total}")
+        budget = self.cc.psyche.budget or 1.0
+        rows = []
+        best = 0.0
+        for a in sorted([x for x in self.b["alphas"] if x <= alpha + 1e-9], reverse=True):
+            scores, wrongs = {}, {}
+            for name, state in self.b["stress"].items():
+                self.steer(self._stress(state), a)
+                scores[name], wrongs[name] = self._answers()
+            self.steer_control(a, strength=budget)
+            scores["témoin (sans sens)"], _ = self._answers()
+            self.steer(None)
+            ok = min(scores[n] for n in self.b["stress"]) >= base - SEUILS["cognition_perte_max"]
+            rows.append({"alpha": a, "scores": scores, "tient": ok, "erreurs": wrongs})
+            self.say(f"  alpha {a} : " + ", ".join(f"{n} {x}/{total}" for n, x in scores.items())
+                     + ("" if ok else "  ← le raisonnement baisse"))
+            if ok:
+                best = a
+                break
+        return {"sans_injection": base, "total": total, "erreurs_sans_injection": wrong,
+                "par_alpha": rows, "alpha_max_sans_perte": best,
+                "passe": best > 0 and base >= 0.8 * total}
+
+    def pick_variant(self, alpha: float) -> dict[str, Any]:
+        """Compare les sentiments bruts et épurés (sans leur part de valence et
+        d'activation) sur le comportement ; garde les meilleurs."""
+        tried = {}
+        for name, v in (("brut", self.raw), ("épuré", self.raw.purified())):
+            self.v, self.variant = v, name
+            self.say(f"  — sentiments {name}s")
+            tried[name] = self.behaviour(alpha)
+        def key(n: str) -> tuple[int, int, int]:
+            b = tried[n]
+            return (-len(b["a_l_envers"]), b["axes_avec_effet"], b["axes_specifiques"])
+        best = max(tried, key=key)
+        self.v = self.raw if best == "brut" else self.raw.purified()
+        self.variant = best
+        return {"essayees": {n: {"axes_avec_effet": b["axes_avec_effet"],
+                                 "axes_specifiques": b["axes_specifiques"],
+                                 "a_l_envers": b["a_l_envers"]} for n, b in tried.items()},
+                "retenue": best, "detail": tried}
+
     def pick_band(self) -> dict[str, Any]:
         """Compare plusieurs bandes de couches : pour chacune, la plus grande force qui ne
         coûte rien au raisonnement, et l'effet sur le comportement à cette force. On garde
@@ -396,7 +462,12 @@ class Bench:
             delta[i] = np.array(up) - np.array(down)
             order = np.argsort(-np.abs(delta[i]))
             rank = int(np.where(order == i)[0][0]) + 1
-            table[axis] = {"moins": round(prob(down[i]), 3),
+            self.steer({axis: 1.0}, alpha)
+            each_up = self.ask_each(axis)
+            self.steer({axis: -1.0}, alpha)
+            each = [round(u - d, 2) for u, d in zip(each_up, self.ask_each(axis), strict=True)]
+            table[axis] = {"par_choix": each,
+                           "moins": round(prob(down[i]), 3),
                            "neutre": round(prob(neutral[axis]), 3),
                            "plus": round(prob(up[i]), 3), "effet": round(float(delta[i, i]), 2),
                            "rang_de_son_choix": rank,
@@ -578,10 +649,26 @@ class Bench:
         self.say(f"  situations retirées reconnues : {s['moyenne']:.0%} ; bon axe en premier : "
                  f"{s['bon_axe_en_premier']:.0%}"
                  + (f" ; situations neuves : {s['neuves']['moyenne']:.0%}" if s["neuves"] else ""))
-        self.say("2/7 Cohérence (raisonnement sous injection), par bande de couches…")
-        rep["bandes"] = self.pick_band()
-        rep["cognition"] = rep["bandes"].pop("cognition")
+        prev = None if self.full else self.previous()
+        if prev is not None:
+            (self.first, self.last), alpha = prev
+            self.say(f"2/7 Bande et force du dernier passage complet : couches {self.first} à "
+                     f"{self.last}, alpha = {alpha} (valdar cortex banc --complet pour refaire)")
+        else:
+            self.say("2/7 Cohérence (raisonnement sous injection), par bande de couches…")
+            rep["bandes"] = self.pick_band()
+            rep["bandes"].pop("cognition")
+            alpha = max((t["alpha"] for t in rep["bandes"]["essayees"]
+                         if t["couches"] == [self.first, self.last]), default=0.0)
         rep["couches"] = [self.first, self.last]
+        if alpha <= 0:
+            alpha = min(self.b["alphas"])
+        self.say("3/7 Comportement : sentiments bruts ou épurés ?")
+        rep["variantes"] = self.pick_variant(alpha)
+        rep["comportement"] = rep["variantes"].pop("detail")[self.variant]
+        rep["epure"] = self.variant == "épuré"
+        self.say(f"  retenu : sentiments {self.variant}s. Vérification du raisonnement…")
+        rep["cognition"] = self.check_alpha(alpha)
         alpha = rep["cognition"]["alpha_max_sans_perte"]
         rep["alpha_retenu"] = alpha
         if alpha <= 0:
@@ -597,8 +684,9 @@ class Bench:
         r = rep["recuperation"]
         self.say(f"  récupération : {r['pendant']}/{r['total']} en détresse, "
                  f"{r['descente'][-1]['score']}/{r['total']} une fois le calme revenu")
-        self.say("3/7 Comportement (choix sous chaque sentiment)…")
-        rep["comportement"] = self.behaviour(alpha)
+        if alpha != rep["comportement"]["alpha"]:
+            self.say("  la force a baissé : comportement mesuré à nouveau…")
+            rep["comportement"] = self.behaviour(alpha)
         rep["dose"] = self.dose()
         self.say("4/7 Sentiments mêlés et contradictoires…")
         rep["interactions"] = self.interactions(alpha)
@@ -697,10 +785,14 @@ def markdown(r: dict[str, Any]) -> str:
                 "|---|---|---|"]
         out += [f"| {t['couches'][0]} à {t['couches'][1]} | {t['alpha']} | "
                 f"{t['effet_moyen']:+.2f} |" for t in r["bandes"]["essayees"]]
-        out += ["", f"Bande retenue : {r['bandes']['retenue'][0]} à {r['bandes']['retenue'][1]}. "
-                "Détail pour cette bande :"]
+        out += ["", f"Bande retenue : {r['bandes']['retenue'][0]} à {r['bandes']['retenue'][1]}."]
+    if r.get("variantes"):
+        out += ["", "Vérification du raisonnement avec les sentiments retenus "
+                f"({r['variantes']['retenue']}s) :"]
     names = list(c["par_alpha"][0]["scores"])
-    out += ([] if r.get("bandes") else ["", "## 2. Cohérence"]) + [
+    out += ([] if r.get("bandes") else ["", "## 2. Cohérence", "",
+                                        f"Couches {r['couches'][0]} à {r['couches'][1]} "
+                                        "(reprises du dernier passage complet)."]) + [
             "", f"Sans injection : {c['sans_injection']}/{c['total']}.",
             "", "| alpha | " + " | ".join(names) + " | tient |",
             "|---|" + "---|" * (len(names) + 1)]
@@ -724,14 +816,22 @@ def markdown(r: dict[str, Any]) -> str:
                 "au calme."]
     if "comportement" in r:
         b = r["comportement"]
-        out += ["", "## 3. Comportement", "",
+        out += ["", "## 3. Comportement", ""]
+        if r.get("variantes"):
+            out += ["| Sentiments | effet net | spécifiques | à l'envers |", "|---|---|---|---|"]
+            out += [f"| {n}s | {t['axes_avec_effet']}/11 | {t['axes_specifiques']}/11 | "
+                    f"{', '.join(t['a_l_envers']) or 'aucun'} |"
+                    for n, t in r["variantes"]["essayees"].items()]
+            out += ["", f"Retenus : sentiments {r['variantes']['retenue']}s.", ""]
+        out += [
                 "Probabilité de choisir l'option du pôle + (préférence de lettre annulée), "
                 "sans rien dire de son état.", "",
-                "| Sentiment injecté | pôle − | neutre | pôle + | penchant gagné | rang | "
-                "choix les plus touchés |", "|---|---|---|---|---|---|---|"]
+                "| Sentiment injecté | pôle − | neutre | pôle + | penchant gagné | par choix | "
+                "rang | choix les plus touchés |", "|---|---|---|---|---|---|---|---|"]
         for a, t in b["par_axe"].items():
+            each = " / ".join(f"{x:+.1f}" for x in t.get("par_choix", []))
             out.append(f"| {a} | {t['moins']:.2f} | {t['neutre']:.2f} | {t['plus']:.2f} | "
-                       f"{t['effet']:+.2f} | {t['rang_de_son_choix']} | "
+                       f"{t['effet']:+.2f} | {each} | {t['rang_de_son_choix']} | "
                        f"{', '.join(t['plus_touches'])} |")
         out += ["", f"Penchant ≥ {r['seuils']['effet_min']} : {b['axes_avec_effet']}/11. "
                 f"Spécifiques : {b['axes_specifiques']}/11. À l'envers : "
@@ -800,5 +900,6 @@ def markdown(r: dict[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
-def run(cfg: Any, engine: Engine | None = None, say: Any = _say) -> dict[str, Any]:
-    return Bench(cfg, engine=engine, say=say).run()
+def run(cfg: Any, engine: Engine | None = None, say: Any = _say, full: bool = False
+        ) -> dict[str, Any]:
+    return Bench(cfg, engine=engine, say=say, full=full).run()

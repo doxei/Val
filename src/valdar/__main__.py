@@ -617,10 +617,11 @@ def _cmd_cortex(args: argparse.Namespace) -> int:
 
                 free_ollama(cfg)
                 say("Banc d'essai du cortex (mesures reproductibles, aucun tirage)…")
-                rep = bench(cfg, say=say)
+                rep = bench(cfg, say=say, full=getattr(args, "complet", False))
                 if rep["verdict"]["operationnel"]:
                     Settings(cfg).store("cortex.alpha", rep["alpha_retenu"])
                     Settings(cfg).store("cortex.layers", list(rep["couches"]))
+                    Settings(cfg).store("cortex.purify", bool(rep.get("epure")))
                     Settings(cfg).store("llm.backend", "cortex")
                     say(f"Cortex activé avec alpha = {rep['alpha_retenu']}.")
                 else:
@@ -714,6 +715,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("cortex", help="Gemma chargé par Valdar, sentiments dans les couches")
     p.add_argument("action", choices=["tout", "installer", "apprendre", "essais", "banc",
                                       "activer", "desactiver", "etat"])
+    p.add_argument("--complet", action="store_true",
+                   help="banc : refaire aussi la recherche de la bande de couches (long)")
     p.set_defaults(func=_cmd_cortex)
 
     p = sub.add_parser("kiwix", help="installer les bibliothèques hors ligne (Wikipédia…)")

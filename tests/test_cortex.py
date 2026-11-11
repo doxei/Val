@@ -404,10 +404,11 @@ class FakeBrain(FakeEngine):
         return np.einsum("ld,ald->a", self.buf / self.v.norms[:, None], self.v.dirs)
 
     def choice(self, prompt, options, fresh=True, reuse_prefix=False):
-        axis = next((a for a, p in self.probes.items() if p["situation"] in prompt), None)
-        if axis is None:                 # question hors des 11 choix : sans avis
+        found = next(((a, p) for a, ps in self.probes.items() for p in ps
+                      if p["situation"] in prompt), None)
+        if found is None:                # question hors des choix du banc : sans avis
             return [0.5, 0.5]
-        p = self.probes[axis]
+        axis, p = found
         plus_first = prompt.index(p["plus"]) < prompt.index(p["minus"])
         c = self._pushed()[self.v.axes.index(axis)]
         p_plus = 1 / (1 + math.exp(-25 * c))
@@ -449,12 +450,11 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
     ccfg.cortex.layers = (1, 3)
     brain = FakeBrain(tmp_path, v, sc["banc"]["probes"],
                       [i["q"] for i in sc["banc"]["cognition"]])
-    rep = bench.run(ccfg, engine=brain, say=lambda _line: None)
+    rep = bench.run(ccfg, engine=brain, say=lambda _line: None, full=True)
     assert rep["separation"]["passe"] and rep["separation"]["bon_axe_en_premier"] > 0.9
     assert rep["cognition"]["sans_injection"] == 20
     assert rep["alpha_retenu"] == 0.2                 # 0,3 × budget dépasse la limite du jouet
-    held = [r["tient"] for r in rep["cognition"]["par_alpha"]]
-    assert held[-1] is False and all(held[:-1])
+    assert rep["cognition"]["passe"] and rep["bandes"]["essayees"][0]["alpha"] == 0.2
     b = rep["comportement"]
     assert b["axes_avec_effet"] == 11 and b["axes_specifiques"] == 11
     assert all(t["rang_de_son_choix"] == 1 for t in b["par_axe"].values())
@@ -466,7 +466,38 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
     # un modèle que l'injection ne touche pas : le banc le dit, sans maquiller
     deaf = FakeBrain(tmp_path, v, sc["banc"]["probes"], [i["q"] for i in sc["banc"]["cognition"]])
     deaf._pushed = lambda: np.zeros(len(axes))
-    rep2 = bench.run(ccfg, engine=deaf, say=lambda _line: None)
+    rep2 = bench.run(ccfg, engine=deaf, say=lambda _line: None, full=True)
     assert not rep2["verdict"]["operationnel"]
     assert "comportement (effet)" in rep2["verdict"]["echecs"]
     assert "ÉCHEC" in (out / "banc.md").read_text(encoding="utf-8")
+
+
+def test_purified_feelings_lose_what_they_share_with_valence_and_arousal():
+    rng = np.random.default_rng(9)
+    val, act, own = (rng.standard_normal((4, 64)) for _ in range(3))
+    unit = lambda x: x / np.linalg.norm(x, axis=1, keepdims=True)      # noqa: E731
+    dirs = np.stack([unit(val), unit(act), unit(own - 2 * val + act)]).astype(np.float32)
+    v = Vectors(["valence", "activation", "peur"], dirs, np.ones(4, dtype=np.float32),
+                np.ones((3, 4), dtype=np.float32))
+    p = v.purified()
+    dot = lambda a, b: np.abs((p.dirs[a] * p.dirs[b]).sum(axis=1)).max()   # noqa: E731
+    assert dot(2, 0) < 1e-5 and dot(2, 1) < 1e-5 and dot(1, 0) < 1e-5
+    assert np.allclose(np.linalg.norm(p.dirs, axis=2), 1.0, atol=1e-5)
+    assert np.allclose(p.dirs[0], v.dirs[0], atol=1e-6)            # la valence ne bouge pas
+    assert (p.dirs[2] * unit(own)).sum(axis=1).min() > 0.5         # il reste ce qui lui est propre
+
+
+def test_a_big_mood_change_makes_him_reread_the_whole_prompt(ccfg, tmp_path):
+    eng = FakeEngine(tmp_path)
+    forgot: list[int] = []
+    eng.forget = lambda: forgot.append(1)
+    b = CortexBackend(ccfg, engine=eng, vectors=_vectors(ccfg))
+    b.feel({"valence": 0.6})
+    assert len(forgot) == 1                       # première humeur posée : lecture complète
+    b.feel({"valence": 0.7})
+    assert len(forgot) == 1                       # petit glissement : le cache reste
+    b.feel({"valence": -0.6, "peur": 0.5})
+    assert len(forgot) == 2                       # bascule : tout est relu
+    b.cc.reread_change = 0.0
+    b.feel({"valence": 0.9})
+    assert len(forgot) == 2

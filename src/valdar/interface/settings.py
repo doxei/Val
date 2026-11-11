@@ -30,6 +30,8 @@ SPEC: list[dict[str, Any]] = [
     {"path": "cortex.alpha", "label": "Force de l'injection", "type": "float", "min": 0.0,
      "max": 0.5, "step": 0.01, "group": "Cerveau",
      "help": "0,05 à 0,1 : subtil. Au-delà de 0,3 il peut perdre le fil."},
+    {"path": "cortex.purify", "label": "Sentiments épurés", "type": "bool", "group": "Cerveau",
+     "help": "Retire à chaque sentiment ce qu'il partage avec la valence et l'activation."},
     {"path": "cortex.describe_state", "label": "Décrire aussi son état en texte",
      "type": "bool", "group": "Cerveau",
      "help": "Décoché : il ne ressent que par l'injection (essai d'introspection)."},

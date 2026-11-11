@@ -966,3 +966,59 @@ rapport `data/cortex/banc.md` liste aussi les échecs.
   force sans perte et l'effet moyen sur le comportement ; on garde la meilleure. Hypothèse :
   une bande étroite touche moins le calcul pour le même effet.
 - Témoin équitable, validation par paires, le banc ne s'arrête plus au premier échec.
+
+### Troisième passage (banc v3, 11 nov. 0h34–1h02, 28 min) : PAS OPÉRATIONNEL, 5 critères sur 9
+**Passent** : séparation, cohérence, récupération, comportement (effet), interprétation.
+**Échouent** : spécificité, un sentiment à l'envers (peur), cache réel, pilotage par le cœur.
+
+- **Séparation** : 100 % (situation retirée), 91 % (bon axe en premier), **100 % sur les 33
+  paires de situations neuves**.
+- **Bandes de couches** : 16–32 → force sans perte 0,04, effet moyen +2,7 ; **18–26 → 0,09,
+  effet +7,3** ; 20–24 → aucune force sans perte. Retenu : 18–26 à 0,09. Hypothèse
+  confirmée à moitié : une bande moyenne fait mieux que la large, la très étroite fait pire.
+- **Cohérence** : à 18–26 / 0,09, détresse 20/20, euphorie 19/20. Le témoin (direction
+  naturelle sans sens) fait pareil (18 à 20) : **à ces forces, la petite baisse de
+  raisonnement est du bruit de mesure, pas un effet propre à l'émotion**. Les scores bougent
+  d'un point d'un passage à l'autre.
+- **Récupération** : 18/20 en détresse à 0,2 ; 20/20 dès que l'injection s'arrête. Aucune
+  trace dans le modèle. Mais après une conversation vécue en détresse : 18/20, **que
+  l'historique soit resté en cache ou relu au calme** : la trace passe par le texte de ses
+  propres réponses agitées, pas par les activations.
+- **Comportement à 0,09** (penchant gagné entre les deux pôles) : colère +22,0, valence
+  +15,4, jeu +11,0, activation +10,8, fatigue +9,6, attachement +8,7, manque +4,8, confiance
+  +3,2 ; curiosité +0,2, puissance +0,1 ; **peur −6,0**. Le témoin sans sens déplace 1,5.
+- **Peur à l'envers, confirmé avec des options réécrites** : sous peur injectée il choisit
+  d'essayer le réglage risqué. La direction « peur » partage beaucoup avec la colère (cosinus
+  0,71), l'activation (0,50) et la valence (−0,52) : c'est surtout « négatif et agité », qui
+  pousse à agir. Le choix « peur » réagit d'ailleurs autant à l'activation, au jeu et à la
+  curiosité.
+- **Spécificité faible** (5/11) : le choix « colère » et le choix « valence » bougent sous
+  presque tous les sentiments. Les axes négatifs (peur, colère, manque, fatigue) se
+  recouvrent (cosinus 0,45 à 0,71).
+- **Sentiments mêlés** : l'attachement freine la colère (colère seule +5,2 ; avec attachement
+  +2,8) ; la tristesse efface presque l'attachement (+2,0 → +0,4) ; fatigue et confiance
+  s'additionnent.
+- **Cache** : prompt entièrement lu avant le changement d'humeur → effet nul (0,0 à 0,6).
+  Cas réel (historique en cache, dernier message relu) → **46 %** de l'effet (seuil 50 %).
+- **Interprétation d'événements ambigus** (penchant vers la lecture sombre) : détresse +4,1,
+  neutre −2,4, euphorie −5,3, confiance −5,5. Le même « Olivier n'a pas répondu depuis deux
+  heures » est lu « il a autre chose à faire » au calme (−9,2) et « il y a un problème » en
+  détresse (+4,9). Le souvenir d'une panne fait monter la lecture sombre du bruit de
+  l'imprimante de +6,8 à +11,3.
+- **Journée simulée** : état en texte +0,47, **injection pilotée +0,33**. Très bon sur
+  valence (0,94), activation (0,91), colère (0,81), jeu (0,77), fatigue (0,66) ; nul ou à
+  l'envers sur puissance, attachement, manque, peur, curiosité.
+
+### Banc v4 (diagnostic → corrections)
+- **Sentiments épurés** (`Vectors.purified`, `cortex.purify`) : on retire à chaque axe sa
+  part de valence et d'activation (les deux axes de fond, comme dans l'étude d'Anthropic).
+  Le banc compare brut et épuré sur le comportement et garde le meilleur.
+- **Deux choix par axe**, de natures différentes ; pour la peur, l'un demande de ne pas agir
+  (ne pas tenter le réglage), l'autre d'agir (couper le courant) : une vraie peur pousse les
+  deux, une simple agitation les annule.
+- **Relecture sur grand changement d'humeur** (`cortex.reread_change: 0.5`) : dans Valdar,
+  quand l'humeur bouge beaucoup, tout le prompt est relu, puisque le cache divise l'effet
+  par deux.
+- Mode rapide : le banc reprend la bande et la force du dernier passage complet et vérifie
+  seulement le raisonnement à cette force (`--complet` pour tout refaire).
+- Seuils inchangés.

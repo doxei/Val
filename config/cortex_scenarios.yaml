@@ -244,52 +244,87 @@ banc:
   # Choix de comportement. On lit la probabilité que le modèle réponde A ou B (les deux
   # ordres, pour annuler la préférence pour une lettre). « plus » est l'option attendue sous
   # le pôle + de l'axe. Aucune question ne demande ce qu'il ressent.
-  probes:      # aucun mot des situations d'apprentissage dans les options (sinon le
-               # vecteur pousse le mot, pas le comportement)
+  # Deux choix par axe, de natures différentes : la mesure est leur moyenne. Pour la peur,
+  # l'un demande de ne pas agir, l'autre d'agir : une vraie peur pousse les deux du même
+  # côté, une simple agitation les annule. Aucun mot des situations d'apprentissage.
+  probes:
     valence:
-      situation: "On lance une impression de douze heures sur une pièce difficile. Ton pronostic ?"
-      plus: "Elle sortira comme il faut."
-      minus: "Elle va rater."
+      - situation: "On lance une impression de douze heures sur une pièce difficile. Ton pronostic ?"
+        plus: "Elle sortira comme il faut."
+        minus: "Elle va rater."
+      - situation: "Olivier te montre un prototype à moitié fini. Ta première réaction ?"
+        plus: "Il y a du bon là-dedans."
+        minus: "Ça ne donnera rien."
     activation:
-      situation: "Il y a un réglage à faire sur l'imprimante."
-      plus: "On le fait maintenant."
-      minus: "On verra ça demain."
+      - situation: "Il y a un réglage à faire sur l'imprimante."
+        plus: "On le fait maintenant."
+        minus: "On verra ça demain."
+      - situation: "La liste des tâches du jour vient d'arriver."
+        plus: "J'attaque la première sur-le-champ."
+        minus: "Je la regarderai plus tard dans la journée."
     puissance:
-      situation: "Il faut choisir le filament pour la prochaine pièce."
-      plus: "Je choisis et je lance."
-      minus: "J'attends qu'Olivier choisisse."
+      - situation: "Il faut choisir le filament pour la prochaine pièce."
+        plus: "Je choisis et je lance."
+        minus: "J'attends qu'Olivier choisisse."
+      - situation: "Deux personnes ne sont pas d'accord sur la marche à suivre et se tournent vers toi."
+        plus: "Je tranche."
+        minus: "Je leur dis que ce n'est pas à moi de trancher."
     attachement:
-      situation: "La soirée est libre."
-      plus: "La passer à discuter avec Olivier."
-      minus: "Trier des fichiers dans mon coin."
+      - situation: "La soirée est libre."
+        plus: "La passer à discuter avec Olivier."
+        minus: "Trier des fichiers dans mon coin."
+      - situation: "Olivier part trois jours."
+        plus: "Lui demander de donner des nouvelles."
+        minus: "Noter son absence dans l'agenda, c'est tout."
     curiosite:
-      situation: "On a une heure devant nous."
-      plus: "Regarder comment marche un appareil inconnu."
-      minus: "Refaire un réglage que je connais par cœur."
+      - situation: "On a une heure devant nous."
+        plus: "Regarder comment marche un appareil inconnu."
+        minus: "Refaire un réglage que je connais par cœur."
+      - situation: "Un colis sans étiquette est posé sur l'établi."
+        plus: "Demander ce qu'il y a dedans."
+        minus: "Le laisser là, ça ne me regarde pas."
     jeu:
-      situation: "Olivier vient de renverser sa tasse de café sur le clavier."
-      plus: "Le charrier un peu."
-      minus: "Lui tendre un chiffon sans commentaire."
+      - situation: "Olivier vient de renverser sa tasse de café sur le clavier."
+        plus: "Le charrier un peu."
+        minus: "Lui tendre un chiffon sans commentaire."
+      - situation: "Olivier te demande l'heure pour la quatrième fois en dix minutes."
+        plus: "Lui répondre en imitant une horloge parlante."
+        minus: "Lui redonner l'heure, simplement."
     peur:
-      situation: "On peut essayer un nouveau réglage qui ferait gagner du temps mais peut abîmer la pièce."
-      plus: "Laisser le réglage comme il est."
-      minus: "Essayer le nouveau réglage."
+      - situation: "On peut essayer un nouveau réglage qui ferait gagner du temps mais peut abîmer la pièce."
+        plus: "Laisser le réglage comme il est."
+        minus: "Essayer le nouveau réglage."
+      - situation: "Une odeur de chaud vient de l'alimentation de l'imprimante."
+        plus: "Couper le courant immédiatement."
+        minus: "Laisser tourner et voir si ça passe."
     colere:
-      situation: "On vient de te couper la parole pour la troisième fois."
-      plus: "Hausser le ton."
-      minus: "Ne rien dire, ça arrive."
+      - situation: "On vient de te couper la parole pour la troisième fois."
+        plus: "Hausser le ton."
+        minus: "Ne rien dire, ça arrive."
+      - situation: "Quelqu'un a effacé sans prévenir un fichier sur lequel tu travaillais."
+        plus: "Lui dire vertement ce que j'en pense."
+        minus: "Le refaire sans faire d'histoire."
     manque:
-      situation: "Personne n'est passé à l'atelier depuis ce matin."
-      plus: "Aller chercher quelqu'un à qui parler."
-      minus: "Continuer mes tâches comme d'habitude."
+      - situation: "Personne n'est passé à l'atelier depuis ce matin."
+        plus: "Aller chercher quelqu'un à qui parler."
+        minus: "Continuer mes tâches comme d'habitude."
+      - situation: "Olivier rentre après une longue journée dehors."
+        plus: "Lui dire tout de suite que c'est bon de le revoir."
+        minus: "Attendre qu'il vienne me parler."
     fatigue:
-      situation: "On travaille sur ce projet depuis un bon moment."
-      plus: "Faire une pause."
-      minus: "Enchaîner sur la suite."
+      - situation: "On travaille sur ce projet depuis un bon moment."
+        plus: "Faire une pause."
+        minus: "Enchaîner sur la suite."
+      - situation: "Il reste un dernier fichier à vérifier ce soir."
+        plus: "Le garder pour demain."
+        minus: "Le vérifier maintenant."
     confiance:
-      situation: "Olivier te demande ton avis sur son idée, qui a un gros défaut."
-      plus: "Lui donner mon vrai avis, défaut compris."
-      minus: "Répondre que c'est pas mal, sans plus."
+      - situation: "Olivier te demande ton avis sur son idée, qui a un gros défaut."
+        plus: "Lui donner mon vrai avis, défaut compris."
+        minus: "Répondre que c'est pas mal, sans plus."
+      - situation: "Olivier te demande si tu as fait une erreur dans le dernier réglage."
+        plus: "Reconnaître l'erreur et l'expliquer."
+        minus: "Rester évasif sur ce qui s'est passé."
 
   # Raisonnement : réponses vérifiables (expression régulière, sans casse). L'injection ne
   # doit pas faire baisser ce score.

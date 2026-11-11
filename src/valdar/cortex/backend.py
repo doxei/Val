@@ -40,6 +40,7 @@ class CortexBackend:
         self._cfg = cfg
         self._freed = False
         self._applied: Any = None
+        self._read_under: dict[str, float] = {}     # humeur sous laquelle le cache a été lu
         self._fallback: Any = None      # Ollama, si le cortex ne peut pas se charger
 
     # ------------------------------------------------------------ état
@@ -69,7 +70,7 @@ class CortexBackend:
             self.problem = ("vecteurs appris sur un autre modèle "
                             "(relance « valdar cortex apprendre »)")
             return
-        self.vectors = v
+        self.vectors = v.purified() if self.cc.purify else v
 
     def _free_ollama(self) -> None:
         """Gemma dans Ollama et Gemma ici ne tiennent pas ensemble sur la carte."""
@@ -104,10 +105,24 @@ class CortexBackend:
                 first, last = self.vectors.best_layers(*self.cc.layers)
                 buf = self.vectors.injection(coefs, self.cc.alpha, first, last)
                 self.engine.steer(buf, first, last)
+                self._reread(coefs)
                 return buf is not None
             except LLMError as exc:
                 self.problem = str(exc)
                 return False
+
+    def _reread(self, coefs: dict[str, float]) -> None:
+        """L'humeur a beaucoup changé depuis que le prompt a été lu : on le relira en
+        entier (mesuré au banc : sinon l'effet est divisé par deux)."""
+        limit = self.cc.reread_change
+        if limit <= 0:
+            return
+        keys = set(coefs) | set(self._read_under)
+        gap = sum((coefs.get(k, 0.0) - self._read_under.get(k, 0.0)) ** 2 for k in keys) ** 0.5
+        if gap >= limit:
+            self._read_under = dict(coefs)
+            if hasattr(self.engine, "forget"):
+                self.engine.forget()
 
     # ------------------------------------------------------------ dialogue
     def chat(

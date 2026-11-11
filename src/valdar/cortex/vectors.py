@@ -50,6 +50,31 @@ class Vectors:
                        norms=z["norms"].astype(np.float32),
                        quality=z["quality"].astype(np.float32), model=str(z["model"]))
 
+    def purified(self, core: tuple[str, ...] = ("valence", "activation")) -> Vectors:
+        """Les mêmes sentiments, **épurés** : on retire à chaque axe ce qu'il partage avec
+        les axes de fond (`core` : valence, activation). La peur n'est plus « du négatif
+        agité » mais ce que la peur a en propre. Les axes de fond restent tels quels, sauf le
+        second, rendu indépendant du premier."""
+        idx = [self.axes.index(a) for a in core if a in self.axes]
+        dirs = self.dirs.astype(np.float64).copy()
+        basis: list[np.ndarray] = []
+        for i in idx:                                   # base orthonormée des axes de fond
+            d = dirs[i].copy()
+            for b in basis:
+                d -= (d * b).sum(axis=1, keepdims=True) * b
+            d /= np.maximum(np.linalg.norm(d, axis=1, keepdims=True), 1e-12)
+            basis.append(d)
+            dirs[i] = d
+        for k in range(len(self.axes)):
+            if k in idx:
+                continue
+            d = dirs[k]
+            for b in basis:
+                d = d - (d * b).sum(axis=1, keepdims=True) * b
+            dirs[k] = d / np.maximum(np.linalg.norm(d, axis=1, keepdims=True), 1e-12)
+        return Vectors(axes=list(self.axes), dirs=dirs.astype(np.float32), norms=self.norms,
+                       quality=self.quality, model=self.model)
+
     def best_layers(self, first: int, last: int) -> tuple[int, int]:
         """Bornes de couches (du modèle, incluses), ramenées dans ce que le modèle a."""
         first = max(1, min(first, self.n_layers - 1))

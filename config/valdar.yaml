@@ -719,6 +719,8 @@ cortex:
   scenarios: config/cortex_scenarios.yaml
   layers: [16, 32]               # tiers du milieu (48 couches) : là où vivent les émotions
   alpha: 0.12                    # part totale du flux résiduel déplacée à coefficient 1
+  purify: false                  # sentiments épurés de la valence et de l'activation (banc)
+  reread_change: 0.5             # humeur qui change de plus que ça : tout le prompt est relu
   inject: true
   describe_state: true           # false : il ne ressent QUE par l'injection (essai d'introspection)
   free_ollama: true
