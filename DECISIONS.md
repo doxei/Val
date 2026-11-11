@@ -1070,3 +1070,28 @@ vers lui qu'avec des réglages au vert.
   bloque ; rien n'est activé.
 - État lisible à tout moment : `data/cortex/boucle.json` ; meilleur rapport :
   `data/cortex/meilleur_banc.md`. Arrêt propre : fichier `data/cortex/STOP`.
+
+### La boucle, première nuit (11 nov. 2h17–5h22) et la mesure du pilotage
+- 30 réglages essayés, 4 bancs complets. Meilleur : **couches 18–31, alpha 0,09, sentiments
+  bruts, curiosité à 1,6**. 5 critères requis sur 6 : séparation 100 % / 97 % (neuves),
+  raisonnement 19/20 et 19/20, récupération 20/20, 11 sentiments sur 11 avec effet, aucun à
+  l'envers (**la peur réapprise pousse à la prudence : +4,1, premier rang**).
+- Seul requis en échec : pilotage par le cœur, 0,33 à 0,36 quel que soit le réglage, et
+  0,42 pour l'état décrit en texte. Cause : l'ancienne mesure comparait chaque sentiment à
+  son seul choix sur la journée simulée, alors que les sentiments y varient ensemble (quand
+  la curiosité monte, la tristesse aussi, et il explore moins). Curiosité −0,70, peur −0,35,
+  manque −0,33, alors que chacun, pris seul, agit dans le bon sens.
+- **Décision d'Olivier (option 2)** : remplacer la mesure par une plus juste, axes un par un
+  ou en multivarié, sans toucher au garde-fou du raisonnement. Seuil inchangé (0,50).
+  1. **Un sentiment à la fois** : cinq niveaux (−1 à +1 fois sa dose), corrélation niveau ↔
+     penchant sur son propre choix.
+  2. **Multivarié** : sur la journée simulée, on compare chaque choix à ce que l'état entier
+     prédit, d'après l'effet de chaque sentiment mesuré séparément (matrice du banc, aucune
+     donnée de la journée ne sert à l'ajuster).
+  Le critère exige les deux. L'ancienne mesure reste affichée dans le rapport.
+- Aperçu, à dire tel quel : recalculée sur les chiffres du meilleur banc déjà enregistré, la
+  mesure multivariée donne **0,87 pour l'injection et 0,70 pour l'état en texte**. J'ai
+  écrit la mesure avant de faire ce calcul, mais sur des données déjà vues ; le vrai verdict
+  est celui du prochain passage. La mesure « un à la fois » n'a pas encore tourné sur la carte.
+- La boucle reprend maintenant le meilleur réglage connu et le repasse au banc avant de
+  chercher ailleurs.

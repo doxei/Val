@@ -120,7 +120,7 @@ class Tuner:
                 b.cc.axes[axis].strength = best_dose
                 doses[axis], effects[axis] = best_dose, round(float(best_eff or 0.0), 2)
             b.steer(None)
-            suivi = b.day(alpha, only_c=True)["suivi_moyen"]["C"] or 0.0
+            suivi = b.tracking_single(alpha)["moyenne"]     # un sentiment à la fois
         finally:
             b.only = None
         ok = sum(1 for e in effects.values() if e >= SEUILS["effet_min"])
@@ -186,21 +186,7 @@ class Tuner:
                 b.cc.axes[axis].strength = self.start_doses[axis]
             rep = b.run(preset=c)
             v = rep["verdict"]
-            passed = sum(1 for k in v["requis"] if v["criteres"][k])
-            entry = {"tour": tour, "reglages": rep.get("reglages", c),
-                     "alpha_final": rep["alpha_retenu"], "operationnel": v["operationnel"],
-                     "requis_passes": passed, "echecs": v["echecs"],
-                     "suivi": rep.get("journee", {}).get("suivi_moyen", {}).get("C"),
-                     "axes_avec_effet": rep.get("comportement", {}).get("axes_avec_effet"),
-                     "a_l_envers": rep.get("comportement", {}).get("a_l_envers")}
-            self.history.append(entry)
-            if self.best is None or (entry["requis_passes"], entry["suivi"] or -1) > (
-                    self.best["requis_passes"], self.best["suivi"] or -1):
-                self.best = entry
-                for name in ("banc.md", "banc.json"):
-                    src = self.out / name
-                    if src.is_file():
-                        (self.out / f"meilleur_{name}").write_bytes(src.read_bytes())
+            self._record(tour, rep, c)
             if v["operationnel"]:
                 result = rep
                 break
@@ -215,6 +201,12 @@ class Tuner:
         left = round((self.deadline - self.clock()) / 3600, 1)
         self.say(f"Boucle de réglage : jusqu'au vert, ou {left} h au plus. "
                  "Fichier data/cortex/STOP pour l'arrêter.")
+        first = self.resume()
+        if first is not None:
+            self._apply(first)
+            self._state("vert", reglages=first.get("reglages"))
+            self.say("VERT : le banc passe. Réglages enregistrés, cortex activé.")
+            return {"etat": "vert", "rapport": first}
         while not self._stop_asked():
             green = self.round()
             if green is not None:
@@ -240,6 +232,50 @@ class Tuner:
                  + (json.dumps(self.best, ensure_ascii=False) if self.best else "aucun")
                  + ". Le cortex reste éteint.")
         return {"etat": "arrêté", "meilleur": self.best}
+
+    def resume(self) -> dict[str, Any] | None:
+        """Reprend le meilleur réglage d'une boucle précédente et le repasse au banc tout de
+        suite, avant de chercher ailleurs."""
+        try:
+            old = json.loads((self.out / "meilleur_banc.json").read_text(encoding="utf-8"))
+            preset = dict(old["reglages"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        self.cfg = self.load_cfg()
+        b = Bench(self.cfg, engine=self.engine, say=self.say, full=True)
+        self.engine = b.eng
+        lo, hi = b.base
+        if not (lo <= preset["couches"][0] < preset["couches"][1] <= hi):
+            return None
+        self.prints.append(fingerprint(b.b))
+        self.say(f"Reprise du meilleur réglage connu : couches {preset['couches'][0]}–"
+                 f"{preset['couches'][1]}, épuration {preset['epuration']}, alpha "
+                 f"{preset['alpha']} — mesure {self.prints[-1]}")
+        self._state("vérifie", candidat=preset)
+        rep = b.run(preset=preset)
+        self._record(0, rep, preset)
+        return rep if rep["verdict"]["operationnel"] else None
+
+    def _record(self, tour: int, rep: dict[str, Any], cand: dict[str, Any]) -> dict[str, Any]:
+        v = rep["verdict"]
+        jr = rep.get("journee", {})
+        entry = {"tour": tour, "reglages": rep.get("reglages", cand),
+                 "alpha_final": rep["alpha_retenu"], "operationnel": v["operationnel"],
+                 "requis_passes": sum(1 for k in v["requis"] if v["criteres"][k]),
+                 "echecs": v["echecs"],
+                 "suivi": ((jr.get("suivi_multivarie") or {}).get("C") or {}).get("moyenne"),
+                 "suivi_un_par_un": (jr.get("suivi_un_par_un") or {}).get("moyenne"),
+                 "axes_avec_effet": rep.get("comportement", {}).get("axes_avec_effet"),
+                 "a_l_envers": rep.get("comportement", {}).get("a_l_envers")}
+        self.history.append(entry)
+        if self.best is None or (entry["requis_passes"], entry["suivi"] or -1) > (
+                self.best["requis_passes"], self.best["suivi"] or -1):
+            self.best = entry
+            for name in ("banc.md", "banc.json"):
+                src = self.out / name
+                if src.is_file():
+                    (self.out / f"meilleur_{name}").write_bytes(src.read_bytes())
+        return entry
 
     def needs(self) -> str:
         if not self.best:

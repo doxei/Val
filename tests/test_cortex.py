@@ -460,6 +460,11 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
     assert all(t["rang_de_son_choix"] == 1 for t in b["par_axe"].values())
     j = rep["journee"]["suivi_moyen"]
     assert j["A"] is None and j["B"] is None and j["C"] > 0.8      # seul C suit le cœur
+    day = rep["journee"]
+    assert day["suivi_un_par_un"]["moyenne"] > 0.9
+    assert all(t["monotone"] for t in day["suivi_un_par_un"]["par_axe"].values())
+    assert day["suivi_multivarie"]["C"]["moyenne"] > 0.9
+    assert day["suivi_multivarie"]["A"]["moyenne"] is None       # Gemma seul ne suit rien
     assert rep["verdict"]["operationnel"]
     md = (out / "banc.md").read_text(encoding="utf-8")
     assert "Verdict : opérationnel" in md and "| B. Injection fixe | plat (0) |" in md

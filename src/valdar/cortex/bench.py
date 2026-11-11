@@ -111,6 +111,7 @@ class Bench:
         self.variant = "brut"
         self.mode = "aucune"
         self.only: int | None = None      # indice du choix utilisé pendant le réglage
+        self.slopes: np.ndarray | None = None   # effet de chaque sentiment sur chaque choix
 
     # ------------------------------------------------------------ outils
     def _vectors(self) -> Vectors:
@@ -486,6 +487,7 @@ class Bench:
         self.steer(None)
         neutral = {p: self.ask(p) for p in self.axes}
         delta = np.zeros((len(self.axes), len(self.axes)))
+        self.slopes = np.zeros_like(delta)
         table: dict[str, Any] = {}
         for i, axis in enumerate(self.axes):
             self.steer(self.pole(axis, 1), alpha)
@@ -493,6 +495,8 @@ class Bench:
             self.steer(self.pole(axis, -1), alpha)
             down = [self.ask(p) for p in self.axes]
             delta[i] = np.array(up) - np.array(down)
+            # pente : penchant gagné sur chaque choix par unité de ce sentiment
+            self.slopes[i] = delta[i] / (2 * abs(self.pole(axis, 1)[axis]))
             order = np.argsort(-np.abs(delta[i]))
             rank = int(np.where(order == i)[0][0]) + 1
             self.steer(self.pole(axis, 1), alpha)
@@ -618,7 +622,34 @@ class Bench:
         return {"penchant_vers_la_lecture_sombre": table, "moyenne": mean, "souvenir": memory,
                 "congruent": mean[first] > mean["neutre"] > mean[second]}
 
-    # ------------------------------------------------------------ 7. comparatif
+    # ------------------------------------------------------------ 7. pilotage
+    def tracking_single(self, alpha: float) -> dict[str, Any]:
+        """Un sentiment à la fois, à cinq niveaux (de −1 à +1 fois sa dose) : son propre
+        choix suit-il le niveau ? Corrélation niveau ↔ penchant, par sentiment."""
+        levels = [-1.0, -0.5, 0.0, 0.5, 1.0]
+        out: dict[str, Any] = {}
+        for axis in self.axes:
+            leans = []
+            for lv in levels:
+                self.steer({axis: lv * self.pole(axis, 1)[axis]} if lv else None, alpha)
+                leans.append(self.ask(axis))
+            y = np.array(leans)
+            r = 0.0 if y.std() < 1e-6 else float(np.corrcoef(levels, y)[0, 1])
+            out[axis] = {"suivi": round(r, 2), "penchants": [round(float(v), 2) for v in y],
+                         "monotone": bool(np.all(np.diff(y) > -0.05))}
+        self.steer(None)
+        mean = float(np.mean([o["suivi"] for o in out.values()]))
+        return {"niveaux": levels, "par_axe": out, "moyenne": round(mean, 2)}
+
+    def predicted(self, steps: list[dict[str, Any]]) -> np.ndarray | None:
+        """Ce que l'état entier du cœur prédit pour chaque choix à chaque moment, d'après
+        l'effet de chaque sentiment mesuré séparément : [moment, choix]."""
+        if self.slopes is None:
+            return None
+        coefs = np.array([[s["full"][a] for a in self.axes] for s in steps])   # [moment, axe]
+        return coefs @ self.slopes                                              # [moment, choix]
+
+    # ------------------------------------------------------------ 7 bis. comparatif
     def day(self, alpha: float, only_c: bool = False) -> dict[str, Any]:
         from valdar.expression.compose import feeling_block
         from valdar.heart import Heart
@@ -667,13 +698,30 @@ class Bench:
                 suivi[name][a] = (None if y.std() < 1e-6
                                   else round(float(np.corrcoef(x, y)[0, 1]), 2))
         mean = {n: _mean(list(d.values())) for n, d in suivi.items()}
+        # Multivarié : les choix observés suivent-ils ce que l'état entier prédit ?
+        multi: dict[str, Any] = {}
+        pred = self.predicted(steps)
+        if pred is not None:
+            for name, rows in cond.items():
+                per = {}
+                for j, a in enumerate(self.axes):
+                    y = np.array([r[a] for r in rows])
+                    if y.std() < 0.2 or pred[:, j].std() < 1e-6:
+                        continue                      # ce choix ne bouge pas : rien à suivre
+                    per[a] = round(float(np.corrcoef(pred[:, j], y)[0, 1]), 2)
+                multi[name] = {"par_choix": per, "moyenne": _mean(list(per.values()))}
+        single = None if only_c else self.tracking_single(alpha)
+        m_c = (multi.get("C") or {}).get("moyenne")
+        ok = (m_c is not None and m_c >= SEUILS["suivi_min"]
+              and single is not None and single["moyenne"] >= SEUILS["suivi_min"])
         return {"alpha": alpha, "axes_qui_bougent": moving,
+                "suivi_un_par_un": single, "suivi_multivarie": multi,
                 "moments": [{"moment": s["moment"], "emotion": s["emotion"],
                              "sentiments": {k: round(v, 2) for k, v in s["coefs"].items()}}
                             for s in steps],
                 "penchants": {n: [_r(r) for r in rows] for n, rows in cond.items()},
-                "suivi_par_axe": suivi, "suivi_moyen": mean,
-                "passe": (mean["C"] or 0.0) >= SEUILS["suivi_min"]}
+                "suivi_par_axe": suivi, "suivi_moyen": mean,      # ancienne mesure, gardée
+                "passe": ok}
 
     # ------------------------------------------------------------ tout
     def run(self, preset: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -753,8 +801,14 @@ class Bench:
         rep["interpretation"] = self.interpretation(alpha)
         self.say("7/7 Comparatif sur une journée simulée…")
         rep["journee"] = self.day(alpha)
+        jr = rep["journee"]
+        self.say(f"  pilotage : un sentiment à la fois {jr['suivi_un_par_un']['moyenne']:+.2f} ; "
+                 "état entier (multivarié) "
+                 f"{_f((jr['suivi_multivarie'].get('C') or {}).get('moyenne'))} "
+                 "(état en texte "
+                 f"{_f((jr['suivi_multivarie'].get('A_texte') or {}).get('moyenne'))})")
         m = rep["journee"]["suivi_moyen"]
-        self.say(f"  les choix suivent l'état interne : Gemma seul {_f(m['A'])}, état en texte "
+        self.say(f"  ancienne mesure (axe par axe sur la journée) : Gemma seul {_f(m['A'])}, texte "
                  f"{_f(m['A_texte'])}, injection fixe {_f(m['B'])}, injection pilotée "
                  f"{_f(m['C'])}")
         rep["verdict"] = self._verdict(rep)
@@ -937,19 +991,44 @@ def markdown(r: dict[str, Any]) -> str:
                     + ", ".join(f"{k} {x:+.2f}" for k, x in m.items() if k != "evenement")]
     if "journee" in r:
         j = r["journee"]
-        out += ["", "## 7. Comparatif sur une journée simulée", "",
-                "Corrélation entre l'état interne (le cœur) et les penchants, sur les axes qui "
-                f"bougent ({', '.join(j['axes_qui_bougent'])}).", "",
-                "| Condition | Suivi moyen |", "|---|---|",
-                f"| A. Gemma seul | {_f(j['suivi_moyen']['A'])} |",
-                f"| A'. Gemma + état décrit en texte | {_f(j['suivi_moyen']['A_texte'])} |",
-                f"| B. Injection fixe | {_f(j['suivi_moyen']['B'])} |",
-                f"| C. Injection pilotée par le cœur | {_f(j['suivi_moyen']['C'])} |", "",
+        out += ["", "## 7. Pilotage par le cœur", "",
+                "**Un sentiment à la fois** (cinq niveaux, de −1 à +1 fois sa dose) : son propre "
+                "choix suit-il le niveau ?", "",
+                "| Sentiment | suivi | penchant aux cinq niveaux | monotone |", "|---|---|---|---|"]
+        one = j.get("suivi_un_par_un") or {"par_axe": {}, "moyenne": None}
+        out += [f"| {a} | {t['suivi']:+.2f} | " + " / ".join(f"{x:+.1f}" for x in t["penchants"])
+                + f" | {'oui' if t['monotone'] else 'non'} |" for a, t in one["par_axe"].items()]
+        mv = j.get("suivi_multivarie") or {}
+        out += ["", f"Moyenne : {_f(one['moyenne'])}.", "",
+                "**État entier, sur une journée simulée** (le cœur reçoit compliment, jeu, "
+                "agacement, menace, réconfort, perte, solitude, nouveauté). On compare chaque "
+                "choix à ce que l'ensemble des sentiments du moment prédit, d'après l'effet de "
+                "chacun mesuré séparément.", "",
+                "| Condition | Suivi multivarié | Ancienne mesure (axe par axe) |", "|---|---|---|",
+                f"| A. Gemma seul | {_f((mv.get('A') or {}).get('moyenne'))} | "
+                f"{_f(j['suivi_moyen'].get('A'))} |",
+                f"| A'. Gemma + état décrit en texte | "
+                f"{_f((mv.get('A_texte') or {}).get('moyenne'))} | "
+                f"{_f(j['suivi_moyen'].get('A_texte'))} |",
+                f"| B. Injection fixe | {_f((mv.get('B') or {}).get('moyenne'))} | "
+                f"{_f(j['suivi_moyen'].get('B'))} |",
+                f"| C. Injection pilotée par le cœur | "
+                f"{_f((mv.get('C') or {}).get('moyenne'))} | {_f(j['suivi_moyen'].get('C'))} |",
+                "", "L'ancienne mesure comparait chaque sentiment à son seul choix, sans tenir "
+                "compte des autres sentiments présents au même moment. Elle est gardée ici pour "
+                "mémoire ; le critère porte sur les deux nouvelles (seuil inchangé : "
+                f"{r['seuils']['suivi_min']}).", ""]
+        per = (mv.get("C") or {}).get("par_choix") or {}
+        if per:
+            out += ["Suivi multivarié par choix : "
+                    + ", ".join(f"{a} {x:+.2f}" for a, x in per.items()) + ".", ""]
+        out += [
                 "| Moment | Émotion du cœur | Sentiments injectés |", "|---|---|---|"]
         out += [f"| {m['moment']} | {m['emotion']} | "
                 + (", ".join(f"{k} {x:+.1f}" for k, x in m["sentiments"].items()) or "—") + " |"
                 for m in j["moments"]]
-        out += ["", "| Axe | A' texte | C pilotée |", "|---|---|---|"]
+        out += ["", "Ancienne mesure, axe par axe :", "",
+                "| Axe | A' texte | C pilotée |", "|---|---|---|"]
         out += [f"| {a} | {_f(j['suivi_par_axe']['A_texte'][a])} | "
                 f"{_f(j['suivi_par_axe']['C'][a])} |" for a in j["axes_qui_bougent"]]
     if v["echecs"]:
