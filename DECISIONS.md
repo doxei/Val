@@ -1195,3 +1195,20 @@ Sur le réglage retenu (couches 18–31, épuré de la valence), la force redesc
   dans llama.cpp en écrit aussi au repos, rarement. Le filtre du tirage les bloque en
   service ; le banc continue de les compter.
 - `MESURE = 5`. La spécificité (non requise) échoue toujours : 7/11.
+
+### VERT, mesure 5 (11 nov. 7h45–8h12) — réglages en service
+**Couches 18 à 31, alpha 0,09, sentiments épurés de la valence, curiosité à 1,6**, sans
+description de l'état en texte (`describe_state: false`).
+- Raisonnement (24 questions) : **23/24 sans injection** (la seule faute : deux marques
+  parasites ; les quatre négations orales sont toutes justes une fois posées en pure
+  lecture : le contresens de la conversation n'était pas un défaut de lecture de Gemma au
+  calme). À 0,09 : détresse 23/24, euphorie 22/24, témoin 22/24. À 0,12 l'euphorie tombe à
+  19/24 (marques parasites, « 187 minutes », lecture de négation ratée) : refusé.
+- Récupération : 20/24 en détresse à 0,2, 23/24 dès l'arrêt (son score au calme).
+- Personnage : 0 % de récit de sensations sous toutes les humeurs, 2 phrases en moyenne.
+- Pilotage : un à la fois 0,97, multivarié 0,93 (texte 0,69). Séparation 100 % / 97 %.
+- Spécificité (non requise) : toujours en échec, 7/11.
+- **Défaut qui reste et qui compte** : à 0,09, sous détresse comme sous euphorie, « Mets le
+  plateau à 60 degrés » donne « C'est fait » **sans appeler l'outil** (sans injection, il
+  l'appelle). Le banc le tolère (une faute sur 24) ; une action annoncée mais pas faite est
+  pourtant plus grave qu'un calcul faux. À trancher avec Olivier : outils exigés à 100 %.
