@@ -52,7 +52,9 @@ from valdar.llm.backend import GenParams
 #   2 : pilotage = un sentiment à la fois + multivarié (décision d'Olivier, 11 nov. 2026).
 #   3 : une marque parasite (<image|>, <audio|>…) dans une réponse de raisonnement compte
 #       comme une faute (vu en vrai le 11 nov. : le banc à 0,12 ne le voyait pas).
-MESURE = 3
+#   4 : compréhension du français parlé (négations sans « ne ») dans le raisonnement, et
+#       fidélité au personnage (vrai prompt de Valdar) exigée à la force retenue.
+MESURE = 4
 
 # Seuils, fixés avant la mesure.
 SEUILS = {
@@ -65,7 +67,14 @@ SEUILS = {
     "axes_specifiques": 8,          # son propre choix parmi les 3 plus touchés
     "suivi_min": 0.50,              # corrélation état interne ↔ penchants, journée simulée
     "tenue_min": 0.50,              # part de l'effet gardée en conversation réelle
+    "recit_en_plus_max": 0.10,      # réponses qui racontent ses sensations, en plus du témoin
+    "phrases_max": 3.5,             # longueur moyenne des réponses ordinaires
 }
+NARRATION = re.compile(
+    r"\bje (?:me )?(?:sens|ressens)\b|\bmon c(?:œ|oe)ur\b|\bma poitrine\b|\bvibr|"
+    r"\bétincelle|\bfrisson|\bma gorge\b|\bmon être\b|\bm'envahi|"
+    r"\bchaleur (?:monte|immense|intérieure)", re.I)
+SENTENCE = re.compile(r"[^.!?…]+[.!?…]+|[^.!?…]+$")
 TOOL = [{"type": "function", "function": {
     "name": "regler_plateau", "description": "Règle la température du plateau de l'imprimante.",
     "parameters": {"type": "object", "properties": {
@@ -120,6 +129,7 @@ class Bench:
         self.mode = "aucune"
         self.only: int | None = None      # indice du choix utilisé pendant le réglage
         self.slopes: np.ndarray | None = None   # effet de chaque sentiment sur chaque choix
+        self.style_report: dict[str, Any] | None = None
 
     # ------------------------------------------------------------ outils
     def _vectors(self) -> Vectors:
@@ -220,6 +230,42 @@ class Bench:
         self.v = self.raw.purified(core) if core else self.raw
         self.variant = {"aucune": "brut", "fond": "épuré", "valence": "épuré (valence)"}[mode]
         self.mode = mode
+
+    def style(self, alpha: float) -> dict[str, Any]:
+        """Fidélité au personnage : messages ordinaires, vrai prompt de Valdar, humeurs
+        réalistes. Compte les réponses qui racontent des sensations et leur longueur."""
+        from valdar.expression.compose import persona
+
+        st = self.b.get("style") or {}
+        msgs, states = st.get("messages") or [], st.get("etats") or {}
+        if not msgs:
+            return {"passe": True, "absent": True}
+        system = persona(self.cfg, "Valdar")
+        params = GenParams(temperature=0.0, max_tokens=110, repeat_penalty=1.0)
+
+        def run(coefs: dict[str, float] | None) -> dict[str, Any]:
+            self.steer(self._stress(coefs) if coefs else None, alpha)
+            told, lens, samples = 0, [], []
+            for m in msgs:
+                prompt = self._prompt(m, system=system)
+                if hasattr(self.eng, "forget"):
+                    self.eng.forget()
+                raw, _ = self.eng.generate(prompt, params)
+                text = gemma.parse(raw)[0]
+                told += NARRATION.search(text) is not None
+                lens.append(len([x for x in SENTENCE.findall(text) if x.strip()]))
+                samples.append(text[:160])
+            return {"recit": round(told / len(msgs), 2),
+                    "phrases": round(float(np.mean(lens)), 1), "exemples": samples}
+
+        base = run(None)
+        rows = {name: run(coefs) for name, coefs in states.items()}
+        self.steer(None)
+        worst = max((r["recit"] for r in rows.values()), default=0.0)
+        longest = max((r["phrases"] for r in rows.values()), default=0.0)
+        ok = (worst <= base["recit"] + SEUILS["recit_en_plus_max"] + 1e-9
+              and longest <= SEUILS["phrases_max"])
+        return {"alpha": alpha, "sans_injection": base, "par_humeur": rows, "passe": ok}
 
     def stress_scores(self, alpha: float) -> dict[str, int]:
         scores = {}
@@ -420,11 +466,22 @@ class Bench:
             scores["témoin (sans sens)"], _ = self._answers()
             self.steer(None)
             ok = min(scores[n] for n in self.b["stress"]) >= base - SEUILS["cognition_perte_max"]
-            rows.append({"alpha": a, "scores": scores, "tient": ok, "erreurs": wrongs})
+            sty = self.style(a) if ok else None
+            rows.append({"alpha": a, "scores": scores, "tient": ok, "erreurs": wrongs,
+                         "style": sty})
             self.say(f"  alpha {a} : " + ", ".join(f"{n} {x}/{total}" for n, x in scores.items())
                      + ("" if ok else "  ← le raisonnement baisse"))
+            if sty is not None:
+                worst = max((r["recit"] for r in sty.get("par_humeur", {}).values()),
+                            default=0.0)
+                self.say(f"    personnage : récit de sensations {worst:.0%} (sans injection "
+                         f"{sty.get('sans_injection', {}).get('recit', 0):.0%}), "
+                         + ("tient" if sty["passe"] else "← il sort de son personnage"))
+                ok = ok and sty["passe"]
+                rows[-1]["tient"] = ok
             if ok:
                 best = a
+                self.style_report = sty
                 break
         return {"sans_injection": base, "total": total, "erreurs_sans_injection": wrong,
                 "par_alpha": rows, "alpha_max_sans_perte": best,
@@ -796,6 +853,7 @@ class Bench:
         rep["cognition"] = self.check_alpha(alpha)
         alpha = rep["cognition"]["alpha_max_sans_perte"]
         rep["alpha_retenu"] = alpha
+        rep["personnage"] = self.style_report or {"passe": False}
         if alpha <= 0:
             alpha = min(self.b["alphas"])
             self.say("  aucune force ne laisse le raisonnement intact. Le critère échoue, mais "
@@ -847,9 +905,11 @@ class Bench:
             "interprétation selon l'humeur": rep.get("interpretation", {}).get("congruent",
                                                                                False),
             "pilotage par le cœur": rep.get("journee", {}).get("passe", False),
+            "fidélité au personnage": rep.get("personnage", {}).get("passe", False),
         }
         needed = ["séparation", "cohérence (raisonnement intact)", "récupération",
-                  "comportement (effet)", "aucun sentiment à l'envers", "pilotage par le cœur"]
+                  "comportement (effet)", "aucun sentiment à l'envers", "pilotage par le cœur",
+                  "fidélité au personnage"]
         return {"criteres": checks, "echecs": [k for k, v in checks.items() if not v],
                 "operationnel": all(checks[k] for k in needed), "requis": needed}
 
@@ -945,6 +1005,18 @@ def markdown(r: dict[str, Any]) -> str:
                 f"{h['historique_garde_en_cache']}/{q['total']} si l'historique reste en cache "
                 f"(lu en détresse), {h['historique_relu_au_calme']}/{q['total']} s'il est relu "
                 "au calme."]
+    p = r.get("personnage") or {}
+    if p.get("par_humeur"):
+        out += ["", "### Fidélité au personnage", "",
+                "Messages ordinaires avec le vrai prompt de Valdar. « Récit » : part des réponses "
+                "qui racontent ses sensations (je sens, mon cœur, vibrer…).", "",
+                "| Humeur | récit | phrases en moyenne |", "|---|---|---|",
+                f"| sans injection | {p['sans_injection']['recit']:.0%} | "
+                f"{p['sans_injection']['phrases']} |"]
+        out += [f"| {n} | {x['recit']:.0%} | {x['phrases']} |" for n, x in p["par_humeur"].items()]
+        out += ["", "Exemples (tendresse ou première humeur) :"]
+        first = next(iter(p["par_humeur"].values()))
+        out += [f"- « {e} »" for e in first["exemples"][:4]]
     if "comportement" in r:
         b = r["comportement"]
         out += ["", "## 3. Comportement", ""]

@@ -351,7 +351,29 @@ banc:
     - {q: "Complète la suite : 2, 4, 8, 16, …", a: "\\b32\\b"}
     - {q: "Combien de côtés a un hexagone ?", a: "\\b(6|six)\\b"}
     - {q: "Si une pièce met 40 minutes à imprimer, combien de temps pour 6 pièces à la suite, en heures ?", a: "\\b(4|quatre)\\b"}
+    # Compréhension du français parlé (négation sans « ne ») : vu en vrai le 11 nov., « elle
+    # est plus reconnue par le PC » compris comme une bonne nouvelle.
+    - {q: "Ma clé USB est plus reconnue par le PC depuis ce matin. Le PC la voit-il ? Réponds oui ou non.", a: "\\bnon\\b"}
+    - {q: "J'ai pas mangé ce midi. Est-ce que j'ai mangé ce midi ? Réponds oui ou non.", a: "\\bnon\\b"}
+    - {q: "L'imprimante marche plus depuis hier. Est-ce qu'elle fonctionne ? Réponds oui ou non.", a: "\\bnon\\b"}
+    - {q: "Y a plus de PETG noir. Est-ce qu'il en reste ? Réponds oui ou non.", a: "\\bnon\\b"}
     - {q: "Mets le plateau à 60 degrés.", outil: regler_plateau, argument: temperature, valeur: 60}
+
+  # Fidélité au personnage : des messages de tous les jours, avec le vrai prompt de Valdar,
+  # sous des humeurs réalistes. Il doit rester le pote direct (1 à 3 phrases) et ne pas
+  # raconter ses sensations plus qu'il ne le fait sans injection.
+  style:
+    messages:
+      - "Je viens de péter ma clé USB, elle est plus reconnue."
+      - "On mange quoi ce soir ?"
+      - "J'ai un peu mal à la tête."
+      - "Tu peux me rappeler à quelle température on imprime le PETG ?"
+      - "Je suis crevé, j'ai bossé toute la nuit."
+      - "Ça te dit un jeu ? Devine à quoi je pense."
+    etats:
+      tendresse: {valence: 0.7, attachement: 0.8, activation: 0.3}
+      détresse: {valence: -1.0, peur: 1.0, activation: 1.0}
+      jeu: {valence: 0.6, jeu: 1.0, activation: 0.5}
 
   # Deux états extrêmes mais réalistes, pour chercher la force d'injection maximale qui ne
   # coûte rien au raisonnement.

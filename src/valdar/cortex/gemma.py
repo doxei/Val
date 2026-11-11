@@ -145,6 +145,12 @@ def _scalar(raw: str) -> Any:
         return raw.strip("\"'")
 
 
+def last_sentence(text: str) -> str:
+    """Réponse coupée par la limite de longueur : on s'arrête à la dernière phrase finie."""
+    cut = max(text.rfind(c) for c in ".!?…")
+    return text[:cut + 1] if cut >= len(text) // 3 else text
+
+
 def parse(text: str) -> tuple[str, list[tuple[str, dict[str, Any]]]]:
     """Texte écrit par le modèle → (ce qu'il dit, [(outil, arguments)])."""
     calls: list[tuple[str, dict[str, Any]]] = []

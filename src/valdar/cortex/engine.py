@@ -239,6 +239,7 @@ class Engine:
                 "prompt_eval_duration": int((first_at - t0) * 1e9),
                 "eval_duration": int((t1 - first_at) * 1e9),
                 "load_duration": 0,
+                "coupe": len(out) >= room,
             }
             return text, usage
 

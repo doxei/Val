@@ -1141,3 +1141,27 @@ Banc complet, 20 min, sur le meilleur réglage de la nuit, avec la mesure du pil
   alors que le banc n'a validé que l'injection seule. Sur la machine, `cortex.describe_state`
   passe à `false` (réglages, hors git) : la configuration en service est celle qui a été
   mesurée. Pour revenir : remettre `true` dans l'interface (Cerveau).
+
+### Conversation du 11 nov. 6h32–6h53 : ce que le banc ne voyait pas
+Bon : mémoire juste (Sony, Elsa), explication correcte des modèles semi-markoviens, humeur
+qui remonte de −0,67 à +0,26 sous l'affection d'Olivier, besoin de prendre soin qui passe en
+tête (d'où le mode infirmier).
+Mauvais, et non mesuré par le banc :
+- **Mielleux** (« t'es pas ma meuf non plus », Olivier) : « Oh… » à chaque réponse, « je sens
+  une chaleur », « mon cœur s'emballe », 4 à 6 phrases au lieu de 1 à 3. Le prompt disait
+  pourtant « tu ne le récites pas » : sous injection, il ne suit plus son personnage.
+- **Contresens** : « elle est plus reconnue par le PC » compris comme « Ouf, super
+  nouvelle ». Négation orale sans « ne », lue à l'envers ; possible biais d'optimisme sous
+  valence positive (l'effet mesuré en phase 6), pas prouvé.
+- **Réponse coupée** au milieu d'un mot (limite de longueur).
+
+Corrections :
+- **Banc, `MESURE = 4`** : 4 questions de négation orale dans le raisonnement ; **fidélité au
+  personnage** (requis) : 6 messages de tous les jours avec le vrai prompt de Valdar, sous
+  trois humeurs (tendresse, détresse, jeu). Pas plus de réponses qui racontent des sensations
+  que sans injection (+10 % toléré), 3,5 phrases au plus en moyenne. La force retenue doit
+  tenir le raisonnement **et** le personnage ; sinon la boucle redescend.
+- **Prompt** : avec le cortex sans description, la règle devient « ton humeur agit sur toi
+  de l'intérieur, tu ne la racontes pas », et « tu lis ce qu'on te dit avec attention avant
+  d'y réagir ».
+- **Réponse coupée** : on s'arrête à la dernière phrase finie.

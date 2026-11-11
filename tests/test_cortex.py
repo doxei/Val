@@ -391,7 +391,8 @@ class FakeBrain(FakeEngine):
     trop fort : de quoi vérifier que le banc mesure bien ce qu'il annonce."""
 
     ANSWERS = ["391", "12", "1050", "Canberra", "Léa", "dimanche", "chevaux", "17h05", "H2O",
-               "the dog sleeps", "oui", "13", "195", "froid", "9", "Hugo", "32", "six", "4"]
+               "the dog sleeps", "oui", "13", "195", "froid", "9", "Hugo", "32", "six", "4",
+               "Non.", "Non.", "Non.", "Non."]
 
     def __init__(self, tmp, vectors, probes, questions, limit=0.35):
         super().__init__(tmp, n_layers=vectors.n_layers, dim=vectors.n_embd)
@@ -452,7 +453,8 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
                       [i["q"] for i in sc["banc"]["cognition"]])
     rep = bench.run(ccfg, engine=brain, say=lambda _line: None, full=True)
     assert rep["separation"]["passe"] and rep["separation"]["bon_axe_en_premier"] > 0.9
-    assert rep["cognition"]["sans_injection"] == 20
+    assert rep["cognition"]["sans_injection"] == 24
+    assert rep["personnage"]["passe"] and rep["verdict"]["criteres"]["fidélité au personnage"]
     assert rep["alpha_retenu"] == 0.2                 # 0,3 × budget dépasse la limite du jouet
     assert rep["cognition"]["passe"] and rep["bandes"]["essayees"][0]["alpha"] == 0.2
     b = rep["comportement"]
@@ -594,3 +596,23 @@ def test_stray_marks_never_reach_the_voice_and_count_as_faults():
         f.feed(piece)
     f.close()
     assert "".join(out) == "J'essaie encore"
+
+
+def test_the_persona_asks_him_to_live_his_mood_not_narrate_it(p2cfg):
+    from valdar.expression.compose import persona
+
+    c = p2cfg.model_copy(deep=True)
+    assert "bloc « ton état intérieur »" in persona(c)
+    c.llm.backend, c.cortex.describe_state = "cortex", False
+    text = persona(c)
+    assert "Tu ne la racontes pas" in text and "ton état intérieur" not in text
+    assert gemma.last_sentence("Bon. Les modèles semi-markoviens ajoutent la durée. Tu préf") \
+        == "Bon. Les modèles semi-markoviens ajoutent la durée."
+
+
+def test_narration_detector_catches_what_olivier_called_mielleux():
+    from valdar.cortex.bench import NARRATION
+
+    assert NARRATION.search("Oh, je sens une chaleur immense m'envahir")
+    assert NARRATION.search("mon cœur s'emballe et ma poitrine vibre")
+    assert not NARRATION.search("Aïe. Débranche-la, essaie un autre port, et on regarde.")

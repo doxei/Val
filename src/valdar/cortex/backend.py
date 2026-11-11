@@ -159,6 +159,8 @@ class CortexBackend:
             if speech is not None:
                 speech.close()
             content, calls = gemma.parse(raw)
+            if usage.get("coupe") and not calls:
+                content = gemma.last_sentence(content)
             return ChatResult(
                 content=content,
                 tool_calls=[ToolCall(name=n, arguments=a, call_id=f"call_{i}")
