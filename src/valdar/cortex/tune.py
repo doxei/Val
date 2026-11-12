@@ -22,6 +22,7 @@ Un fichier `data/cortex/STOP` l'arrête proprement.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import time
@@ -84,6 +85,14 @@ class Tuner:
 
     def _stop_asked(self) -> bool:
         return (self.out / "STOP").is_file() or self.clock() >= self.deadline
+
+    def _consume_stop(self) -> None:
+        """Le fichier STOP est consommé : sinon la prochaine boucle s'arrête aussitôt."""
+        f = self.out / "STOP"
+        if f.is_file():
+            with contextlib.suppress(OSError):
+                f.unlink()
+            self.say("Arrêt demandé (fichier STOP) : je m'arrête et je l'enlève.")
 
     # ------------------------------------------------------------ essai rapide
     def quick(self, b: Bench, band: tuple[int, int], mode: str, base: int) -> dict[str, Any]:
@@ -232,6 +241,7 @@ class Tuner:
         self.say("Arrêt sans vert. Meilleur réglage trouvé : "
                  + (json.dumps(self.best, ensure_ascii=False) if self.best else "aucun")
                  + ". Le cortex reste éteint.")
+        self._consume_stop()
         return {"etat": "arrêté", "meilleur": self.best}
 
     def resume(self) -> dict[str, Any] | None:
