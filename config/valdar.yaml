@@ -809,3 +809,39 @@ corps:
   journal: corps/journal.jsonl
   competences: data/competences
   connecteurs: {}                # ex. : horlogerie: {commande: python, args: [-m, mon_serveur]}
+
+# ============================================================== le téléphone (avenant 8)
+# Valdar sert lui-même une petite appli pour le téléphone d'Olivier : écrit, vocal, vidéo.
+# En https (le micro et la caméra d'un téléphone ne s'ouvrent que sur une page sûre) et
+# derrière un jeton (data/tel.token, jamais dans le dépôt). Le QR code à scanner :
+#   python -m valdar tel
+# « confiance » dit à quel point il croit que c'est Olivier au bout du fil : en dessous de
+# 0,75 le corps numérique reste fermé depuis le téléphone — il parle, écoute, voit, se
+# souvient, mais ne clique pas sur le PC. Mets 0.8 si tu veux lui ouvrir le corps à distance.
+tel:
+  enabled: true
+  host: 0.0.0.0                  # le Wi-Fi et Tailscale
+  port: 8766
+  jeton: tel.token
+  confiance: 0.7
+  charger_la_voix: false         # true : charge XTTS pour le téléphone même si le PC est muet
+  voix_du_telephone: true        # à défaut de sa voix, le téléphone lit la réponse
+  camera_secondes: 2.5
+
+# ============================================================== la maison (avenant 8)
+# Home Assistant : la maison d'Olivier, et son téléphone par l'appli compagnon HA (afficher
+# une page, lancer de la musique, parler à voix haute, notifier). C'est aussi par là que
+# Valdar peut remplacer Gemini comme assistant du téléphone : HA l'appelle comme agent de
+# conversation (il parle le langage d'Ollama, voir /api/tags et /api/chat).
+#   Le jeton : python -m valdar maison --jeton   (il atterrit dans data/ha.token)
+#   Le nom du téléphone : dans HA → Paramètres → Appareils → ton téléphone.
+domotique:
+  enabled: false                 # true une fois l'adresse, le jeton et le téléphone donnés
+  url: http://homeassistant.local:8123
+  jeton: data/ha.token
+  telephone: ""                  # ex. mobile_app_pixel_d_olivier
+  enceinte: ""                   # ex. media_player.salon (sinon la musique part sur le tél)
+  commandes: [command_webview, command_activity, command_screen_on, command_volume_level,
+              command_media]
+  services: [light.turn_on, light.turn_off, switch.turn_on, switch.turn_off,
+             media_player.media_pause, media_player.media_play, media_player.volume_set]

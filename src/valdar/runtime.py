@@ -132,6 +132,9 @@ class Runtime:
         self.corps_notes: list[str] = []
         if self.cfg.corps.enabled:
             self._add_corps_tools()
+        self.maison: Any = None
+        if self.cfg.domotique.enabled:
+            self._add_maison_tools()
         self.agent = Agent(self.cfg, self.llm, self.registry, self.heart, self.lock,
                            self.facts, self.self_model, self.world_lines, self.urges,
                            memory=self.memory, extras=self.extra_blocks, feel=self.feel)
@@ -147,6 +150,28 @@ class Runtime:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._speaking = threading.Lock()
+
+    # ============================================================ la maison
+    def _add_maison_tools(self) -> None:
+        """Home Assistant : la maison d'Olivier et son téléphone, comme outils."""
+        from valdar.tools import domotique
+
+        try:
+            maison = domotique.build(self.cfg.domotique, self.cfg.root)
+        except Exception as exc:
+            self.corps_notes.append(f"maison : {exc}")
+            return
+        if maison is None:
+            self.corps_notes.append("maison : pas de jeton Home Assistant "
+                                    "(python -m valdar maison --jeton)")
+            return
+        journal = getattr(self.corps, "journal", None)
+        try:
+            domotique.add_maison_tools(self.registry, maison, journal)
+        except Exception as exc:
+            self.corps_notes.append(f"outils de la maison : {exc}")
+            return
+        self.maison = maison
 
     # ============================================================ corps numérique
     def _add_corps_tools(self) -> None:
@@ -309,7 +334,7 @@ class Runtime:
         threading.Thread(target=run, name="valdar-tri", daemon=True).start()
 
     def _corps_block(self, query: str) -> list[str]:
-        """Ce qu'il a sous la main : ses compétences (titres seulement) et son atelier."""
+        """Ce qu'il a sous la main : ses compétences (titres seulement) et son dossier."""
         if self.corps is None:
             return []
         lines = [f"TON CORPS NUMÉRIQUE : le PC est ton environnement. Ton dossier à toi, "

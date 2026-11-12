@@ -1,0 +1,97 @@
+/* L'appli téléphone de Valdar : plein écran, une main, pouce en bas.
+   Mêmes couleurs que sa fenêtre (nuit bleue, lueur cyan, accents dorés). */
+:root{
+  --bg:#04070f; --bg2:#071226; --panel:rgba(12,28,54,.72); --line:rgba(43,111,184,.38);
+  --glow:#4cc9ff; --gold:#f2a950; --txt:#e3f1ff; --mut:#8aa6c6; --bad:#ff5c7a; --ok:#4be39a;
+  --haut:env(safe-area-inset-top,0px); --basse:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{
+  background:radial-gradient(120% 80% at 50% 0%,var(--bg2),var(--bg) 70%);
+  color:var(--txt);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+  display:flex;flex-direction:column;
+  padding:var(--haut) 0 var(--basse);
+}
+
+/* -------------------------------------------------------------- en-tête */
+#haut{
+  display:flex;align-items:center;gap:.7rem;padding:.5rem .8rem;
+  border-bottom:1px solid var(--line);background:var(--panel);
+  backdrop-filter:blur(8px);position:relative;z-index:3;
+}
+#visage-hote{width:52px;height:52px;flex:0 0 auto}
+#visage-hote svg{width:100%;height:100%;display:block}
+#qui{display:flex;flex-direction:column;min-width:0;flex:1}
+#qui strong{font-size:1.05rem;letter-spacing:.04em}
+#etat{color:var(--mut);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icone{
+  background:none;border:1px solid var(--line);border-radius:12px;color:var(--mut);
+  width:42px;height:42px;display:grid;place-items:center;padding:0;
+}
+.icone svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+.icone[aria-pressed="true"]{color:var(--glow);border-color:var(--glow);
+  box-shadow:0 0 12px rgba(76,201,255,.35)}
+
+/* -------------------------------------------------------------- caméra */
+#cam{
+  display:none;width:100%;max-height:34vh;object-fit:cover;background:#000;
+  border-bottom:1px solid var(--line);transform:scaleX(-1);
+}
+body.camera #cam{display:block}
+
+/* -------------------------------------------------------------- le fil */
+#fil{
+  flex:1;overflow-y:auto;overscroll-behavior:contain;padding:1rem .8rem 1.4rem;
+  display:flex;flex-direction:column;gap:.6rem;
+}
+.bulle{
+  max-width:86%;padding:.6rem .8rem;border-radius:16px;white-space:pre-wrap;
+  word-wrap:break-word;animation:apparait .18s ease-out;
+}
+@keyframes apparait{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.moi{align-self:flex-end;background:linear-gradient(180deg,#1b3a63,#152d4e);
+  border:1px solid var(--line);border-bottom-right-radius:6px}
+.lui{align-self:flex-start;background:rgba(10,22,42,.85);border:1px solid var(--line);
+  border-bottom-left-radius:6px}
+.lui.parle{border-color:var(--glow);box-shadow:0 0 14px rgba(76,201,255,.18)}
+.note{align-self:center;color:var(--mut);font-size:.8rem;text-align:center;max-width:92%}
+.note.rate{color:var(--bad)}
+.outils{align-self:flex-start;color:var(--gold);font-size:.75rem;margin-top:-.4rem}
+.points span{animation:bat 1s infinite;display:inline-block}
+.points span:nth-child(2){animation-delay:.15s}
+.points span:nth-child(3){animation-delay:.3s}
+@keyframes bat{0%,60%,100%{opacity:.25}30%{opacity:1}}
+
+/* -------------------------------------------------------------- le bas */
+#bas{
+  display:flex;align-items:center;gap:.5rem;padding:.6rem .7rem calc(.6rem + var(--basse));
+  border-top:1px solid var(--line);background:var(--panel);backdrop-filter:blur(8px);
+}
+#texte{
+  flex:1;min-width:0;background:rgba(4,10,20,.8);border:1px solid var(--line);
+  border-radius:22px;color:var(--txt);padding:.75rem 1rem;font-size:1rem;
+}
+#texte:focus{outline:none;border-color:var(--glow)}
+.rond{
+  flex:0 0 auto;width:52px;height:52px;border-radius:50%;border:1px solid var(--line);
+  background:rgba(4,10,20,.8);color:var(--txt);display:grid;place-items:center;padding:0;
+}
+.rond svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round}
+#b-micro{width:60px;height:60px;border-color:var(--glow);color:var(--glow)}
+#b-micro.ecoute{background:var(--bad);border-color:var(--bad);color:#fff;
+  animation:pulse 1.1s infinite}
+#b-micro:disabled{opacity:.4}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,92,122,.5)}
+  50%{box-shadow:0 0 0 14px rgba(255,92,122,0)}}
+
+/* -------------------------------------------------------------- toast */
+#toast{
+  position:fixed;left:50%;bottom:calc(5.6rem + var(--basse));transform:translateX(-50%);
+  background:rgba(8,18,34,.95);border:1px solid var(--line);border-radius:12px;
+  padding:.5rem .9rem;font-size:.85rem;color:var(--txt);opacity:0;pointer-events:none;
+  transition:opacity .2s;max-width:88vw;text-align:center;z-index:5;
+}
+#toast.on{opacity:1}

@@ -8,7 +8,7 @@ d'origine (XTTS v2). Interface : thème Azur (nuit bleue, lueur cyan, accents do
 - `DECISIONS.md` : journal des choix techniques.
 - `docs/` : avenants au cahier des charges (2 : héritage de l'ancien assistant, 3 : dynamique
   temporelle et voix, 4 : boucle fermée et socle de valeurs, 5 : cyber-être, 7 : corps
-  numérique), audit de PrintOS, base de connaissances impression.
+  numérique, 8 : le téléphone), audit de PrintOS, base de connaissances impression.
   Le vécu importé, la vigie d'impression, les connaissances et la pensée de fond sont décrits
   dans `DECISIONS.md`.
 
@@ -22,6 +22,11 @@ d'origine (XTTS v2). Interface : thème Azur (nuit bleue, lueur cyan, accents do
   (fichiers, terminal, souris, clavier, web, artefacts). Garde-fous et interrupteurs :
   `docs/avenant-7-corps-numerique.md`, section `corps:` dans `config/valdar.yaml`.
 - `python -m valdar corps --ecran` : ce qu'il peut voir et faire sur le PC, ici et maintenant.
+- `tools\valdar_tel.bat` : lui parler depuis le **téléphone** (écrit, vocal, vidéo) — une
+  page en https servie par Valdar, à ajouter à l'écran d'accueil ; QR code à scanner.
+  Détails et garde-fous : `docs/avenant-8-telephone.md`.
+- `python -m valdar maison --jeton` : brancher Home Assistant (piloter le téléphone, et
+  mettre Valdar à la place de Gemini comme assistant Android).
 - `python -m valdar --help` : toutes les commandes (`chat`, `voix`, `import-ancien`,
   `import-vecu`, `vigie`, `heart`, `status`, `sim`, `check`).
 - `python -m valdar vigie` : état de la vigie d'impression ; `--reussie` / `--ratee [--minutes N]`

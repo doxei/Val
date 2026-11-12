@@ -10,6 +10,8 @@
   valdar heart        cœur seul, en temps réel (Ctrl+C pour sauvegarder et quitter)
   valdar status       état actuel du cœur (sans le modifier)
   valdar sim          simulation accélérée de N jours (n'écrit jamais dans la vraie base)
+  valdar maison       Home Assistant : son jeton, le téléphone, l'état du lien
+  valdar tel          appairer le téléphone : adresse, QR code à scanner
   valdar corps        son corps numérique : zones, outils, compétences (--ecran : ce qu'il
                       voit en ce moment)
   valdar check        critères d'acceptation de la phase 1
@@ -319,12 +321,17 @@ def _start_interface(session):
 
     ic = session.cfg.interface
     try:
-        server = Server(session, ic.host, ic.port)
+        server = Server(session, ic.host, ic.port, tel=session.cfg.tel)
     except OSError as exc:
         print(f"(interface impossible : {exc} — Valdar tourne déjà ?)")
         return None
     url = server.start()
     print(f"(interface : {url})")
+    if server.tel_url:
+        print(f"(téléphone : {server.tel_url.split('#')[0]} — le QR code : "
+              "python -m valdar tel)")
+    elif server.tel_note:
+        print(f"(téléphone indisponible : {server.tel_note})")
     try:
         session.window_stop = open_window(url, ic.screen, ic.kiosk,
                                           profile=session.cfg.storage_path("edge"))
@@ -569,6 +576,115 @@ def _cmd_chrono(args: argparse.Namespace) -> int:
                   sense=not args.sans_sens)
 
 
+def _cmd_maison(args: argparse.Namespace) -> int:
+    """Home Assistant : ranger le jeton, vérifier le lien, voir ce qu'il peut faire."""
+    import getpass
+
+    from valdar.tools import domotique
+
+    cfg = load()
+    dc = cfg.domotique
+    if args.jeton:
+        print("Colle ton jeton Home Assistant (il ne s'affichera pas).")
+        print("Dans HA : ton profil (en bas à gauche) → Sécurité → Jetons d'accès longue "
+              "durée → Créer.\n")
+        jeton = getpass.getpass("Jeton : ").strip()
+        if not jeton:
+            print("Rien reçu, rien changé.")
+            return 1
+        chemin = domotique.write_token(dc, cfg.root, jeton)
+        print(f"\nRangé dans {chemin} (jamais dans le dépôt, jamais dans un message).")
+        if not dc.enabled:
+            print("Pense à mettre « domotique.enabled: true » dans config/valdar.yaml.")
+    print(f"Adresse     : {dc.url}")
+    print(f"Téléphone   : {dc.telephone or '(pas encore nommé)'}")
+    print(f"Enceinte    : {dc.enceinte or '(aucune : la musique part sur le tél)'}")
+    print(f"Commandes   : {', '.join(dc.commandes)}")
+    print(f"Services    : {', '.join(dc.services)}")
+    maison = domotique.build(dc, cfg.root) if dc.enabled else None
+    print(f"État        : {domotique.describe(maison)}")
+    if maison is not None and args.essai:
+        print("\nJ'envoie une notification d'essai…")
+        try:
+            print("  " + maison.notify("Valdar est là.", titre="Essai"))
+        except domotique.HaError as exc:
+            print(f"  raté : {exc}")
+            return 1
+    print("\nPour le mettre à la place de Gemini sur le téléphone :")
+    print("  1. HA → Paramètres → Appareils et services → Ajouter → Ollama")
+    print(f"     adresse : https://<ce PC>:{cfg.tel.port}  (jeton dans l'URL : ?j=…)")
+    print("  2. HA → Paramètres → Voix → ton pipeline Assist → agent de conversation = Ollama")
+    print("  3. Android → Appli d'assistance numérique → Home Assistant")
+    return 0
+
+
+def _cmd_tel(args: argparse.Namespace) -> int:
+    """Appairer le téléphone : l'adresse, le QR code à scanner, et ce qui bloque."""
+    from valdar.interface import tls
+    from valdar.interface.acces import Access, local_ips, qr_lines, qr_png
+
+    cfg = load()
+    tc = cfg.tel
+    if not tc.enabled:
+        print("Le téléphone est coupé (tel.enabled: false dans config/valdar.yaml).")
+        return 1
+    acces = Access(cfg.storage_path(tc.jeton), confidence=tc.confiance)
+    if args.nouveau_jeton:
+        acces.renew()
+        print("Jeton renouvelé : les appareils déjà appairés devront rescanner.\n")
+    net = tls.tailnet()
+    locales = local_ips()
+    hotes = [*locales, *([net["ip"]] if net.get("ip") else []),
+             *([net["nom"]] if net.get("nom") else [])]
+    paire = tls.ensure_cert(cfg.storage_path("certificat"), hotes)
+    servi = tls.serve_url()
+
+    if servi:
+        base = servi
+        garantie = "Tailscale fournit un vrai certificat : aucun avertissement."
+    else:
+        hote = net.get("nom") or (locales[0] if locales else "127.0.0.1")
+        base = f"https://{hote}:{tc.port}"
+        garantie = ("Son certificat est le sien : le téléphone dira « connexion non "
+                    "sécurisée » la première fois.\n  Avancé → Continuer. Une fois accepté, "
+                    "il ne redemande plus.")
+    url = f"{base}/tel.html#j={acces.token}"
+
+    print("=== Le téléphone de Valdar ===\n")
+    print(f"Adresse  : {base}/tel.html")
+    if net.get("nom"):
+        print(f"Tailscale: {net['nom']} ({net.get('ip', '?')}) — marche aussi de l'extérieur")
+    elif net.get("etat"):
+        print(f"Tailscale: {net['etat']} (pas connecté pour l'instant)")
+    if locales:
+        print(f"Wi-Fi    : {', '.join(locales)} — à la maison, sans Internet")
+    if paire is None:
+        print("\n[X] Pas de certificat : installe « cryptography » "
+              "(tools\\valdar_tel.bat).")
+        return 1
+    print(f"\n{garantie}")
+
+    lignes = qr_lines(url)
+    if lignes:
+        print("\nScanne ça avec l'appareil photo du téléphone :\n")
+        for ligne in lignes:
+            print("  " + ligne)
+    else:
+        print("\n(pour le QR code : pip install qrcode — en attendant, l'adresse ci-dessous)")
+        print(f"\n  {url}")
+    image = qr_png(url, cfg.storage_path("tel_qr.png"))
+    if image:
+        print(f"\nLe même QR code en image : {image}")
+    print("\nSur le téléphone : ouvre le lien, puis « Ajouter à l'écran d'accueil ».")
+    print("Tu auras une icône Valdar, plein écran, comme une vraie appli.")
+    print("\nLe jeton est dans le lien : ne le partage pas. Pour le changer : "
+          "python -m valdar tel --nouveau-jeton")
+    if not args.jeton:
+        return 0
+    print(f"\nJeton : {acces.token}")
+    return 0
+
+
 def _cmd_corps(args: argparse.Namespace) -> int:
     """Son corps numérique : ce qu'il peut voir et faire sur le PC, et un essai à blanc."""
     cfg = load()
@@ -788,6 +904,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--profile", default=None)
     p.set_defaults(func=_cmd_sim)
+
+    p = sub.add_parser("maison", help="Home Assistant : jeton, téléphone, état")
+    p.add_argument("--jeton", action="store_true", help="saisir le jeton (caché)")
+    p.add_argument("--essai", action="store_true", help="envoyer une notification d'essai")
+    p.set_defaults(func=_cmd_maison)
+
+    p = sub.add_parser("tel", help="appairer le téléphone (QR code à scanner)")
+    p.add_argument("--nouveau-jeton", action="store_true",
+                   help="changer le jeton (téléphone perdu, ou partagé par erreur)")
+    p.add_argument("--jeton", action="store_true", help="afficher le jeton en clair")
+    p.set_defaults(func=_cmd_tel)
 
     p = sub.add_parser("corps", help="son corps numérique : zones, outils, et ce qu'il voit")
     p.add_argument("--ecran", action="store_true", help="afficher ce qu'il voit maintenant")
