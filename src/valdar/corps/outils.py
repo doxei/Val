@@ -1,10 +1,15 @@
 """Les outils du corps, posés dans le registre : voir, agir, chercher, fabriquer.
 
 Tout est réservé au propriétaire reconnu. Ce qui est risqué demande un « oui » : écrire ou
-déplacer hors de son atelier, une commande qui ne fait pas que lire, un clic sur un bouton
+déplacer hors de son dossier, une commande qui ne fait pas que lire, un clic sur un bouton
 dont le nom sent la casse (« Supprimer », « Envoyer », « Payer »), Entrée après une saisie,
 ouvrir une application. Jamais de saisie dans un champ de mot de passe, jamais d'effacement
-définitif : ce qu'il jette part dans la corbeille de son atelier.
+définitif : ce qu'il jette part dans la corbeille de son dossier.
+
+« Son dossier », c'est Documents\\Valdar. Ce n'est **pas** l'atelier d'impression, qui est
+une pièce de la maison avec ses propres outils (stock, checklist). Les deux mots se
+télescopaient : au banc, « liste ce qu'il y a dans ton atelier » lui faisait appeler
+« etat_stock ». C'était le mot qui était mauvais, pas lui.
 """
 from __future__ import annotations
 
@@ -235,14 +240,16 @@ def add_corps_tools(reg: Registry, corps: Corps, who: Any = lambda: "olivier") -
                      min_confidence=OWNER_MIN, confirm_if=confirm_if, describe=describe))
 
     # ---------------------------------------------------------- fichiers
-    tool("lire_fichier", "Lit un fichier du PC (chemin absolu ou relatif à mon atelier).",
+    tool("lire_fichier",
+         "Lit un fichier du PC (chemin absolu, ou relatif à mon dossier Documents\\Valdar).",
          params(["chemin"], chemin=s, debut=i), f.lire, "fichiers")
     tool("lister_dossier", "Liste un dossier du PC.", params(chemin=s), f.lister, "fichiers")
     tool("chercher_fichier",
          "Cherche des fichiers par nom (motif) et, si besoin, par contenu.",
          params(["motif"], motif=s, dossier=s, contient=s), f.chercher, "fichiers")
     tool("ecrire_fichier",
-         "Crée ou remplace un fichier. Dans mon atelier : libre. Ailleurs : je demande.",
+         "Crée ou remplace un fichier. Dans mon dossier (Documents\\Valdar) : libre. "
+         "Ailleurs : je demande.",
          params(["chemin", "contenu"], chemin=s, contenu=s,
                 ajouter={"type": "boolean", "description": "ajouter à la fin au lieu de "
                                                            "remplacer"}),
@@ -260,7 +267,7 @@ def add_corps_tools(reg: Registry, corps: Corps, who: Any = lambda: "olivier") -
          confirm_if=lambda a: f.needs_ok(a.get("source", ""), a.get("destination", "")),
          describe=lambda a: f"déplacer {a.get('source')} vers {a.get('destination')}")
     tool("jeter_fichier",
-         "Met un fichier à la corbeille de mon atelier (rien n'est effacé pour de bon).",
+         "Met un fichier à la corbeille de mon dossier (rien n'est effacé pour de bon).",
          params(["chemin"], chemin=s), f.jeter, "fichiers",
          confirm_if=lambda a: True,
          describe=lambda a: f"mettre {z.resolve(a.get('chemin', ''))} à la corbeille")
@@ -268,7 +275,7 @@ def add_corps_tools(reg: Registry, corps: Corps, who: Any = lambda: "olivier") -
     # ---------------------------------------------------------- terminal
     if cc.terminal:
         tool("terminal",
-             "Lance une commande PowerShell dans mon atelier. Lecture seule : direct ; "
+             "Lance une commande PowerShell dans mon dossier. Lecture seule : direct ; "
              "si ça modifie quelque chose, je demande d'abord.",
              params(["commande"], commande=s), corps.terminal, "terminal",
              confirm_if=lambda a: corps.risky_command(a.get("commande", "")),
@@ -320,7 +327,7 @@ def add_corps_tools(reg: Registry, corps: Corps, who: Any = lambda: "olivier") -
     # ---------------------------------------------------------- fabriquer
     tool("creer_artefact",
          "Fabrique quelque chose à garder : genre « page » (HTML), « document » (Markdown "
-         "mis en page) ou « tableau » (CSV). Rangé dans mon atelier et ouvert à l'écran.",
+         "mis en page) ou « tableau » (CSV). Rangé dans mon dossier et ouvert à l'écran.",
          params(["titre", "genre", "contenu"], titre=s,
                 genre={"type": "string", "enum": ["page", "document", "tableau"]},
                 contenu=s, ouvrir={"type": "boolean"}),
