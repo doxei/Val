@@ -28,7 +28,7 @@ from valdar.expression.compose import (
 from valdar.heart import Heart
 from valdar.llm.backend import ChatResult, GenParams, LLMBackend, LLMError
 from valdar.memory import Episodic, Facts
-from valdar.tools.registry import Registry, decide
+from valdar.tools.registry import Registry, decide, risky
 
 FORGET_TOOLS = ("oublie_moi",)   # après eux, rien de la personne ne doit rester
 _YES = re.compile(r"^\s*(oui|ok|vas[- ]y|confirme|go|d'accord|c'est bon)\b")
@@ -76,6 +76,7 @@ class Agent:
         self.fast = FastAppraisal(cfg.appraisal_fast)
         self.history: list[dict[str, Any]] = []
         self.pending: dict[str, Any] | None = None
+        self._tool_chars = cfg.llm.tool_output_chars
         self._llm_lock = threading.Lock()
         self._world_sent: tuple[str, ...] | None = None   # état du monde déjà donné
         self._world_at = 0.0
@@ -220,7 +221,7 @@ class Agent:
                     self.history.append({"role": "assistant", "content": ask})
                     return Reply(text=ask, tools_used=used)
                 used.append(call.name)
-                self.history.append({"role": "tool", "content": out[:2000],
+                self.history.append({"role": "tool", "content": out[:self._tool_chars],
                                      "tool_name": call.name})
         text = "j'ai perdu le fil, redis-moi ça autrement."
         self.history.append({"role": "assistant", "content": text})
@@ -335,10 +336,12 @@ class Agent:
         decision = decide(tool, who, self.cfg.permissions)
         if not decision.allowed:
             return f"refusé : {decision.reason}"
-        if decision.needs_confirmation:
+        if decision.needs_confirmation or risky(tool, args):
+            # une action sur le PC : il faut un « oui » net, de la même personne
             self.pending = {"tool": name, "args": args, "person": who.person,
                             "asked_at": time.time(),
-                            "strict": name in FORGET_TOOLS or getattr(tool, "confirm", False)}
+                            "strict": (name in FORGET_TOOLS or tool.confirm
+                                       or tool.confirm_if is not None)}
             return None
         return self._execute(tool, args)
 
@@ -369,7 +372,8 @@ class Agent:
         tool = self.registry.get(p["tool"])
         out = self._execute(tool, p["args"]) if tool else "outil disparu."
         self.history.append({"role": "user", "content": text})
-        self.history.append({"role": "tool", "content": out[:2000], "tool_name": p["tool"]})
+        self.history.append({"role": "tool", "content": out[:self._tool_chars],
+                             "tool_name": p["tool"]})
         reply = self._loop(who, query=text)
         reply.tools_used.insert(0, p["tool"])
         reply.stimuli = stimuli

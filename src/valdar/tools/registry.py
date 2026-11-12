@@ -28,6 +28,8 @@ class Tool:
     tier: str = SAFE
     family: str = "divers"
     confirm: bool = False     # demande un « oui » de la même personne (ex. « oublie-moi »)
+    # Confirmation selon les arguments : écrire dans son atelier est libre, ailleurs non.
+    confirm_if: Callable[[dict[str, Any]], bool] | None = None
     min_confidence: float | None = None   # seuil propre (sinon celui du niveau)
     describe: Callable[[dict[str, Any]], str] | None = None   # l'action, dite en clair
 
@@ -64,6 +66,18 @@ class Decision:
     allowed: bool
     needs_confirmation: bool = False
     reason: str = ""
+
+
+def risky(tool: Tool, args: dict[str, Any]) -> bool:
+    """Ces arguments-là demandent-ils un « oui » ?"""
+    if tool.confirm:
+        return True
+    if tool.confirm_if is None:
+        return False
+    try:
+        return bool(tool.confirm_if(args or {}))
+    except Exception:
+        return True       # dans le doute, on demande
 
 
 def decide(tool: Tool, who: Identity, cfg: PermissionsConfig) -> Decision:

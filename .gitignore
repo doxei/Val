@@ -4,5 +4,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
-data/
+data/*
+!data/competences/
+# Les compétences font partie du dépôt (Valdar peut en ajouter lui-même).
 _archive/

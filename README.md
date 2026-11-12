@@ -7,7 +7,8 @@ d'origine (XTTS v2). Interface : thème Azur (nuit bleue, lueur cyan, accents do
 
 - `DECISIONS.md` : journal des choix techniques.
 - `docs/` : avenants au cahier des charges (2 : héritage de l'ancien assistant, 3 : dynamique
-  temporelle et voix, 4 : boucle fermée et socle de valeurs), audit de PrintOS, base de connaissances impression.
+  temporelle et voix, 4 : boucle fermée et socle de valeurs, 5 : cyber-être, 7 : corps
+  numérique), audit de PrintOS, base de connaissances impression.
   Le vécu importé, la vigie d'impression, les connaissances et la pensée de fond sont décrits
   dans `DECISIONS.md`.
 
@@ -17,6 +18,10 @@ d'origine (XTTS v2). Interface : thème Azur (nuit bleue, lueur cyan, accents do
 - `tools\valdar_import_ancien.bat` : refaire cet import à la main (`--force` pour tout reprendre ;
   dossier source : `migration.dossier_ancien` dans `config/valdar.yaml`).
 - `tools\valdar_voix.bat` : installer et tester la voix.
+- `tools\valdar_corps.bat` : son **corps numérique** — voir l'écran et agir sur le PC
+  (fichiers, terminal, souris, clavier, web, artefacts). Garde-fous et interrupteurs :
+  `docs/avenant-7-corps-numerique.md`, section `corps:` dans `config/valdar.yaml`.
+- `python -m valdar corps --ecran` : ce qu'il peut voir et faire sur le PC, ici et maintenant.
 - `python -m valdar --help` : toutes les commandes (`chat`, `voix`, `import-ancien`,
   `import-vecu`, `vigie`, `heart`, `status`, `sim`, `check`).
 - `python -m valdar vigie` : état de la vigie d'impression ; `--reussie` / `--ratee [--minutes N]`

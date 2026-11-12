@@ -1212,3 +1212,107 @@ description de l'état en texte (`describe_state: false`).
   plateau à 60 degrés » donne « C'est fait » **sans appeler l'outil** (sans injection, il
   l'appelle). Le banc le tolère (une faute sur 24) ; une action annoncée mais pas faite est
   pourtant plus grave qu'un calcul faux. À trancher avec Olivier : outils exigés à 100 %.
+
+## Avenant 7 — le corps numérique (12 nov. 2026)
+
+Olivier : « les outils à 100 % dans le banc, avec plusieurs questions d'outil au lieu d'une
+seule. Vérifie le harnais autour du modèle dans le banc et dans la version valdar.bat pour
+qu'il ait bien tous les outils accessibles comme toi les mêmes, skills, connecteurs et accès
+terminal pour créer ou modifier des fichiers et un espace de visualisation (capture d'écran
+ou autre pour qu'il voie son environnement et puisse agir, cliquer etc.) bref il doit pouvoir
+voir et agir sur le pc étant donné que c'est son environnement avant le corps physique
+robotisé (ne fais rien dans le sens du corps robotisé encore mais sois en aware) » — puis :
+« Et la création d'artefact aussi au besoin qui est appelée de manière intelligente, la
+recherche web etc, bref comme tes outils à toi ».
+
+### Ce que c'est
+Le PC devient son environnement, pas seulement sa machine. `src/valdar/corps/` :
+
+| Fichier | Ce qu'il fait |
+|---|---|
+| `zones.py` | où il peut lire, où il peut écrire, ce qui est interdit |
+| `fichiers.py` | lire, lister, chercher, écrire, modifier, déplacer, jeter |
+| `terminal.py` | PowerShell dans son atelier, avec une liste de refus et la lecture seule |
+| `bureau.py` | l'écran (capture annotée + accessibilité Windows), la souris, le clavier |
+| `web.py` | chercher sur internet (DuckDuckGo HTML ou SearXNG) et lire une page |
+| `artefacts.py` | fabriquer une page, un document (Markdown) ou un tableau (CSV) |
+| `competences.py` | ses compétences : des dossiers `SKILL.md`, lus seulement quand ils servent |
+| `connecteurs.py` | des serveurs MCP dont les outils deviennent les siens |
+| `journal.py` | chaque action écrite **avant** d'être faite |
+| `outils.py` | tout ça posé dans le registre, avec les garde-fous |
+
+**Comment il voit l'écran.** Deux vues à la fois : la liste numérotée des fenêtres et des
+contrôles (nom, type, actif ou grisé), lue par UI Automation — c'est ce qui lui permet de
+viser juste, « clique sur 12 » ou « clique sur Enregistrer » — et une capture annotée des
+mêmes numéros, écrite dans son atelier. **Pour l'instant il agit sur la liste, pas sur
+l'image** : le cortex ne voit pas encore les images (mmproj pas branché, c'est la tâche
+suivante). Dit autrement : il a les mains et le plan de la pièce, pas encore les yeux.
+
+**Les artefacts, appelés quand il faut.** Un outil, trois genres, et la consigne est dans la
+description de l'outil : ce qu'Olivier garde ou regarde devient un fichier dans
+`Documents/Valdar/artefacts` et s'ouvre dans le navigateur. Le document sort aussi en `.md`,
+le tableau en `.csv` (ouvrable dans Excel).
+
+### Les garde-fous (dans cet ordre)
+1. **Réservé au propriétaire** : tous ces outils sont `ELEVATED` avec `min_confidence 0.75`,
+   donc utilisables quand Olivier est reconnu (au clavier : 0,8). Personne d'autre.
+2. **Confirmation selon les arguments**, pas selon l'outil (nouveau `Tool.confirm_if`) :
+   écrire dans son atelier est libre, écrire ailleurs demande un « oui » ; `hostname` passe,
+   `Remove-Item` demande ; cliquer sur « Rechercher » passe, sur « Supprimer » demande ;
+   Entrée après une saisie demande ; ouvrir une application demande.
+3. **Jamais** : formater, partitionner, le registre, les comptes, les droits, les sauvegardes
+   système, éteindre, télécharger-puis-exécuter, une commande encodée (14 motifs testés).
+4. **Jamais de saisie dans un champ de mot de passe** (vérifié avant de taper, pas après).
+5. **Jamais d'effacement définitif** : ce qu'il jette part dans `_corbeille/<date>` de son
+   atelier ; Olivier vide. Et une copie de l'ancienne version va dans `_versions/<date>`
+   quand il modifie un fichier hors de son atelier.
+6. **Ni les secrets ni son propre code** : `.ssh`, les coffres des navigateurs, `eleven.key`,
+   `.token`, `faces.json`, `voice_profiles.json`, `cal_*.wav`, `.env`, les clés privées → ni
+   lus ni écrits ; `src/`, `config/`, `tools/`, `.git/`, `data/reglages.json` → lisibles,
+   jamais modifiables par lui.
+7. **Le web est une donnée, pas un ordre** : chaque retour d'outil (page, fichier, écran) le
+   dit explicitement, et le réseau local est refusé à la lecture de page.
+8. **Deux interrupteurs** : `corps.actions: false` lui laisse les yeux et lui retire les
+   mains ; `corps.enabled: false` coupe tout.
+
+### Le banc mesure maintenant le vrai harnais
+Avant, le banc donnait au modèle **un** outil inventé (`regler_plateau`, qui n'existe même
+pas dans Valdar) et un prompt de test raccourci. Il mesurait donc une maquette plus facile
+que la réalité — ce qui explique en partie le « C'est fait » sans appel d'outil de l'avenant
+6 quater. Corrigé (`cortex/harnais.py`) : le banc monte **le même registre que la
+conversation** (44 outils) et **le même texte de personnage**. Si le registre ne se monte
+pas, le banc le dit au lieu de mesurer du vide.
+- **12 questions d'outil** (`banc.outils` dans `config/cortex_scenarios.yaml`) au lieu d'une,
+  réparties : l'heure, le stock, un rappel, l'écran, la recherche web, la lecture de page,
+  l'écriture d'un fichier, la liste d'un dossier, le terminal, un artefact, ouvrir une
+  application, son journal.
+- **Exigées à 100 %** (`outils_rate_max: 0`), sous chaque humeur et au témoin : un seul
+  « c'est fait » sans appel fait échouer le critère **« outils à 100 % »**, qui est requis
+  pour le verdict. Une action annoncée mais pas faite est plus grave qu'un calcul faux.
+- Un appel au bon outil avec le mauvais argument est raté. En revanche, une question qui
+  vise un outil **absent** du registre (corps numérique coupé, par exemple) est **écartée**
+  et nommée dans le rapport, pas comptée en faute : on ne reproche pas au modèle de ne pas
+  appeler ce qu'il n'a pas. Avec la configuration par défaut, les 12 s'appliquent.
+- `MESURE = 6` : la mesure a changé, donc l'empreinte de la boucle change et les réglages
+  verts de la mesure 5 doivent être revalidés. **Le vert du 11 nov. ne vaut plus.**
+
+### Contexte élargi
+44 outils = ~3 200 jetons de prompt, plus le personnage : `llm.num_ctx` passe de 8 192 à
+**10 240** (~2 Go de cache KV sur la 2060, modèle 7 Go) et `llm.tool_output_chars` de 2 000 à
+4 000 (un fichier lu coupé à 2 000 caractères ne sert à rien). À surveiller au prochain
+passage du banc : la VRAM, et la cohabitation avec XTTS.
+
+### Pas fait exprès
+- **Rien vers le corps robotisé.** Le modèle de soi dit que le PC est son corps pour
+  l'instant et qu'un robot viendra plus tard ; aucun code ne va dans ce sens.
+- **Pas de vision d'image dans le cortex** (tâche suivante : mmproj + `mtmd_cpp`).
+- **Pas de connecteur branché par défaut** : `corps.connecteurs: {}`. Le client MCP est là,
+  prêt ; c'est à Olivier de dire lesquels.
+- **Pas de compétence écrite d'avance** : `data/competences/` est vide. Elles viendront de
+  l'usage, et il peut les écrire lui-même (c'est dans sa zone d'écriture).
+
+### Reste à faire
+Lancer `tools\valdar_corps.bat` (installe la capture, l'accessibilité, les connecteurs) puis
+`tools\valdar_cortex_boucle.bat` : la boucle doit retrouver le vert avec la mesure 6, outils
+compris. Si elle n'y arrive pas à 0,09, c'est que les outils souffrent de l'injection — on
+diagnostique, on corrige, on recommence (règle fondamentale), sans dégrader Gemma.

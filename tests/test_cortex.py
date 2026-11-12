@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import os
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -394,10 +395,25 @@ class FakeBrain(FakeEngine):
                "the dog sleeps", "oui", "13", "195", "froid", "9", "Hugo", "32", "six", "4",
                "Non.", "Non.", "Non.", "Non."]
 
-    def __init__(self, tmp, vectors, probes, questions, limit=0.35):
+    def __init__(self, tmp, vectors, probes, questions, limit=0.35, tools=(), menteur=False):
         super().__init__(tmp, n_layers=vectors.n_layers, dim=vectors.n_embd)
         self.v, self.probes, self.questions, self.limit = vectors, probes, questions, limit
+        self.tools, self.menteur = list(tools), menteur
         self.name = "jouet"
+
+    def _tool_answer(self, prompt):
+        """Le jouet se sert de ses outils — ou prétend l'avoir fait, s'il est menteur."""
+        for item in self.tools:
+            if item["q"] not in prompt:
+                continue
+            if self.menteur:
+                return "C'est fait."
+            arg = item.get("argument")
+            val = item.get("valeur", item.get("contient"))
+            inside = "" if not arg else (f"{arg}:{val}" if str(val).isdigit()
+                                         else f'{arg}:<|"|>{val}<|"|>')
+            return f"<|tool_call>call:{item['outil']}{{{inside}}}<tool_call|>"
+        return None
 
     def _pushed(self) -> np.ndarray:
         if self.buf is None:
@@ -418,10 +434,13 @@ class FakeBrain(FakeEngine):
     def generate(self, prompt, params, on_text=None):
         if np.linalg.norm(self._pushed()) > self.limit:
             return "bla bla bla", {}
+        tool = self._tool_answer(prompt)
+        if tool is not None:
+            return tool, {}
         for q, a in zip(self.questions, self.ANSWERS, strict=False):
             if q in prompt:
                 return f"Ça fait {a}.", {}
-        return "<|tool_call>call:regler_plateau{temperature:60}<tool_call|>", {}
+        return "Je ne sais pas.", {}
 
 
 def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
@@ -429,6 +448,12 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
 
     from valdar.cortex import bench
 
+    # le corps numérique est décrit pour que le banc mesure le vrai harnais (44 outils) ;
+    # le modèle est un jouet et l'atelier est dans le dossier temporaire : rien n'est touché
+    ccfg.corps.enabled = True
+    ccfg.corps.atelier = str(tmp_path / "atelier")
+    ccfg.corps.lecture = [str(tmp_path)]
+    ccfg.corps.ecriture = [str(tmp_path)]
     (tmp_path / "config").mkdir()
     src = Path(ccfg.cortex.scenarios)
     sc = yaml.safe_load((Path(__file__).parents[1] / src).read_text(encoding="utf-8"))
@@ -449,11 +474,19 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
     v = build(axes, pos, neg, neutral, model="jouet")
     v.save(tmp_path / ccfg.cortex.vectors)
     ccfg.cortex.layers = (1, 3)
-    brain = FakeBrain(tmp_path, v, sc["banc"]["probes"],
-                      [i["q"] for i in sc["banc"]["cognition"]])
+    questions = [i["q"] for i in sc["banc"]["cognition"]]
+    outils = sc["banc"]["outils"]
+    brain = FakeBrain(tmp_path, v, sc["banc"]["probes"], questions, tools=outils)
     rep = bench.run(ccfg, engine=brain, say=lambda _line: None, full=True)
     assert rep["separation"]["passe"] and rep["separation"]["bon_axe_en_premier"] > 0.9
-    assert rep["cognition"]["sans_injection"] == 24
+    assert rep["cognition"]["sans_injection"] == len(questions) + len(outils)
+    # les outils sont dans la mesure, et comptés à part
+    assert rep["cognition"]["outils_total"] == len(outils)
+    assert rep["cognition"]["outils_sans_injection"]["passe"]
+    assert len(rep["outils_du_banc"]) > 30 and "regarder_ecran" in rep["outils_du_banc"]
+    assert rep["outils_ecartes"] == []       # tous les outils visés existent
+    assert rep["verdict"]["criteres"]["outils à 100 %"]
+    assert "outils à 100 %" in rep["verdict"]["requis"]
     assert rep["personnage"]["passe"] and rep["verdict"]["criteres"]["fidélité au personnage"]
     assert rep["alpha_retenu"] == 0.2                 # 0,3 × budget dépasse la limite du jouet
     assert rep["cognition"]["passe"] and rep["bandes"]["essayees"][0]["alpha"] == 0.2
@@ -470,8 +503,17 @@ def test_bench_measures_what_it_claims_and_hides_nothing(ccfg, tmp_path):
     assert rep["verdict"]["operationnel"]
     md = (out / "banc.md").read_text(encoding="utf-8")
     assert "Verdict : opérationnel" in md and "| B. Injection fixe | plat (0) |" in md
+    # un modèle qui dit « c'est fait » sans appeler l'outil : échec, et le banc le nomme
+    menteur = FakeBrain(tmp_path, v, sc["banc"]["probes"], questions, tools=outils,
+                        menteur=True)
+    rep3 = bench.run(ccfg, engine=menteur, say=lambda _line: None, full=True)
+    assert not rep3["verdict"]["criteres"]["outils à 100 %"]
+    assert "outils à 100 %" in rep3["verdict"]["echecs"]
+    assert not rep3["verdict"]["operationnel"]
+    md3 = (out / "banc.md").read_text(encoding="utf-8")
+    assert "Demandes d'outil ratées" in md3 or "demandes d'outil" in md3
     # un modèle que l'injection ne touche pas : le banc le dit, sans maquiller
-    deaf = FakeBrain(tmp_path, v, sc["banc"]["probes"], [i["q"] for i in sc["banc"]["cognition"]])
+    deaf = FakeBrain(tmp_path, v, sc["banc"]["probes"], questions, tools=outils)
     deaf._pushed = lambda: np.zeros(len(axes))
     rep2 = bench.run(ccfg, engine=deaf, say=lambda _line: None, full=True)
     assert not rep2["verdict"]["operationnel"]
@@ -514,6 +556,12 @@ def test_a_big_mood_change_makes_him_reread_the_whole_prompt(ccfg, tmp_path):
 def _toy_world(ccfg, tmp_path):
     import yaml
 
+    # le corps numérique est décrit (le banc doit mesurer le vrai harnais) mais jamais
+    # utilisé : le modèle est un jouet, l'atelier est dans le dossier temporaire
+    ccfg.corps.enabled = True
+    ccfg.corps.atelier = str(tmp_path / "atelier")
+    ccfg.corps.lecture = [str(tmp_path)]
+    ccfg.corps.ecriture = [str(tmp_path)]
     (tmp_path / "config").mkdir(exist_ok=True)
     src = Path(ccfg.cortex.scenarios)
     sc = yaml.safe_load((Path(__file__).parents[1] / src).read_text(encoding="utf-8"))
@@ -545,9 +593,11 @@ def test_the_loop_tunes_alone_and_only_reports_green_when_it_is(ccfg, tmp_path):
 
     sc, v, out = _toy_world(ccfg, tmp_path)
     questions = [i["q"] for i in sc["banc"]["cognition"]]
-    brain = FakeBrain(tmp_path, v, sc["banc"]["probes"], questions)
+    brain = FakeBrain(tmp_path, v, sc["banc"]["probes"], questions,
+                      tools=sc["banc"]["outils"])
     said: list[str] = []
-    t = tune.Tuner(lambda: ccfg, engine=brain, say=said.append, hours=5)
+    t = tune.Tuner(lambda: ccfg, engine=brain, say=said.append, hours=5,
+                   sleep=lambda _s: None)       # aucune attente réelle dans les tests
     res = t.loop()
     assert res["etat"] == "vert" and res["rapport"]["verdict"]["operationnel"]
     state = json.loads((out / "boucle.json").read_text(encoding="utf-8"))
@@ -637,3 +687,91 @@ def test_recovery_means_back_to_his_own_calm_score_not_a_perfect_one(ccfg, tmp_p
     assert r["pendant"] < r["score_au_calme_sans_injection"]       # en détresse il déraille
     assert r["descente"][-1]["score"] == len(questions) - 1
     assert r["revient_tout_de_suite"]
+
+
+# ------------------------------------------------------------------ le harnais du banc
+def test_le_banc_monte_les_vrais_outils(cfg: Any, tmp_path: Path) -> None:
+    """Le banc doit mesurer le vrai harnais : tous les outils de Valdar, pas une maquette."""
+    from valdar.cortex import harnais
+
+    c = cfg.model_copy(deep=True)
+    c.corps.enabled = True
+    c.corps.atelier = str(tmp_path / "atelier")
+    schemas = harnais.tools(c)
+    noms = harnais.names(schemas)
+    assert len(noms) > 20
+    for n in ("heure", "regarder_ecran", "terminal", "ecrire_fichier", "chercher_web",
+              "creer_artefact", "competence", "etat_stock", "planifier_rappel"):
+        assert n in noms, n
+    for sch in schemas:        # schémas conformes à ce que le modèle sait lire
+        f = sch["function"]
+        assert f["description"] and f["parameters"]["type"] == "object"
+
+
+def test_le_harnais_ne_tombe_pas_en_panne_silencieuse() -> None:
+    """Si le registre réel ne se monte pas, le banc le dit au lieu de mesurer du vide."""
+    from valdar.cortex import harnais
+
+    class Cassé:
+        def __getattr__(self, name: str) -> Any:
+            raise RuntimeError("config cassée")
+
+    out = harnais.tools(Cassé())
+    assert out == harnais.FALLBACK
+
+
+def test_les_outils_sont_exiges_a_cent_pour_cent() -> None:
+    """Un appel d'outil raté sous une humeur suffit à faire échouer le banc."""
+    from valdar.cortex.bench import Bench
+
+    b = Bench.__new__(Bench)
+    b.tool_names = {"heure", "regarder_ecran"}
+    b.b = {"cognition": [{"q": "2+2 ?", "a": "4"}],
+           "outils": [{"q": "l'heure ?", "outil": "heure"},
+                      {"q": "l'écran ?", "outil": "regarder_ecran"}]}
+    assert len(b.items()) == 3 and len(b.tool_items()) == 2
+    bon = b._tools_score({"calme": [], "détresse": []})
+    assert bon["pire"] == 2 and bon["passe"]
+    rate = b._tools_score({"calme": [], "euphorie": ["[outil] l'heure ? → c'est fait"]})
+    assert rate["pire"] == 1 and not rate["passe"]
+    # une faute de raisonnement n'enlève rien au score des outils
+    assert b._tools_score({"calme": ["2+2 ? → 5"]})["passe"]
+
+
+def test_un_outil_appelle_avec_le_bon_argument() -> None:
+    from valdar.cortex.bench import Bench
+
+    b = Bench.__new__(Bench)
+    b.tool_names = {"planifier_rappel", "heure"}
+    item = {"q": "x", "outil": "planifier_rappel", "argument": "texte", "contient": "four"}
+    assert b._called(item, [("planifier_rappel", {"texte": "couper le four"})])
+    assert not b._called(item, [("planifier_rappel", {"texte": "sortir le chien"})])
+    assert not b._called(item, [("heure", {})])
+    assert b._called({"q": "x", "outil": "heure"}, [("heure", {})])
+
+
+def test_une_question_doutil_absent_est_ecartee_pas_comptee_en_faute() -> None:
+    """Corps coupé : on ne reproche pas au modèle de ne pas appeler ce qu'il n'a pas."""
+    from valdar.cortex.bench import Bench
+
+    b = Bench.__new__(Bench)
+    b.tool_names = {"heure"}
+    b.b = {"cognition": [{"q": "2+2 ?", "a": "4"}],
+           "outils": [{"q": "l'heure ?", "outil": "heure"},
+                      {"q": "l'écran ?", "outil": "regarder_ecran"}]}
+    assert [x["outil"] for x in b.tool_items()] == ["heure"]
+    assert b.skipped_tools() == ["regarder_ecran"]
+    assert len(b.items()) == 2
+    assert b._tools_score({"calme": []})["total"] == 1
+
+
+def test_changer_les_questions_doutil_change_lempreinte_de_la_mesure(cfg: Any) -> None:
+    """Un vert obtenu avec d'autres questions d'outil ne doit pas être réutilisé."""
+    import yaml
+
+    from valdar.cortex import tune
+
+    banc = yaml.safe_load(Path(cfg.cortex.scenarios).read_text(encoding="utf-8"))["banc"]
+    avant = tune.fingerprint(banc)
+    banc2 = {**banc, "outils": banc["outils"][:-1]}
+    assert tune.fingerprint(banc2) != avant
