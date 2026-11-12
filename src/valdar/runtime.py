@@ -312,8 +312,9 @@ class Runtime:
         """Ce qu'il a sous la main : ses compétences (titres seulement) et son atelier."""
         if self.corps is None:
             return []
-        lines = [f"TON CORPS NUMÉRIQUE : le PC est ton environnement. Ton atelier (où tu "
-                 f"écris librement) : {self.corps.zones.atelier}."]
+        lines = [f"TON CORPS NUMÉRIQUE : le PC est ton environnement. Ton dossier à toi, "
+                 f"où tu écris sans demander : {self.corps.zones.atelier}. (À ne pas "
+                 f"confondre avec l'atelier d'impression, qui est une pièce de la maison.)"]
         skills = self.corps.skills.all()
         if skills:
             lines.append("TES COMPÉTENCES (lis-en une avec « competence » avant de t'y "

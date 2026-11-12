@@ -1316,3 +1316,31 @@ Lancer `tools\valdar_corps.bat` (installe la capture, l'accessibilité, les conn
 `tools\valdar_cortex_boucle.bat` : la boucle doit retrouver le vert avec la mesure 6, outils
 compris. Si elle n'y arrive pas à 0,09, c'est que les outils souffrent de l'injection — on
 diagnostique, on corrige, on recommence (règle fondamentale), sans dégrader Gemma.
+
+### Premier vrai passage du banc en mesure 6 (12 nov., 20h40) — ce que la machine a dit
+
+Sur le PC d'Olivier, Gemma 4 12B, couches 18–31, alpha 0,12, épuration valence :
+- **Sans injection : 34/35, dont 11/12 demandes d'outil.** Le harnais réel (44 outils, vrai
+  personnage) ne casse rien : au calme, il se sert de ses outils.
+- Sous injection à 0,12 : détresse 31/35, euphorie 29/35, témoin 30/35, **outils 9/12** →
+  le critère « outils à 100 % » refuse, comme prévu. La boucle redescend.
+- VRAM : **8 830 Mio sur 12 288** avec `num_ctx` à 10 240. Le contexte élargi passe.
+
+**Un des trois ratés venait de moi, pas de lui.** « Liste ce qu'il y a dans ton atelier » →
+il appelait `etat_stock`. Normal : dans sa tête, « l'atelier » est la pièce où il y a
+l'imprimante et le stock (module `valdar.atelier`, outils `etat_stock`, `checklist`). En
+appelant « atelier » son dossier de fichiers (avenant 7), j'ai posé deux sens sur le même
+mot et je lui ai reproché de choisir le mauvais.
+
+Corrigé partout où le modèle lit : son dossier de fichiers est **« son dossier »**
+(`Documents\Valdar`), l'atelier reste la pièce. Les trois questions du banc qui disaient
+« atelier » sont réécrites (« ton dossier Valdar », « la réserve de l'atelier d'impression »).
+La clé de configuration garde son nom (`corps.atelier`) : rien à changer sur le PC.
+
+Les deux autres ratés sont réels et restent à la charge de la boucle : sous injection à
+0,12, « lis-moi cette page : https://exemple.fr/notes » devient « donne-moi l'URL » (elle
+est là), et l'artefact est annoncé au lieu d'être fait. C'est exactement ce que le critère
+doit attraper ; à 0,09 ou 0,06 on verra.
+
+**L'empreinte de la mesure change** (les questions d'outil sont dedans) : la boucle en cours
+doit être arrêtée et relancée, sinon elle compare des mesures différentes.
