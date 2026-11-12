@@ -1316,3 +1316,76 @@ Lancer `tools\valdar_corps.bat` (installe la capture, l'accessibilité, les conn
 `tools\valdar_cortex_boucle.bat` : la boucle doit retrouver le vert avec la mesure 6, outils
 compris. Si elle n'y arrive pas à 0,09, c'est que les outils souffrent de l'injection — on
 diagnostique, on corrige, on recommence (règle fondamentale), sans dégrader Gemma.
+
+## Avenant 8 — le téléphone (12 nov. 2026)
+
+Olivier : « fait en sorte que je puisse discuter avec lui via mon tel en écrit ou en vocal
+donc une applis qui se connect au pc doxei », puis « video sur le tel aussi », « appel
+lovable pour cree l'app au besoin », « jai tailscale sur le pc et sur le tel les deux sont
+relier deja », « pour les session depuis ailleur que chez et chez moi sans tailscale », « il
+doit pouvoir remplacer mon assitant vocal du telephone (android) a la place de gemini (ok
+google) », « et controller le tel affihcer des page lance de la musique etc ».
+
+### Lovable : non, et pourquoi
+Une appli Lovable est hébergée en https dans le cloud. Une page https n'a **pas le droit**
+d'appeler `http://192.168.x.x` (contenu mixte), et le PC d'Olivier n'est pas sur Internet.
+Il faudrait un tunnel + un certificat pour un résultat moins bon qu'une page servie par
+Valdar lui-même, qui s'installe sur l'écran d'accueil et reste entièrement chez lui.
+
+### Le https n'est pas un luxe
+**Le micro et la caméra d'un téléphone ne s'ouvrent que sur une page sûre.** En http, le
+navigateur refuse, quoi qu'on fasse. D'où `interface/tls.py` : Valdar fabrique son
+certificat (SAN = ses adresses Wi-Fi, son adresse Tailscale, son nom de machine), refait
+seulement si les adresses changent. Un avertissement la première fois sur le téléphone
+(Avancé → Continuer) ; avec `tailscale serve`, aucun.
+
+### Deux portes, deux règles
+- `127.0.0.1:8765` en http : la fenêtre du PC, comme avant, sans jeton.
+- `0.0.0.0:8766` en https : le téléphone. **Tout** y demande le jeton, y compris ce qui
+  arrive de 127.0.0.1 — parce que derrière un tunnel, le trafic du téléphone sort de là.
+  C'est la première version qui s'est fait prendre : le test par socket réel montrait un
+  jeton jamais exigé (`is_local` suffisait). Corrigé en liant la règle à la **porte**, pas
+  à l'adresse d'origine.
+- Le téléphone n'a droit qu'à ses routes : ni réglages, ni mémoire, ni foyer, ni journal.
+
+### Qui il croit avoir au bout du fil
+Le jeton (`data/tel.token`, hors dépôt) vaut « Olivier au téléphone » avec une confiance de
+**0,7**. En dessous de 0,75, le corps numérique (avenant 7) reste fermé : il parle, écoute,
+voit, se souvient, mais ne clique pas sur le PC depuis le téléphone. `tel.confiance: 0.8`
+l'ouvre — décision d'Olivier, pas trou de sécurité.
+
+### Le son, fabriqué côté téléphone
+Le navigateur enregistre le son brut, le ramène à 16 kHz et écrit le WAV lui-même. Le PC n'a
+donc **aucun décodeur** à installer (pas de ffmpeg, pas de PyAV) : `wave` de la bibliothèque
+standard suffit. En sortie, chaque phrase passe par XTTS et part vers le téléphone en WAV ;
+pas de voix chargée → il le dit, et le téléphone peut lire avec la voix du système.
+
+### La vidéo
+Son visage (le SVG est sorti d'`index.html` dans `visage.svg`, une seule source pour les
+deux pages) avec la bouche pilotée par l'analyse du son réellement joué. Dans l'autre sens,
+la caméra frontale envoie une image toutes les 2,5 s à `/api/tel/voir`, qui la donne au
+**même `Watch`** que la caméra du salon (visages + YOLO si déjà chargé) : il reconnaît qui
+c'est. Caméra refusée ou OpenCV absent : il le dit, rien ne se bloque.
+
+### À la place de Gemini : par Home Assistant
+Android ne donne la place d'assistant par défaut qu'à une **appli installée**. Une page web
+ne peut pas l'avoir — dire le contraire serait mentir. Chemin sans APK :
+`interface/ollama_api.py` fait parler Valdar comme un Ollama (`/api/tags`, `/api/chat`,
+`/api/show`, flux ndjson), Home Assistant le prend comme agent de conversation, et l'appli
+HA devient l'assistant par défaut du téléphone. Ce n'est pas le modèle brut derrière : c'est
+Valdar entier, et un tour qui arrive par là est un vrai tour (source « assistant du
+téléphone »).
+
+### Piloter le téléphone
+`tools/domotique.py` : `tel_notifier`, `tel_afficher`, `tel_parler`, `musique`,
+`etat_maison`, `agir_maison`. Réservés au propriétaire ; ce qui s'affiche ou démarre demande
+un « oui ». **Liste blanche** de commandes et de services : les serrures et les alarmes n'y
+sont pas, et Valdar ne peut pas s'ajouter des droits (la configuration est dans ses zones
+protégées en écriture). Jeton HA dans `data/ha.token` ou `VALDAR_HA_TOKEN`, saisi sans
+affichage par `python -m valdar maison --jeton`.
+
+### Reste à faire
+Les frais réels (VRAM de XTTS pour le téléphone pendant que le cortex tourne, latence de la
+voix sur le réseau) ne sont pas mesurés : ça se verra au premier usage. Et `tailscale serve`
+n'est pas lancé automatiquement — il faudra décider si Valdar a le droit de le faire ou si
+c'est Olivier qui l'active.

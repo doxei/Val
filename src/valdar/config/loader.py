@@ -506,6 +506,41 @@ class InterfaceConfig(_Strict):
     kiosk: bool = False
 
 
+class DomotiqueConfig(_Strict):
+    """Home Assistant : la maison, et le téléphone d'Olivier par l'appli compagnon.
+
+    Le jeton ne vit jamais ici : dans `data/ha.token`, ou dans VALDAR_HA_TOKEN.
+    Seuls les services listés peuvent être appelés — rien d'autre, même s'il le demande."""
+    enabled: bool = False
+    url: str = "http://homeassistant.local:8123"
+    jeton: str = "data/ha.token"
+    telephone: str = ""                # ex. mobile_app_pixel_d_olivier
+    enceinte: str = ""                 # ex. media_player.salon
+    commandes: list[str] = ["command_webview", "command_activity", "command_screen_on",
+                            "command_volume_level", "command_media"]
+    services: list[str] = ["light.turn_on", "light.turn_off", "switch.turn_on",
+                           "switch.turn_off", "media_player.media_pause",
+                           "media_player.media_play", "media_player.volume_set"]
+
+
+class TelConfig(_Strict):
+    """Le téléphone d'Olivier comme poste de Valdar (avenant 8).
+
+    En https, parce que le micro et la caméra d'un téléphone ne s'ouvrent que sur une page
+    sûre. Derrière un jeton : le réseau ne parle pas à Valdar sans l'avoir montré.
+    `confiance` dit à quel point il croit que c'est Olivier au bout : en dessous de 0,75 le
+    corps numérique reste fermé depuis le téléphone (mais il parle, écoute, voit, se souvient).
+    """
+    enabled: bool = True
+    host: str = "0.0.0.0"              # le Wi-Fi et Tailscale ; en https et avec jeton
+    port: int = Field(default=8766, ge=1024, le=65535)
+    jeton: str = "tel.token"           # dans data/, jamais dans le dépôt
+    confiance: float = Field(default=0.7, ge=0.0, le=1.0)
+    charger_la_voix: bool = False      # charger XTTS pour le téléphone si le PC est muet
+    voix_du_telephone: bool = True     # à défaut de sa voix, le téléphone lit la réponse
+    camera_secondes: float = Field(default=2.5, ge=0.5)   # une image toutes les N secondes
+
+
 class EmbeddingsConfig(_Strict):
     """Vrai modèle de plongement (sens), par Ollama ; repli sur les vecteurs maison."""
     backend: str = "ollama"            # ollama | hash (vecteurs maison seulement)
@@ -978,6 +1013,8 @@ class ValdarConfig(_Strict):
     ident: IdentConfig = IdentConfig()
     vision: VisionConfig = VisionConfig()
     interface: InterfaceConfig = InterfaceConfig()
+    tel: TelConfig = TelConfig()
+    domotique: DomotiqueConfig = DomotiqueConfig()
     kiwix: KiwixConfig = KiwixConfig()
     n8n: N8nConfig = N8nConfig()
     corps: CorpsConfig = CorpsConfig()

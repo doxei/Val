@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Valdar</title>
+<meta name="theme-color" content="#04070f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifeste.json">
+<link rel="icon" href="icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icone-192.png">
+<link rel="stylesheet" href="tel.css">
+</head>
+<body>
+
+<header id="haut">
+  <div id="visage-hote" aria-label="Visage de Valdar"></div>
+  <div id="qui">
+    <strong>Valdar</strong>
+    <span id="etat">connexion…</span>
+  </div>
+  <button id="b-cam" class="icone" aria-label="Caméra" aria-pressed="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10v10H4z"/><path d="M15 11l5-3v8l-5-3z"/></svg>
+  </button>
+</header>
+
+<video id="cam" playsinline muted autoplay></video>
+<canvas id="pige" hidden></canvas>
+
+<main id="fil" aria-live="polite"></main>
+
+<form id="bas" autocomplete="off">
+  <button type="button" id="b-micro" class="rond" aria-label="Appuie et parle">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+  </button>
+  <input id="texte" type="text" placeholder="Écris-lui…" enterkeyhint="send">
+  <button type="submit" id="b-envoi" class="rond" aria-label="Envoyer">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 8 6 8z"/></svg>
+  </button>
+</form>
+
+<div id="toast" role="status"></div>
+
+<script src="face.js"></script>
+<script src="tel.js"></script>
+</body>
+</html>

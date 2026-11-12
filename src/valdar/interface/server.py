@@ -1,7 +1,17 @@
 """Serveur de l'interface : une page locale, des données en JSON, le direct en SSE.
 
-Bibliothèque standard seulement (rien à installer de plus). Écoute sur 127.0.0.1 : rien
-n'est accessible depuis le réseau.
+Bibliothèque standard seulement (rien à installer de plus).
+
+Deux écoutes, pas une :
+- **la fenêtre de Valdar**, en http sur 127.0.0.1 : rien ne sort de la machine, rien à
+  prouver ;
+- **le téléphone**, en https sur le réseau (Wi-Fi ou Tailscale), et là chaque requête doit
+  montrer le jeton. En https parce que le micro et la caméra d'un téléphone ne s'ouvrent
+  que sur une page sûre.
+
+Tout ce qui arrive par le réseau est traité comme venant d'Olivier au téléphone — avec la
+confiance que dit `tel.confiance`, plus basse que le clavier par défaut, pour que le corps
+numérique ne soit pas ouvert depuis le téléphone sans qu'il l'ait décidé.
 """
 from __future__ import annotations
 
@@ -16,19 +26,24 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from valdar.interface.acces import Access, is_local
 from valdar.interface.session import Session
 from valdar.interface.settings import Settings
 
 STATIC = Path(__file__).resolve().parent / "static"
+LIBRE = ("/tel.html", "/tel.js", "/tel.css", "/manifeste.json", "/sw.js", "/icone.svg",
+         "/icone-192.png", "/icone-512.png")   # la coquille de l'appli : pas de données
 
 
 class Api:
     """Les réponses de l'interface, séparées du transport (testables sans réseau)."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, access: Access | None = None, phone: Any = None):
         self.s = session
         self.rt = session.rt
         self.settings = Settings(session.cfg)
+        self.access = access
+        self.phone = phone
 
     # ------------------------------------------------------------ lecture
     def state(self) -> dict[str, Any]:
@@ -132,12 +147,57 @@ class Api:
         return {"tours": [{**t, "quarantaine": q.get(t["id"])} for t in turns]}
 
     # ------------------------------------------------------------ actions
-    def message(self, body: dict[str, Any]) -> dict[str, Any]:
+    def message(self, body: dict[str, Any], tel: bool = False) -> dict[str, Any]:
         text = str(body.get("text") or "").strip()
         if not text:
             return {"ok": False, "error": "message vide"}
+        if tel:
+            return self._tel_turn(text, bool(body.get("voix", True)))
         threading.Thread(target=self.s.answer, args=(text,),
                          kwargs={"source": "interface"}, daemon=True).start()
+        return {"ok": True}
+
+    # ------------------------------------------------------------ le téléphone
+    def _tel_turn(self, text: str, voice: bool) -> dict[str, Any]:
+        who = self.access.identity() if self.access else self.s.owner
+        threading.Thread(target=self.phone.answer, args=(text, who, voice),
+                         daemon=True).start()
+        return {"ok": True, "texte": text}
+
+    def tel_etat(self) -> dict[str, Any]:
+        """Ce que la page du téléphone a besoin de savoir pour ne pas mentir à Olivier."""
+        st = self.s.state() if hasattr(self.s, "state") else {}
+        who = self.access.identity() if self.access else self.s.owner
+        return {"nom": "Valdar", "voix": self.phone.voice_state(),
+                "confiance": round(who.confidence, 2),
+                "corps": bool(getattr(self.s.cfg, "corps", None)
+                              and self.s.cfg.corps.enabled
+                              and who.confidence >= 0.75),
+                "humeur": st.get("mood"),
+                "ressenti": (st.get("cortex") or {}).get("resume") or "",
+                "camera_secondes": self.s.cfg.tel.camera_secondes,
+                "vu": self.phone.last_seen, "vu_il_y_a": None if not self.phone.seen_at
+                else round(time.time() - self.phone.seen_at, 1)}
+
+    def tel_ecouter(self, audio: bytes, voice: bool = True) -> dict[str, Any]:
+        from valdar.interface.tel import TelError
+
+        try:
+            text = self.phone.transcribe(audio)
+        except TelError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:
+            return {"ok": False, "error": f"je n'ai pas pu écouter : {exc}"}
+        return self._tel_turn(text, voice)
+
+    def tel_voir(self, jpeg: bytes) -> dict[str, Any]:
+        return {"ok": True, **self.phone.look(jpeg)}
+
+    def tel_jeton(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Renouveler le jeton : les appareils deja appaires sont sortis."""
+        if self.access is None or str(body.get("action")) != "renouveler":
+            return {"ok": False, "error": "action inconnue"}
+        self.access.renew()
         return {"ok": True}
 
     def control(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -222,17 +282,57 @@ class Api:
 GETS = {"/api/state": "state", "/api/historique": "history", "/api/foyer": "foyer",
         "/api/memoire": "memoire", "/api/pensees": "pensees", "/api/atelier": "atelier",
         "/api/connaissances": "connaissances", "/api/outils": "outils",
-        "/api/reglages": "reglages", "/api/journal": "journal", "/api/n8n": "n8n"}
+        "/api/reglages": "reglages", "/api/journal": "journal", "/api/n8n": "n8n",
+        "/api/tel/etat": "tel_etat"}
 POSTS = {"/api/message": "message", "/api/control": "control", "/api/foyer": "foyer_action",
-         "/api/memoire": "memoire_action", "/api/reglages": "reglage", "/api/idee": "idee"}
+         "/api/memoire": "memoire_action", "/api/reglages": "reglage", "/api/idee": "idee",
+         "/api/tel/jeton": "tel_jeton"}
+# Ce que le téléphone peut faire : parler, écouter, voir, se taire. Rien des réglages, de la
+# mémoire ou du foyer : ça se fait devant le PC.
+TEL_GETS = ("/api/state", "/api/historique", "/api/tel/etat", "/api/tags", "/api/ps")
+TEL_POSTS = ("/api/message", "/api/control", "/api/chat", "/api/show")
+BINAIRES = {"/api/tel/ecouter": "tel_ecouter", "/api/tel/voir": "tel_voir"}
 
 
-def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
+def make_handler(api: Api, porte_tel: bool = False) -> type[BaseHTTPRequestHandler]:
+    """Deux portes, deux règles. `porte_tel` : l'écoute https du téléphone, où **tout**
+    demande le jeton — y compris ce qui arrive de 127.0.0.1, parce que derrière un
+    tunnel (Tailscale) le trafic du téléphone sort justement de là."""
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "Valdar/1"
+        protocol_version = "HTTP/1.1"
 
         def log_message(self, fmt: str, *args: Any) -> None:   # silencieux
             pass
+
+        # ---------------------------------------------------------- le jeton
+        @property
+        def depuis_le_reseau(self) -> bool:
+            """La porte du téléphone, ou une requête venue d'ailleurs que de la machine."""
+            if porte_tel:
+                return True
+            if any(h.lower().startswith("x-forwarded") for h in self.headers):
+                return True
+            return not is_local(self.client_address[0] if self.client_address else "")
+
+        def autorise(self, chemin: str) -> bool:
+            """Le réseau doit montrer le jeton, et n'a droit qu'aux routes du téléphone."""
+            if not self.depuis_le_reseau:
+                return True
+            if api.access is None:
+                return False
+            u = urlparse(self.path)
+            donne = self.headers.get("X-Valdar-Jeton") or \
+                {k: v[0] for k, v in parse_qs(u.query).items()}.get("j", "")
+            if not api.access.ok(donne):
+                return False
+            return (chemin in TEL_GETS or chemin in TEL_POSTS or chemin in BINAIRES
+                    or chemin.startswith("/api/tel/") or chemin == "/api/events"
+                    or not chemin.startswith("/api/"))
+
+        def refus(self) -> None:
+            self._json({"error": "appairage à refaire : scanne le QR code sur le PC"}, 401)
 
         def _send(self, code: int, body: bytes, ctype: str) -> None:
             self.send_response(code)
@@ -248,6 +348,15 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:
             u = urlparse(self.path)
+            if u.path not in LIBRE and not self.autorise(u.path):
+                return self.refus()
+            if u.path in ("/api/tags", "/api/ps"):
+                from valdar.interface import ollama_api
+
+                return self._json(ollama_api.tags() if u.path == "/api/tags"
+                                  else {"models": []})
+            if u.path.startswith("/api/tel/voix/"):
+                return self._audio(u.path.rsplit("/", 1)[-1])
             if u.path == "/api/events":
                 return self._events()
             if u.path in GETS:
@@ -269,17 +378,65 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             u = urlparse(self.path)
+            if not self.autorise(u.path):
+                return self.refus()
+            n = int(self.headers.get("Content-Length") or 0)
+            if u.path in BINAIRES:
+                return self._binaire(u.path, n)
+            if u.path in ("/api/chat", "/api/show"):
+                return self._ollama(u.path, n)
             if u.path not in POSTS:
                 return self._json({"error": "introuvable"}, 404)
-            n = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
                 return self._json({"error": "JSON invalide"}, 400)
             try:
-                self._json(getattr(api, POSTS[u.path])(body))
+                fn = getattr(api, POSTS[u.path])
+                if u.path == "/api/message" and self.depuis_le_reseau:
+                    return self._json(fn(body, tel=True))
+                self._json(fn(body))
             except Exception as exc:
                 self._json({"ok": False, "error": str(exc)}, 500)
+
+        # ------------------------------------------------- son et image du téléphone
+        def _binaire(self, chemin: str, n: int) -> None:
+            if n <= 0 or n > 12_000_000:
+                return self._json({"ok": False, "error": "envoi vide ou trop gros"}, 400)
+            data = self.rfile.read(n)
+            voix = self.headers.get("X-Valdar-Voix", "1") != "0"
+            try:
+                fn = getattr(api, BINAIRES[chemin])
+                out = fn(data, voix) if chemin.endswith("ecouter") else fn(data)
+                self._json(out)
+            except Exception as exc:
+                self._json({"ok": False, "error": str(exc)}, 500)
+
+        # --------------------------------- Valdar vu comme un Ollama (Home Assistant)
+        def _ollama(self, chemin: str, n: int) -> None:
+            from valdar.interface import ollama_api
+
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except ValueError:
+                return self._json({"error": "JSON invalide"}, 400)
+            if chemin == "/api/show":
+                return self._json(ollama_api.show())
+            try:
+                texte, flux = ollama_api.chat(api, body)
+            except Exception as exc:
+                return self._json({"error": str(exc)}, 500)
+            if not flux:
+                return self._json(ollama_api.reply_body(texte))
+            lignes = ollama_api.stream_lines(texte)
+            corps = b"".join(lignes)
+            self._send(200, corps, "application/x-ndjson")
+
+        def _audio(self, cid: str) -> None:
+            wav = api.phone.clip(cid) if api.phone is not None else None
+            if wav is None:
+                return self._send(404, b"fini", "text/plain")
+            self._send(200, wav, "audio/wav")
 
         def _events(self) -> None:
             self.send_response(200)
@@ -314,19 +471,78 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
 
 
 class Server:
-    def __init__(self, session: Session, host: str = "127.0.0.1", port: int = 8765):
-        self.api = Api(session)
+    """Deux écoutes : la fenêtre du PC en http sur 127.0.0.1, le téléphone en https.
+
+    Le https n'est monté que si le téléphone est autorisé (`tel.enabled`) et qu'un
+    certificat a pu être fabriqué. S'il manque, Valdar le dit et le reste tourne quand même :
+    Olivier garde sa fenêtre, il n'a juste pas son téléphone."""
+
+    def __init__(self, session: Session, host: str = "127.0.0.1", port: int = 8765,
+                 tel: Any = None):
+        from valdar.interface.acces import Access
+        from valdar.interface.tel import Phone
+
+        self.tel_cfg = tel
+        self.access: Access | None = None
+        self.phone: Any = None
+        self.tel_url = ""
+        self.tel_note = ""
+        if tel is not None and tel.enabled:
+            self.access = Access(session.cfg.storage_path(tel.jeton),
+                                 confidence=tel.confiance)
+            self.phone = Phone(session, tel)
+        self.api = Api(session, self.access, self.phone)
         self.httpd = ThreadingHTTPServer((host, port), make_handler(self.api))
         self.httpd.daemon_threads = True
         self.url = f"http://{host}:{self.httpd.server_address[1]}/"
-        self._thread: threading.Thread | None = None
+        self.tel_httpd: ThreadingHTTPServer | None = None
+        self._threads: list[threading.Thread] = []
+        if self.access is not None:
+            self._open_tel(session)
+
+    def _open_tel(self, session: Session) -> None:
+        from valdar.interface import tls
+        from valdar.interface.acces import local_ips
+
+        tc = self.tel_cfg
+        net = tls.tailnet()
+        hotes = [*local_ips(), *( [net["ip"]] if net.get("ip") else [] ),
+                 *( [net["nom"]] if net.get("nom") else [] )]
+        paire = tls.ensure_cert(session.cfg.storage_path("certificat"), hotes)
+        if paire is None:
+            self.tel_note = ("pas de certificat (installe « cryptography ») : "
+                             "le téléphone ne peut pas se connecter")
+            return
+        try:
+            srv = ThreadingHTTPServer((tc.host, tc.port),
+                                      make_handler(self.api, porte_tel=True))
+            srv.socket = tls.context(*paire).wrap_socket(srv.socket, server_side=True)
+        except OSError as exc:
+            self.tel_note = f"port {tc.port} pris ({exc})"
+            return
+        srv.daemon_threads = True
+        self.tel_httpd = srv
+        hote = net.get("nom") or (local_ips() or ["127.0.0.1"])[0]
+        self.tel_url = f"https://{hote}:{tc.port}/tel.html#j={self.access.token}"
+        servi = tls.serve_url()
+        if servi:                       # Tailscale fait déjà le https : pas d'avertissement
+            self.tel_url = f"{servi}/tel.html#j={self.access.token}"
+        self.tel_hosts = hotes
+        self.tel_cert = paire[0]
 
     def start(self) -> str:
-        self._thread = threading.Thread(target=self.httpd.serve_forever, name="valdar-web",
-                                        daemon=True)
-        self._thread.start()
+        for name, srv in (("valdar-web", self.httpd), ("valdar-tel", self.tel_httpd)):
+            if srv is None:
+                continue
+            th = threading.Thread(target=srv.serve_forever, name=name, daemon=True)
+            th.start()
+            self._threads.append(th)
         return self.url
 
     def stop(self) -> None:
-        self.httpd.shutdown()
-        self.httpd.server_close()
+        for srv in (self.httpd, self.tel_httpd):
+            if srv is None:
+                continue
+            with contextlib.suppress(Exception):
+                srv.shutdown()
+                srv.server_close()

@@ -1,6 +1,8 @@
 /* Le visage de Valdar : piloté par son cœur (plaisir, activation, dominance, émotion),
    la bouche par le son réel de sa voix. Rien n'est joué au hasard, sauf les clignements. */
-(function () {
+// Le visage de Valdar, partagé par la fenêtre du PC et la page du téléphone. Le SVG est
+// dans visage.svg : on l'injecte, puis on appelle window.demarrerVisage().
+window.demarrerVisage = function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
   const root = document.documentElement;
@@ -160,4 +162,18 @@
   };
   setColors("calme");
   requestAnimationFrame(frame);
-})();
+};
+
+window.chargerVisage = async function (hote) {
+  const cible = typeof hote === "string" ? document.getElementById(hote) : hote;
+  if (!cible) return false;
+  try {
+    const svg = await (await fetch("visage.svg", { cache: "force-cache" })).text();
+    cible.innerHTML = svg;
+    window.demarrerVisage();
+    return true;
+  } catch (e) {
+    cible.textContent = "";          // pas de visage : la page marche quand même
+    return false;
+  }
+};

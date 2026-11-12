@@ -107,8 +107,12 @@ class Session:
         self.speaker.say(text)
 
     def answer(self, text: str, who: Identity | None = None, source: str = "clavier",
-               show: Callable[[str], None] | None = None) -> Any:
-        """Répond en streaming : chaque phrase part vers la voix dès qu'elle est complète."""
+               show: Callable[[str], None] | None = None,
+               speak: Callable[[str], None] | None = None) -> Any:
+        """Répond en streaming : chaque phrase part vers la voix dès qu'elle est complète.
+
+        `speak` remplace la voix du PC pour ce tour-là : c'est par là que passe le
+        téléphone, pour que sa réponse soit jouée dans le téléphone et pas dans le salon."""
         who = who or self.owner
         self.last_who = who
         self.bus.publish("user", {"text": text, "who": who.name, "person": who.person,
@@ -121,17 +125,18 @@ class Session:
             if show is not None:
                 show(p)
 
-        stream = SentenceStream(self.say, piece)
+        stream = SentenceStream(speak or self.say, piece)
         reply = self.rt.handle(text, who, on_text=stream.feed)
+        dire = speak or self.say
         if stream.started:
             stream.close()
             extra = reply.text.strip()
             if extra and extra not in stream.text:      # ex. confirmation après un outil
-                self.say(extra)
+                dire(extra)
                 if show is not None:
                     show("\n" + extra)
         else:
-            self.say(reply.text)
+            dire(reply.text)
             if show is not None:
                 show(reply.text)
         self.bus.publish("reply", {"text": reply.text, "tools": reply.tools_used,
