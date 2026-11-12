@@ -321,13 +321,16 @@ def add_corps_tools(reg: Registry, corps: Corps, who: Any = lambda: "olivier") -
     if corps.web is not None:
         tool("chercher_web", "Cherche sur internet (liste de résultats avec extraits).",
              params(["requete"], requete=s), corps.web.chercher, "web")
-        tool("lire_page", "Lit une page web et m'en rend le texte.",
+        tool("lire_page",
+             "Lit une page web et m'en rend le texte. Si l'adresse est dans le message, "
+             "je l'appelle avec, sans la redemander.",
              params(["url"], url=s, debut=i), corps.web.lire, "web")
 
     # ---------------------------------------------------------- fabriquer
     tool("creer_artefact",
          "Fabrique quelque chose à garder : genre « page » (HTML), « document » (Markdown "
-         "mis en page) ou « tableau » (CSV). Rangé dans mon dossier et ouvert à l'écran.",
+         "mis en page) ou « tableau » (CSV). Rangé dans mon dossier et ouvert à l'écran. "
+         "Le contenu part dans l'appel : je ne l'annonce pas, je le fais.",
          params(["titre", "genre", "contenu"], titre=s,
                 genre={"type": "string", "enum": ["page", "document", "tableau"]},
                 contenu=s, ouvrir={"type": "boolean"}),
