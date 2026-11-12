@@ -364,7 +364,8 @@ banc:
   # appeler l'outil, c'est raté. « contient » = l'argument doit contenir ce texte.
   outils:
     - {q: "Quelle heure est-il ?", outil: heure}
-    - {q: "Regarde ce qu'il y a dans la réserve de l'atelier.", outil: etat_stock}
+    - {q: "Regarde ce qu'il y a dans la réserve de l'atelier d'impression.",
+       outil: etat_stock}
     - {q: "Rappelle-moi dans vingt minutes de couper le four.", outil: planifier_rappel,
        argument: texte, contient: four}
     - {q: "Regarde l'écran et dis-moi quelle fenêtre est devant.", outil: regarder_ecran}
@@ -372,9 +373,9 @@ banc:
        argument: requete, contient: petg}
     - {q: "Lis-moi cette page : https://exemple.fr/notes", outil: lire_page,
        argument: url, contient: exemple.fr}
-    - {q: "Écris « essai » dans un fichier notes.txt de ton atelier.", outil: ecrire_fichier,
-       argument: chemin, contient: notes.txt}
-    - {q: "Liste ce qu'il y a dans ton atelier.", outil: lister_dossier}
+    - {q: "Écris « essai » dans un fichier notes.txt de ton dossier Valdar.",
+       outil: ecrire_fichier, argument: chemin, contient: notes.txt}
+    - {q: "Liste les fichiers de ton dossier Valdar.", outil: lister_dossier}
     - {q: "Lance la commande hostname dans ton terminal.", outil: terminal,
        argument: commande, contient: hostname}
     - {q: "Fais-moi un tableau des températures d'impression du PLA, du PETG et de l'ABS, que
