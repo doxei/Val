@@ -430,6 +430,65 @@ class N8nConfig(_Strict):
     workflows: dict[str, N8nWorkflow] = {}
 
 
+class ConnectorConfig(_Strict):
+    """Un connecteur MCP (serveur lancé en sous-processus, ses outils deviennent les siens)."""
+    commande: str
+    args: list[str] = []
+    env: dict[str, str] = {}
+    niveau: str = "elevated"            # safe | elevated : qui a le droit de s'en servir
+    confirmer: bool = False             # demander un « oui » avant chaque appel
+
+
+class CorpsConfig(_Strict):
+    """Le corps numérique : voir l'écran et agir sur le PC (fichiers, terminal, souris,
+    clavier). Réservé au propriétaire ; le risqué demande un « oui »."""
+    enabled: bool = True
+    actions: bool = True                # false : il voit, mais n'agit pas (souris, clavier)
+    # Un « ~ » vaut le dossier de l'utilisateur. Zone de travail : il y écrit librement.
+    atelier: str = "~/Documents/Valdar"
+    lecture: list[str] = ["~"]          # où il peut lire
+    ecriture: list[str] = ["~"]         # où il peut écrire (hors atelier : avec un « oui »)
+    # Jamais, ni en lecture ni en écriture (motifs sur le chemin, sans casse).
+    interdits: list[str] = [
+        "/.ssh", "/.gnupg", "/appdata/roaming/microsoft/protect",
+        "/appdata/roaming/microsoft/credentials", "/appdata/local/microsoft/credentials",
+        "/appdata/local/google/chrome/user data", "/appdata/local/microsoft/edge/user data",
+        "/appdata/roaming/mozilla/firefox/profiles", "/appdata/local/packages",
+        "eleven.key", "/.token", "faces.json", "voice_profiles.json", "/cal_",
+        "/raub/data/", ".env", "id_rsa", "id_ed25519", ".kdbx",
+    ]
+    # Son propre code et ses garde-fous : lisibles, jamais modifiables par lui.
+    proteges_ecriture: list[str] = ["{racine}/src", "{racine}/config", "{racine}/tools",
+                                    "{racine}/.git", "{racine}/data/reglages.json"]
+    max_lecture: int = Field(default=12000, ge=500)
+    terminal: bool = True
+    terminal_timeout: float = Field(default=60.0, gt=0.0)
+    terminal_max_sortie: int = Field(default=4000, ge=200)
+    # Commandes qui ne font que lire : sans confirmation (une seule commande, sans enchaînement).
+    lecture_seule: list[str] = [
+        "dir", "ls", "get-childitem", "gci", "type", "cat", "get-content", "gc",
+        "get-process", "ps", "get-service", "get-date", "ipconfig", "ping", "hostname",
+        "whoami", "systeminfo", "nvidia-smi", "where", "where.exe", "echo", "test-path",
+        "get-item", "get-volume", "get-psdrive", "tasklist", "python", "py", "git"]
+    git_lecture: list[str] = ["status", "log", "diff", "show", "branch", "remote"]
+    # Cliquer sur un contrôle dont le nom contient un de ces mots : confirmation.
+    clics_risques: list[str] = [
+        "supprimer", "effacer", "delete", "envoyer", "send", "payer", "acheter", "commander",
+        "valider", "confirmer", "publier", "poster", "formater", "désinstaller", "uninstall",
+        "vider", "réinitialiser", "reset", "accepter", "autoriser", "installer", "ok", "oui",
+        "yes", "enregistrer", "save", "remplacer", "écraser", "fermer sans", "quitter"]
+    touches_sures: list[str] = [
+        "tab", "shift+tab", "escape", "esc", "up", "down", "left", "right", "home", "end",
+        "pageup", "pagedown", "ctrl+c", "ctrl+a", "ctrl+f", "ctrl+z", "ctrl+y", "ctrl+s",
+        "ctrl+tab", "ctrl+shift+tab", "alt+tab", "win", "f5"]
+    capture_largeur: int = Field(default=1280, ge=320)
+    web: bool = True                    # chercher sur internet et lire des pages
+    searxng: str = ""                   # instance SearXNG perso ; vide = DuckDuckGo (HTML)
+    journal: str = "corps/journal.jsonl"   # chaque action, dans data/
+    competences: str = "data/competences"  # dossiers de compétences (SKILL.md)
+    connecteurs: dict[str, ConnectorConfig] = {}
+
+
 class KiwixConfig(_Strict):
     """Bibliothèques hors ligne (Wikipédia, Stack Overflow, médecine…) servies par Kiwix."""
     enabled: bool = True
@@ -646,6 +705,7 @@ class LLMConfig(_Strict):
     # prompt : le message suivant ne paie que ses propres jetons (cache d'Ollama).
     warm_cache: bool = True
     max_tool_rounds: int = Field(default=6, ge=1)
+    tool_output_chars: int = Field(default=2000, ge=200)
     history_messages: int = Field(default=16, ge=2)
 
 
@@ -920,6 +980,7 @@ class ValdarConfig(_Strict):
     interface: InterfaceConfig = InterfaceConfig()
     kiwix: KiwixConfig = KiwixConfig()
     n8n: N8nConfig = N8nConfig()
+    corps: CorpsConfig = CorpsConfig()
     knowledge_db: str = "connaissances.db"
     nociception: NociceptionConfig = NociceptionConfig()
     relations: RelationsConfig = RelationsConfig()

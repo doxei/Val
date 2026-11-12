@@ -128,13 +128,17 @@ class Runtime:
             from valdar.tools.n8n import add_n8n_tools
 
             add_n8n_tools(self.registry, self.cfg.n8n)
+        self.corps: Any = None
+        self.corps_notes: list[str] = []
+        if self.cfg.corps.enabled:
+            self._add_corps_tools()
         self.agent = Agent(self.cfg, self.llm, self.registry, self.heart, self.lock,
                            self.facts, self.self_model, self.world_lines, self.urges,
                            memory=self.memory, extras=self.extra_blocks, feel=self.feel)
         self.feeling = Feeling(self.cfg.cortex)
         self.tool_ctx.on_recall = self.agent._reinstate
         self.block_providers: list[Any] = [self._relation_block, self._knowledge_block,
-                                           self._thoughts_block]
+                                           self._thoughts_block, self._corps_block]
         self.night = Night(self.cfg.night, self.llm, self.facts, self.memory,
                            path(self.cfg.night.out_dir), self.self_model,
                            self._owner() or "olivier")
@@ -143,6 +147,29 @@ class Runtime:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._speaking = threading.Lock()
+
+    # ============================================================ corps numérique
+    def _add_corps_tools(self) -> None:
+        """Le PC comme environnement : voir l'écran, les fichiers, le terminal, le web."""
+        from valdar.corps.outils import Corps, add_corps_tools
+        from valdar.corps.web import Web
+
+        cc = self.cfg.corps
+        try:
+            corps = Corps(cc, self.cfg.root, self.cfg.storage_path("x").parent,
+                          web=Web(cc.searxng) if cc.web else None)
+        except Exception as exc:        # un corps qui ne se monte pas ne doit rien bloquer
+            self.corps_notes = [f"corps numérique : {exc}"]
+            return
+        corps.notes = corps.connectors.start()
+        try:
+            add_corps_tools(self.registry, corps, who=lambda: self._owner() or "olivier")
+        except Exception as exc:
+            self.corps_notes = [f"outils du corps : {exc}"]
+            corps.close()
+            return
+        self.corps = corps
+        self.corps_notes = corps.notes
 
     # ============================================================ Kiwix
     def _add_kiwix_tools(self) -> None:
@@ -280,6 +307,19 @@ class Runtime:
                                   "façon, sans dramatiser ni minimiser.", {"vigie": ev.kind})
 
         threading.Thread(target=run, name="valdar-tri", daemon=True).start()
+
+    def _corps_block(self, query: str) -> list[str]:
+        """Ce qu'il a sous la main : ses compétences (titres seulement) et son atelier."""
+        if self.corps is None:
+            return []
+        lines = [f"TON CORPS NUMÉRIQUE : le PC est ton environnement. Ton atelier (où tu "
+                 f"écris librement) : {self.corps.zones.atelier}."]
+        skills = self.corps.skills.all()
+        if skills:
+            lines.append("TES COMPÉTENCES (lis-en une avec « competence » avant de t'y "
+                         "mettre) :\n" + "\n".join(f"- {s.name} : {s.description}"
+                                                    for s in skills))
+        return ["\n".join(lines)]
 
     def _knowledge_block(self, query: str) -> list[str]:
         if not self.cfg.context.auto_knowledge:
@@ -563,6 +603,8 @@ class Runtime:
 
     def stop(self) -> None:
         self._stop.set()
+        if self.corps is not None:
+            self.corps.close()
         if self._sidecar is not None:
             self._sidecar.stop()
         if self._kiwix_serve is not None:

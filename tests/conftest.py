@@ -38,6 +38,8 @@ def p2cfg(quiet_cfg, tmp_path):
     c = quiet_cfg.model_copy(deep=True)
     c.storage.dir = str(tmp_path / "data")
     c.embeddings.backend = "hash"        # aucun appel réseau dans les tests
+    c.corps.enabled = False              # aucun test ne touche au vrai PC d'Olivier
+    c.corps.atelier = str(tmp_path / "atelier")
     c._root = quiet_cfg.root
     return c
 

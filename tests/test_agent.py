@@ -1,4 +1,6 @@
 """Agent : dialogue, outils, permissions, effets sur le cœur (phase 2)."""
+from pathlib import Path
+
 from conftest import prompt_of
 
 from valdar.config.loader import Identity
@@ -127,3 +129,63 @@ def test_memory_tool_and_recall_in_prompt(runtime_factory):
     rt.handle("retiens que j'imprime en PLA+ sur une plaque PEI")
     rt.handle("j'imprime avec quel filament déjà ?")
     assert "PLA+" in prompt_of(rt.llm.calls[-1])
+
+
+def test_une_action_sur_le_pc_hors_atelier_demande_un_oui_net(runtime_factory, tmp_path):
+    """Écrire dans son atelier : libre. Écrire ailleurs : « oui » net, et de lui."""
+    from valdar.config.loader import CorpsConfig
+    from valdar.corps.outils import Corps, add_corps_tools
+
+    cc = CorpsConfig(atelier=str(tmp_path / "atelier"), lecture=[str(tmp_path)],
+                     ecriture=[str(tmp_path)], interdits=[], proteges_ecriture=[])
+    corps = Corps(cc, tmp_path, tmp_path / "data", web=None)
+    dehors = str(tmp_path / "dehors.txt")
+
+    rt = runtime_factory([call("ecrire_fichier", chemin=dehors, contenu="x"),
+                          ChatResult(content="C'est écrit.")])
+    add_corps_tools(rt.registry, corps, who=lambda: "olivier")
+    first = rt.handle("écris x dans dehors.txt", who=OWNER)
+    assert "confirmes" in first.text and dehors.split("/")[-1] in first.text
+    assert rt.agent.pending["strict"] and not Path(dehors).exists()
+    rt.handle("mouais pourquoi pas", who=OWNER)       # pas un oui net : annulé
+    assert not Path(dehors).exists()
+
+    rt2 = runtime_factory([call("ecrire_fichier", chemin=dehors, contenu="x"),
+                           ChatResult(content="C'est écrit.")])
+    add_corps_tools(rt2.registry, corps, who=lambda: "olivier")
+    rt2.handle("écris x dans dehors.txt", who=OWNER)
+    rt2.handle("oui", who=OWNER)
+    assert Path(dehors).read_text() == "x"
+
+
+def test_dans_son_atelier_il_ecrit_sans_demander(runtime_factory, tmp_path):
+    from valdar.config.loader import CorpsConfig
+    from valdar.corps.outils import Corps, add_corps_tools
+
+    cc = CorpsConfig(atelier=str(tmp_path / "atelier"), lecture=[str(tmp_path)],
+                     ecriture=[str(tmp_path)], interdits=[], proteges_ecriture=[])
+    corps = Corps(cc, tmp_path, tmp_path / "data", web=None)
+    dedans = str(corps.zones.atelier / "notes.txt")
+    rt = runtime_factory([call("ecrire_fichier", chemin=dedans, contenu="ok"),
+                          ChatResult(content="C'est noté.")])
+    add_corps_tools(rt.registry, corps, who=lambda: "olivier")
+    reply = rt.handle("note ça chez toi", who=OWNER)
+    assert "confirmes" not in reply.text
+    assert Path(dedans).read_text() == "ok"
+    assert any(r["outil"] == "ecrire_fichier" for r in corps.journal.tail(5))
+
+
+def test_le_corps_nest_pas_offert_a_un_inconnu(runtime_factory, tmp_path):
+    """Un invité ne voit même pas ces outils dans la liste."""
+    from valdar.config.loader import CorpsConfig
+    from valdar.corps.outils import Corps, add_corps_tools
+
+    cc = CorpsConfig(atelier=str(tmp_path / "atelier"), lecture=[str(tmp_path)],
+                     ecriture=[str(tmp_path)], interdits=[], proteges_ecriture=[])
+    corps = Corps(cc, tmp_path, tmp_path / "data", web=None)
+    rt = runtime_factory([ChatResult(content="salut")])
+    add_corps_tools(rt.registry, corps, who=lambda: "olivier")
+    rt.handle("salut", who=Identity(person="inconnu", confidence=0.9))
+    noms = [t["function"]["name"] for t in rt.llm.calls[0]["tools"]]
+    for n in ("ecrire_fichier", "terminal", "regarder_ecran", "cliquer"):
+        assert n not in noms, n

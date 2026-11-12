@@ -33,8 +33,8 @@ from valdar.cortex.engine import Engine
 MODES = ("fond", "valence", "aucune")
 EXTRA_BANDS = [(16, 28), (18, 30), (20, 28)]
 DOSES = (1.0, 1.3, 1.6)
-FROZEN = ("probes", "cognition", "stress", "journee", "interpretations", "etats", "paires",
-          "validation")
+FROZEN = ("probes", "cognition", "outils", "stress", "journee", "interpretations", "etats",
+          "paires", "validation")
 
 
 def _say(line: str) -> None:

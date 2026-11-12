@@ -10,6 +10,8 @@
   valdar heart        cœur seul, en temps réel (Ctrl+C pour sauvegarder et quitter)
   valdar status       état actuel du cœur (sans le modifier)
   valdar sim          simulation accélérée de N jours (n'écrit jamais dans la vraie base)
+  valdar corps        son corps numérique : zones, outils, compétences (--ecran : ce qu'il
+                      voit en ce moment)
   valdar check        critères d'acceptation de la phase 1
 """
 from __future__ import annotations
@@ -567,6 +569,47 @@ def _cmd_chrono(args: argparse.Namespace) -> int:
                   sense=not args.sans_sens)
 
 
+def _cmd_corps(args: argparse.Namespace) -> int:
+    """Son corps numérique : ce qu'il peut voir et faire sur le PC, et un essai à blanc."""
+    cfg = load()
+    cc = cfg.corps
+    if not cc.enabled:
+        print("Le corps numérique est coupé (corps.enabled: false dans config/valdar.yaml).")
+        return 1
+    from valdar.corps.outils import Corps, add_corps_tools
+    from valdar.corps.web import Web
+    from valdar.tools.registry import Registry
+
+    corps = Corps(cc, cfg.root, (cfg.root / cfg.storage.dir),
+                  web=Web(cc.searxng) if cc.web else None)
+    notes = corps.connectors.start()
+    reg = Registry()
+    add_corps_tools(reg, corps)
+    print(f"Atelier        : {corps.zones.atelier}")
+    print(f"Lecture        : {', '.join(str(x) for x in corps.zones.lecture)}")
+    print(f"Écriture       : {', '.join(str(x) for x in corps.zones.ecriture)}")
+    print(f"Mains          : {'oui' if cc.actions else 'non (il regarde seulement)'}")
+    print(f"Terminal       : {'ouvert' if cc.terminal else 'fermé'}")
+    print(f"Web            : {'oui' if cc.web else 'non'}"
+          + (f" (SearXNG {cc.searxng})" if cc.searxng else ""))
+    print(f"Outils         : {len(reg.tools)} — {', '.join(sorted(reg.tools))}")
+    print(f"Compétences    : {corps.skills.summary()}")
+    print(f"Connecteurs    : {'; '.join(notes) if notes else 'aucun'}")
+    print(f"Journal        : {corps.journal.path}")
+    if args.ecran:
+        print("\n--- ce qu'il voit en ce moment ---")
+        try:
+            print(corps.regarder())
+        except Exception as exc:
+            print(f"Il ne voit pas l'écran : {exc}")
+            if "manquants" in str(exc):
+                print("Lance tools\\valdar_corps.bat pour installer ce qu'il faut.")
+            corps.close()
+            return 1
+    corps.close()
+    return 0
+
+
 def _cmd_cortex(args: argparse.Namespace) -> int:
     """Le cortex : installer le modèle, apprendre les sentiments, les essayer, l'activer.
     Tout ce qui s'affiche est aussi écrit dans data/cortex/journal.txt."""
@@ -745,6 +788,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--profile", default=None)
     p.set_defaults(func=_cmd_sim)
+
+    p = sub.add_parser("corps", help="son corps numérique : zones, outils, et ce qu'il voit")
+    p.add_argument("--ecran", action="store_true", help="afficher ce qu'il voit maintenant")
+    p.set_defaults(func=_cmd_corps)
 
     p = sub.add_parser("check", help="critères d'acceptation de la phase 1")
     p.add_argument("--seed", type=int, default=42)

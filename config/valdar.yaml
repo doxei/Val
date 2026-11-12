@@ -374,10 +374,11 @@ llm:
   url: http://127.0.0.1:11434
   model: gemma4:12b
   keep_alive: 30m
-  num_ctx: 8192
+  num_ctx: 10240                 # 44 outils = ~3 200 jetons de prompt : il faut de la place
   think: false                   # mode réflexion de Gemma 4 désactivé en dialogue (latence)
   timeout_seconds: 300
   max_tool_rounds: 6
+  tool_output_chars: 4000        # ce qu'un outil peut lui rendre d'un coup
   history_messages: 16           # messages gardés dans la conversation courante
 
 # Expression (v2 §9.2 et §9.4) : l'état du cœur règle la génération.
@@ -760,3 +761,51 @@ cortex:
     budget: 1.6                  # intensité totale maximale (au-delà, le modèle perd le fil)
     inertia_seconds: 20          # un sentiment glisse, il ne saute pas (Kuppens)
     step: 0.1                    # pas de quantification (le cache de calcul reste valable)
+
+# ============================================================== corps numérique (avenant 7)
+# Le PC est son environnement : il le voit (capture annotée + accessibilité de Windows) et il
+# y agit (fichiers, terminal, souris, clavier, web, artefacts). Réservé au propriétaire ;
+# tout ce qui est risqué demande un « oui ». Jamais d'effacement définitif, jamais de saisie
+# dans un champ de mot de passe. Un corps robotique viendra plus tard : rien ici ne le suppose.
+corps:
+  enabled: true
+  actions: true                  # false : il voit l'écran mais ne touche pas à la souris
+  atelier: ~/Documents/Valdar    # sa zone à lui : il y écrit sans demander
+  lecture: ["~"]
+  ecriture: ["~"]
+  interdits:                     # ni lus ni écrits, jamais
+    - /.ssh
+    - /.gnupg
+    - /appdata/roaming/microsoft/protect
+    - /appdata/roaming/microsoft/credentials
+    - /appdata/local/microsoft/credentials
+    - "/appdata/local/google/chrome/user data"
+    - "/appdata/local/microsoft/edge/user data"
+    - /appdata/roaming/mozilla/firefox/profiles
+    - /appdata/local/packages
+    - eleven.key
+    - /.token
+    - faces.json
+    - voice_profiles.json
+    - /cal_
+    - /raub/data/
+    - .env
+    - id_rsa
+    - id_ed25519
+    - .kdbx
+  proteges_ecriture:             # son propre code : lisible, jamais modifiable par lui
+    - "{racine}/src"
+    - "{racine}/config"
+    - "{racine}/tools"
+    - "{racine}/.git"
+    - "{racine}/data/reglages.json"
+  max_lecture: 8000
+  terminal: true
+  terminal_timeout: 60
+  terminal_max_sortie: 4000
+  capture_largeur: 1280
+  web: true
+  searxng: ""                    # adresse d'un SearXNG perso ; vide = DuckDuckGo
+  journal: corps/journal.jsonl
+  competences: data/competences
+  connecteurs: {}                # ex. : horlogerie: {commande: python, args: [-m, mon_serveur]}

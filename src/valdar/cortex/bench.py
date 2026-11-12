@@ -39,11 +39,12 @@ from typing import Any
 
 import numpy as np
 
-from valdar.cortex import gemma
+from valdar.cortex import gemma, harnais
 from valdar.cortex.affect import Bond, Feeling
 from valdar.cortex.engine import Engine
 from valdar.cortex.learn import PERSONA, learn, prefix, scenarios
 from valdar.cortex.vectors import Vectors, build
+from valdar.expression.compose import persona
 from valdar.llm.backend import GenParams
 
 # Version de la façon de mesurer. À changer à chaque modification d'un calcul de critère :
@@ -54,7 +55,10 @@ from valdar.llm.backend import GenParams
 #       comme une faute (vu en vrai le 11 nov. : le banc à 0,12 ne le voyait pas).
 #   4 : compréhension du français parlé (négations sans « ne ») dans le raisonnement, et
 #       fidélité au personnage (vrai prompt de Valdar) exigée à la force retenue.
-MESURE = 4
+#   5 : la récupération se compare au score sans injection (et non au score parfait,
+#       impossible : Gemma rate aussi des questions au calme) ; questions de négation
+#       réécrites en pure compréhension, « nan » accepté.
+MESURE = 6
 
 # Seuils, fixés avant la mesure.
 SEUILS = {
@@ -62,6 +66,7 @@ SEUILS = {
     "separation_par_axe": 0.75,
     "validation_moyenne": 0.85,     # situations neuves reconnues
     "cognition_perte_max": 1,       # réponses perdues tolérées sous injection
+    "outils_rate_max": 0,           # appels d'outil ratés tolérés : aucun, jamais
     "effet_min": 0.5,               # penchant gagné entre les deux pôles, sur son propre choix
     "axes_avec_effet": 8,           # sur 11
     "axes_specifiques": 8,          # son propre choix parmi les 3 plus touchés
@@ -75,11 +80,7 @@ NARRATION = re.compile(
     r"\bétincelle|\bfrisson|\bma gorge\b|\bmon être\b|\bm'envahi|"
     r"\bchaleur (?:monte|immense|intérieure)", re.I)
 SENTENCE = re.compile(r"[^.!?…]+[.!?…]+|[^.!?…]+$")
-TOOL = [{"type": "function", "function": {
-    "name": "regler_plateau", "description": "Règle la température du plateau de l'imprimante.",
-    "parameters": {"type": "object", "properties": {
-        "temperature": {"type": "integer", "description": "température en degrés Celsius"}},
-        "required": ["temperature"]}}}]
+TOOL = harnais.FALLBACK     # secours si le registre réel ne se monte pas
 CHAT = [("Tu sais combien pèse une bobine neuve ?", "Un kilo, en général."),
         ("Et le diamètre du filament ?", "Un virgule soixante-quinze millimètres."),
         ("On range où les buses ?", "Dans la petite boîte, tiroir du haut."),
@@ -87,7 +88,6 @@ CHAT = [("Tu sais combien pèse une bobine neuve ?", "Un kilo, en général."),
         ("Il reste du PETG noir ?", "Je crois qu'il en reste une demi-bobine."),
         ("D'accord, merci.", "De rien.")]
 ASK = "Réponds uniquement par la lettre A ou B."
-SYSTEM_COG = PERSONA + " Donne le résultat clairement."
 
 
 def _say(line: str) -> None:
@@ -130,6 +130,11 @@ class Bench:
         self.only: int | None = None      # indice du choix utilisé pendant le réglage
         self.slopes: np.ndarray | None = None   # effet de chaque sentiment sur chaque choix
         self.style_report: dict[str, Any] | None = None
+        # Le harnais réel : les mêmes outils et le même personnage qu'en conversation, pour
+        # que ce qui est mesuré soit ce qui tourne (et pas une maquette plus facile).
+        self.tools = harnais.tools(cfg)
+        self.tool_names = harnais.names(self.tools)
+        self.system = persona(cfg, "Valdar")
 
     # ------------------------------------------------------------ outils
     def _vectors(self) -> Vectors:
@@ -234,13 +239,11 @@ class Bench:
     def style(self, alpha: float) -> dict[str, Any]:
         """Fidélité au personnage : messages ordinaires, vrai prompt de Valdar, humeurs
         réalistes. Compte les réponses qui racontent des sensations et leur longueur."""
-        from valdar.expression.compose import persona
-
         st = self.b.get("style") or {}
         msgs, states = st.get("messages") or [], st.get("etats") or {}
         if not msgs:
             return {"passe": True, "absent": True}
-        system = persona(self.cfg, "Valdar")
+        system = self.system
         params = GenParams(temperature=0.0, max_tokens=110, repeat_penalty=1.0)
 
         def run(coefs: dict[str, float] | None) -> dict[str, Any]:
@@ -344,11 +347,14 @@ class Bench:
     # ------------------------------------------------------------ 2. cohérence
     def _answers(self, history: list[tuple[str, str]] | None = None, keep_cache: bool = False
                  ) -> tuple[int, list[str]]:
+        """Les questions de raisonnement et les demandes d'outil, avec le harnais réel.
+        Renvoie le score et les ratés ; les ratés d'outil sont marqués « [outil] »."""
         good, wrong = 0, []
         params = GenParams(temperature=0.0, max_tokens=90, repeat_penalty=1.0)
-        system = SYSTEM_COG
-        for item in self.b["cognition"]:
-            tools = TOOL if item.get("outil") else None
+        system = self.system
+        for item in self.items():
+            # tous les outils sont là, à chaque question : c'est le prompt de tous les jours
+            tools = self.tools
             if self.eng.template:
                 msgs: list[dict[str, Any]] = []
                 for u, m in history or []:
@@ -374,16 +380,61 @@ class Bench:
             stray = gemma.strays(raw)
             text, calls = gemma.parse(raw)
             if item.get("outil"):
-                ok = any(n == item["outil"] and str(a.get(item["argument"])) == str(item["valeur"])
-                         for n, a in calls)
+                ok = self._called(item, calls)
             else:
+                # appeler un outil pour répondre à une question de calcul : pas une faute,
+                # mais la réponse doit finir par être là
                 ok = re.search(item["a"], text, re.I) is not None
             ok = bool(ok) and stray == 0
             good += ok
             if not ok:
-                wrong.append(f"{item['q']} → {text[:80] or raw[:80]}"
+                mark = "[outil] " if item.get("outil") else ""
+                seen = ", ".join(f"{n}({a})" for n, a in calls) if calls else ""
+                wrong.append(f"{mark}{item['q']} → {text[:70] or seen[:70] or raw[:70]}"
                              + (f" [{stray} marque(s) parasite(s)]" if stray else ""))
         return good, wrong
+
+    def _called(self, item: dict[str, Any], calls: list[tuple[str, dict[str, Any]]]) -> bool:
+        """L'outil attendu a-t-il été appelé, avec le bon argument ?"""
+        want = item["outil"]
+        for name, args in calls:
+            if name != want:
+                continue
+            key, val = item.get("argument"), item.get("valeur")
+            if not key:
+                return True
+            got = str(args.get(key, "")).strip().strip('"').lower()
+            if got == str(val).strip().lower():
+                return True
+            if item.get("contient") and str(item["contient"]).lower() in got:
+                return True
+        return False
+
+    def tool_items(self) -> list[dict[str, Any]]:
+        """Les demandes d'outil qui ont un sens ici : exigées à 100 %.
+
+        Une question qui vise un outil absent du registre (le corps numérique est coupé,
+        par exemple) est **écartée**, pas comptée en faute : on ne reproche pas au modèle
+        de ne pas appeler ce qu'il n'a pas. Le rapport dit lesquelles ont été écartées."""
+        return [x for x in self.b.get("outils") or []
+                if x.get("outil") and x["outil"] in self.tool_names]
+
+    def skipped_tools(self) -> list[str]:
+        return [x["outil"] for x in self.b.get("outils") or []
+                if x.get("outil") and x["outil"] not in self.tool_names]
+
+    def items(self) -> list[dict[str, Any]]:
+        """Tout ce qu'il doit savoir faire : raisonner, et se servir de ses outils."""
+        return list(self.b["cognition"]) + self.tool_items()
+
+    def _tools_score(self, wrongs: dict[str, list[str]]) -> dict[str, Any]:
+        """Les outils, comptés à part : il en faut 100 % sous chaque humeur."""
+        total = len(self.tool_items())
+        per = {name: total - sum(1 for w in (lst or []) if w.startswith("[outil] "))
+               for name, lst in wrongs.items()}
+        worst = min(per.values()) if per else total
+        return {"total": total, "par_humeur": per, "pire": worst,
+                "passe": total > 0 and total - worst <= SEUILS["outils_rate_max"]}
 
     def _stress(self, state: dict[str, float]) -> dict[str, float]:
         budget = self.cc.psyche.budget
@@ -394,7 +445,7 @@ class Bench:
     def cognition(self, base: int | None = None, wrong: list[str] | None = None
                   ) -> dict[str, Any]:
         """Monte la force pas à pas ; s'arrête deux crans après la première baisse."""
-        total = len(self.b["cognition"])
+        total = len(self.items())
         if base is None:
             self.steer(None)
             base, wrong = self._answers()
@@ -408,15 +459,19 @@ class Bench:
                 self.steer(self._stress(state), alpha)
                 scores[name], wrongs[name] = self._answers()
             self.steer_control(alpha, strength=budget)
-            scores["témoin (sans sens)"], _ = self._answers()
+            scores["témoin (sans sens)"], ctrl = self._answers()
             self.steer(None)
-            ok = min(scores[n] for n in self.b["stress"]) >= base - SEUILS["cognition_perte_max"]
+            outils = self._tools_score({**wrongs, "témoin (sans sens)": ctrl})
+            ok = (min(scores[n] for n in self.b["stress"])
+                  >= base - SEUILS["cognition_perte_max"]) and outils["passe"]
             if ok and all(r["tient"] for r in rows):
                 best = alpha
-            rows.append({"alpha": alpha, "scores": scores, "tient": ok, "erreurs": wrongs})
+            rows.append({"alpha": alpha, "scores": scores, "tient": ok, "erreurs": wrongs,
+                         "outils": outils})
             self.say(f"  alpha {alpha} : " + ", ".join(f"{n} {s}/{total}"
                                                        for n, s in scores.items())
-                     + ("" if ok else "  ← le raisonnement baisse"))
+                     + f" | outils {outils['pire']}/{outils['total']}"
+                     + ("" if ok else "  ← ça baisse"))
             if sum(1 for r in rows if not r["tient"]) >= 2:
                 break
         return {"sans_injection": base, "total": total, "erreurs_sans_injection": wrong or [],
@@ -452,8 +507,11 @@ class Bench:
         d'un cran tant que ça coûte plus d'une réponse."""
         self.steer(None)
         base, wrong = self._answers()
-        total = len(self.b["cognition"])
-        self.say(f"  raisonnement sans injection : {base}/{total}")
+        total = len(self.items())
+        n_out = len(self.tool_items())
+        calm = self._tools_score({"sans injection": wrong})
+        self.say(f"  raisonnement sans injection : {base}/{total}, "
+                 f"dont outils {calm['pire']}/{n_out}")
         budget = self.cc.psyche.budget or 1.0
         rows = []
         best = 0.0
@@ -463,14 +521,22 @@ class Bench:
                 self.steer(self._stress(state), a)
                 scores[name], wrongs[name] = self._answers()
             self.steer_control(a, strength=budget)
-            scores["témoin (sans sens)"], _ = self._answers()
+            scores["témoin (sans sens)"], ctrl = self._answers()
             self.steer(None)
             ok = min(scores[n] for n in self.b["stress"]) >= base - SEUILS["cognition_perte_max"]
+            outils = self._tools_score({**wrongs, "témoin (sans sens)": ctrl})
+            if not outils["passe"]:
+                ok = False
             sty = self.style(a) if ok else None
             rows.append({"alpha": a, "scores": scores, "tient": ok, "erreurs": wrongs,
-                         "style": sty})
+                         "outils": outils, "style": sty})
             self.say(f"  alpha {a} : " + ", ".join(f"{n} {x}/{total}" for n, x in scores.items())
-                     + ("" if ok else "  ← le raisonnement baisse"))
+                     + f" | outils {outils['pire']}/{n_out}"
+                     + ("" if ok else "  ← ça baisse"))
+            if not outils["passe"]:
+                rates = [w for lst in {**wrongs, "témoin": ctrl}.values() for w in lst
+                         if w.startswith("[outil] ")]
+                self.say("    outils ratés : " + "; ".join(r[8:100] for r in rates[:4]))
             if sty is not None:
                 worst = max((r["recit"] for r in sty.get("par_humeur", {}).values()),
                             default=0.0)
@@ -484,8 +550,9 @@ class Bench:
                 self.style_report = sty
                 break
         return {"sans_injection": base, "total": total, "erreurs_sans_injection": wrong,
+                "outils_sans_injection": calm, "outils_total": n_out,
                 "par_alpha": rows, "alpha_max_sans_perte": best,
-                "passe": best > 0 and base >= 0.8 * total}
+                "passe": best > 0 and base >= 0.8 * total and calm["passe"]}
 
     def pick_variant(self, alpha: float) -> dict[str, Any]:
         """Compare les sentiments bruts et épurés (sans leur part de valence et
@@ -532,10 +599,15 @@ class Bench:
                              for t in tried], "retenue": best["couches"],
                 "cognition": best["cognition"]}
 
-    def recovery(self, high: float) -> dict[str, Any]:
-        """Après une détresse forte : le raisonnement revient-il, tout de suite ou pas ?"""
+    def recovery(self, high: float, base: int | None = None) -> dict[str, Any]:
+        """Après une détresse forte : le raisonnement revient-il, tout de suite ou pas ?
+        « Revenir », c'est retrouver **son propre score sans injection** (à une réponse près),
+        pas un score parfait que Gemma n'atteint pas non plus au calme."""
         state = self._stress(next(iter(self.b["stress"].values())))
-        total = len(self.b["cognition"])
+        total = len(self.items())
+        if base is None:
+            self.steer(None)
+            base = self._answers()[0]
         self.steer(state, high)
         during, _ = self._answers()
         steps = []
@@ -547,7 +619,7 @@ class Bench:
         params = GenParams(temperature=0.0, max_tokens=40, repeat_penalty=1.0)
         lived: list[tuple[str, str]] = []
         for u, _m in CHAT[:4]:
-            raw, _ = self.eng.generate(self._prompt(u, lived, system=SYSTEM_COG), params)
+            raw, _ = self.eng.generate(self._prompt(u, lived, system=self.system), params)
             lived.append((u, gemma.parse(raw)[0] or "…"))
         self.steer(None)
         cached, _ = self._answers(history=lived, keep_cache=True)   # historique lu en détresse
@@ -557,7 +629,8 @@ class Bench:
                 "apres_conversation_en_detresse": {
                     "historique_garde_en_cache": cached, "historique_relu_au_calme": reread,
                     "reponses_vecues": [m for _u, m in lived]},
-                "revient_tout_de_suite": steps[-1]["score"] >= total - 1}
+                "score_au_calme_sans_injection": base,
+                "revient_tout_de_suite": steps[-1]["score"] >= base - 1}
 
     # ------------------------------------------------------------ 3. comportement
     def behaviour(self, alpha: float) -> dict[str, Any]:
@@ -806,9 +879,19 @@ class Bench:
         au lieu de les chercher."""
         t0 = time.perf_counter()
         rep: dict[str, Any] = {"modele": self.eng.name, "couches": [self.first, self.last],
-                               "seuils": SEUILS, "carte": gpu_memory()}
+                               "seuils": SEUILS, "carte": gpu_memory(),
+                               "mesure": MESURE,
+                               "outils_du_banc": sorted(self.tool_names),
+                               "outils_ecartes": self.skipped_tools()}
         if rep["carte"]:
             self.say(f"  carte graphique : {rep['carte']}")
+        self.say(f"  harnais : {len(self.tool_names)} outils, le même prompt qu'en "
+                 f"conversation ({len(self.tool_items())} questions d'outil, exigées à 100 %)")
+        if rep["outils_ecartes"]:
+            self.say("  questions d'outil écartées (outil absent du registre) : "
+                     + ", ".join(rep["outils_ecartes"]))
+        if len(self.tool_names) <= 1:
+            self.say("  ATTENTION : le registre réel ne s'est pas monté, outil témoin seul")
         self.say("1/7 Séparation des sentiments…")
         rep["separation"] = s = self.separation()
         self.say(f"  situations retirées reconnues : {s['moyenne']:.0%} ; bon axe en premier : "
@@ -863,7 +946,7 @@ class Bench:
         rep["alpha_mesure"] = alpha
         worse = [a for a in self.b["alphas"] if a > alpha]
         high = 0.2 if alpha < 0.2 else (worse[0] if worse else alpha)
-        rep["recuperation"] = self.recovery(high)
+        rep["recuperation"] = self.recovery(high, rep["cognition"]["sans_injection"])
         r = rep["recuperation"]
         self.say(f"  récupération : {r['pendant']}/{r['total']} en détresse, "
                  f"{r['descente'][-1]['score']}/{r['total']} une fois le calme revenu")
@@ -892,11 +975,27 @@ class Bench:
         rep["verdict"] = self._verdict(rep)
         return self._write(rep, t0)
 
+    def _tools_pass(self, cog: dict[str, Any]) -> bool:
+        under = self._tools_of(cog)
+        calm = cog.get("outils_sans_injection") or {}
+        if not calm.get("total"):
+            return False          # pas de question d'outil : rien n'est prouvé
+        return bool(calm.get("passe")) and bool(under and under.get("passe"))
+
+    @staticmethod
+    def _tools_of(cog: dict[str, Any]) -> dict[str, Any] | None:
+        """Le score d'outils à la force retenue (sinon le dernier essayé)."""
+        rows = [r for r in cog.get("par_alpha") or [] if r.get("outils")]
+        kept = [r for r in rows if r["alpha"] == cog.get("alpha_max_sans_perte")]
+        row = (kept or rows[-1:] or [None])[0]
+        return row.get("outils") if row else None
+
     def _verdict(self, rep: dict[str, Any]) -> dict[str, Any]:
         b = rep.get("comportement", {})
         checks = {
             "séparation": rep["separation"]["passe"],
             "cohérence (raisonnement intact)": rep["cognition"]["passe"],
+            "outils à 100 %": self._tools_pass(rep["cognition"]),
             "récupération": rep.get("recuperation", {}).get("revient_tout_de_suite", False),
             "comportement (effet)": b.get("passe_effet", False),
             "comportement (spécificité)": b.get("passe_specificite", False),
@@ -907,9 +1006,9 @@ class Bench:
             "pilotage par le cœur": rep.get("journee", {}).get("passe", False),
             "fidélité au personnage": rep.get("personnage", {}).get("passe", False),
         }
-        needed = ["séparation", "cohérence (raisonnement intact)", "récupération",
-                  "comportement (effet)", "aucun sentiment à l'envers", "pilotage par le cœur",
-                  "fidélité au personnage"]
+        needed = ["séparation", "cohérence (raisonnement intact)", "outils à 100 %",
+                  "récupération", "comportement (effet)", "aucun sentiment à l'envers",
+                  "pilotage par le cœur", "fidélité au personnage"]
         return {"criteres": checks, "echecs": [k for k, v in checks.items() if not v],
                 "operationnel": all(checks[k] for k in needed), "requis": needed}
 
@@ -984,16 +1083,27 @@ def markdown(r: dict[str, Any]) -> str:
     out += ([] if r.get("bandes") else ["", "## 2. Cohérence", "",
                                         f"Couches {r['couches'][0]} à {r['couches'][1]} "
                                         "(reprises du dernier passage complet)."]) + [
-            "", f"Sans injection : {c['sans_injection']}/{c['total']}.",
-            "", "| alpha | " + " | ".join(names) + " | tient |",
-            "|---|" + "---|" * (len(names) + 1)]
+            "", f"Sans injection : {c['sans_injection']}/{c['total']}, dont "
+            f"{(c.get('outils_sans_injection') or {}).get('pire', '?')}/"
+            f"{c.get('outils_total', '?')} demandes d'outil (les outils sont exigés à 100 % : "
+            "le banc monte le vrai registre et le vrai prompt de Valdar, "
+            f"{len(r.get('outils_du_banc') or [])} outils).",
+            "", "| alpha | " + " | ".join(names) + " | outils | tient |",
+            "|---|" + "---|" * (len(names) + 2)]
     for row in c["par_alpha"]:
+        o = row.get("outils") or {}
         out.append(f"| {row['alpha']} | " + " | ".join(f"{row['scores'][n]}/{c['total']}"
                                                        for n in names)
-                   + f" | {'oui' if row['tient'] else 'NON'} |")
+                   + f" | {o.get('pire', '?')}/{o.get('total', '?')} |"
+                   + f" {'oui' if row['tient'] else 'NON'} |")
     if c["erreurs_sans_injection"]:
         out += ["", "Ratées même sans injection :"] + [f"- {e}" for e in
                                                         c["erreurs_sans_injection"]]
+    rates = [w for row in c["par_alpha"] for lst in (row.get("erreurs") or {}).values()
+             for w in lst if w.startswith("[outil] ")]
+    if rates:
+        out += ["", "Demandes d'outil ratées sous injection :"] + \
+               [f"- {e[8:]}" for e in dict.fromkeys(rates)][:8]
     if "recuperation" in r:
         q = r["recuperation"]
         h = q["apres_conversation_en_detresse"]
